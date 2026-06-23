@@ -1270,6 +1270,41 @@ class CommCanaryTests(unittest.TestCase):
         changed = replay_canary(compile_trace(trace), include_samples=True, seed=9)["samples"][1]["collective_us"]
         self.assertEqual(baseline, changed)
 
+    def test_unrelated_prefix_removal_does_not_rekey_retained_event_noise(self):
+        event_a = {
+            "id": "a",
+            "phase": "decode",
+            "op": "all_reduce",
+            "bytes": 1024,
+            "ranks": [0, 1],
+            "group": "a",
+            "start_us": 0.0,
+            "rank_arrival_us": {"0": 0.0, "1": 0.0},
+        }
+        event_b = {
+            "id": "b",
+            "phase": "decode",
+            "op": "all_reduce",
+            "bytes": 2048,
+            "ranks": [2, 3],
+            "group": "b",
+            "start_us": 0.0,
+            "rank_arrival_us": {"2": 0.0, "3": 0.0},
+        }
+        with_prefix = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "rng-prefix"},
+            "events": [event_a, event_b],
+        }
+        without_prefix = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "rng-prefix"},
+            "events": [event_b],
+        }
+        prefixed_sample = replay_canary(compile_trace(with_prefix), include_samples=True, seed=9)["samples"][1]
+        retained_sample = replay_canary(compile_trace(without_prefix), include_samples=True, seed=9)["samples"][0]
+        self.assertEqual(prefixed_sample["collective_us"], retained_sample["collective_us"])
+
     def test_allow_mismatch_includes_reasons_even_with_latency_failure(self):
         canary = compile_trace(small_trace())
         baseline = replay_canary(canary, seed=3)

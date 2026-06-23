@@ -209,7 +209,7 @@ def _simulate_step(
         pressure=pressure,
         concurrent_groups=concurrent_groups,
     )
-    uniforms = _counter_uniforms(seed, iteration, sequence_index)
+    uniforms = _counter_uniforms(seed, iteration, _noise_identity(step, timing_sample))
     collective_us += _tail_noise_us(
         uniforms,
         skew_us=skew_us,
@@ -299,17 +299,33 @@ def _splitmix64(value: int) -> int:
     return (value ^ (value >> 31)) & _MASK64
 
 
-def _counter_uniforms(seed: int, iteration: int, sequence_index: int) -> Tuple[float, float, float]:
+def _counter_uniforms(seed: int, iteration: int, identity: Mapping[str, Any]) -> Tuple[float, float, float]:
+    identity_hash = _stable_identity_hash(identity)
     counter = (
         (seed & _MASK64)
         ^ ((iteration + 1) * 0xD6E8FEB86659FD93)
-        ^ ((sequence_index + 1) * 0xA5A3564E27F8862B)
+        ^ identity_hash
     ) & _MASK64
     values = []
     for lane in range(3):
         bits = _splitmix64(counter ^ (lane * 0x9E3779B97F4A7C15))
         values.append(((bits >> 11) & ((1 << 53) - 1)) / float(1 << 53))
     return values[0], values[1], values[2]
+
+
+def _noise_identity(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -> JsonDict:
+    return {
+        "phase": step.get("phase"),
+        "op": step.get("op"),
+        "ranks": step.get("ranks"),
+        "group": step.get("group", "default"),
+        "arrival_offsets_us": timing_sample.get("arrival_offsets_us"),
+    }
+
+
+def _stable_identity_hash(identity: Mapping[str, Any]) -> int:
+    digest = hashlib.sha256(canonical_json_bytes(identity)).digest()
+    return int.from_bytes(digest[:8], "big") & _MASK64
 
 
 def _sample_offsets(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -> List[float]:
