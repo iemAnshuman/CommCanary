@@ -315,11 +315,12 @@ def _counter_uniforms(seed: int, iteration: int, identity: Mapping[str, Any]) ->
 
 def _noise_identity(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -> JsonDict:
     return {
-        "phase": step.get("phase"),
-        "op": step.get("op"),
-        "ranks": step.get("ranks"),
-        "group": step.get("group", "default"),
-        "arrival_offsets_us": timing_sample.get("arrival_offsets_us"),
+        "phase": str(step.get("phase", "unknown")),
+        "op": str(step.get("op", "unknown")),
+        "ranks": list(_sample_ranks(step)),
+        "group": str(step.get("group", "default")),
+        "arrival_offsets_us": [round(value, 9) for value in _sample_offsets(step, timing_sample)],
+        "occurrence": as_int(timing_sample.get("noise_occurrence"), 0),
     }
 
 
@@ -389,6 +390,7 @@ def _iter_timing_samples(step: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]
 
 def _pattern_repetitions(parent: Mapping[str, Any], pattern: List[Any]) -> Iterable[Mapping[str, Any]]:
     repeats = as_int(parent.get("pattern_repeats"), 1)
+    parent_occurrence = _occurrence_base(parent)
     expected_gap_sum = 0.0
     child_weight = 0
     for child in pattern:
@@ -406,12 +408,11 @@ def _pattern_repetitions(parent: Mapping[str, Any], pattern: List[Any]) -> Itera
             if isinstance(child, Mapping):
                 for item in _sample_repetitions(child):
                     emitted += 1
+                    item = dict(item)
+                    item["noise_occurrence"] = parent_occurrence + emitted - 1
                     if emitted == total_emitted and abs(residual) > 0.0:
-                        adjusted = dict(item)
-                        adjusted["gap_us"] = as_float(adjusted.get("gap_us"), 0.0) + residual
-                        yield adjusted
-                    else:
-                        yield item
+                        item["gap_us"] = as_float(item.get("gap_us"), 0.0) + residual
+                    yield item
 
 
 def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
@@ -424,6 +425,7 @@ def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]
     )
     gap_sum_us = _record_gap_sum(sample)
     base_gap_us = gap_sum_us / weight
+    occurrence_base = _occurrence_base(sample)
     consumed = 0.0
     for index in range(weight):
         item = dict(sample)
@@ -432,6 +434,7 @@ def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]
             consumed += gap_us
         item["gap_us"] = gap_us
         item["weight"] = 1
+        item["noise_occurrence"] = occurrence_base + index
         if index < uncertain_weight:
             item["compute_fields_uncertain"] = True
             item["uncertain_weight"] = 1
@@ -439,6 +442,12 @@ def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]
             item.pop("compute_fields_uncertain", None)
             item.pop("uncertain_weight", None)
         yield item
+
+
+def _occurrence_base(sample: Mapping[str, Any]) -> int:
+    if "source_start" in sample:
+        return as_int(sample.get("source_start"))
+    return as_int(sample.get("source_index"), 0)
 
 
 def _record_gap_sum(sample: Mapping[str, Any]) -> float:
