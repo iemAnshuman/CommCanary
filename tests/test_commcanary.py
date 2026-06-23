@@ -1719,17 +1719,21 @@ class CommCanaryTests(unittest.TestCase):
 
     def test_recorder_trace_snapshot_does_not_share_nested_state(self):
         with tempfile.TemporaryDirectory() as tmp:
+            workload = {"name": "snapshot", "tags": ["before"]}
+            metadata = {"nested": {"value": 1}}
             recorder = TraceRecorder(
                 os.path.join(tmp, "trace.json"),
-                workload={"name": "snapshot", "tags": ["before"]},
+                workload=workload,
             )
             recorder.record_collective(
                 op="all_reduce",
                 bytes=16,
                 ranks=[0],
                 rank_arrival_us={"0": 0.0},
-                metadata={"nested": {"value": 1}},
+                metadata=metadata,
             )
+            workload["tags"].append("after")
+            metadata["nested"]["value"] = 2
             trace = recorder.to_trace()
             trace["workload"]["tags"].append("after")
             trace["events"][0]["metadata"]["nested"]["value"] = 2

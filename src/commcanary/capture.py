@@ -38,8 +38,8 @@ class TraceRecorder:
         self._requested_output_path = output_path
         self._recorder_id = uuid.uuid4().hex
         self.output_path = _resolve_output_path(output_path, recorder_id=self._recorder_id)
-        self.workload = dict(workload or {})
-        self.system = dict(system or {})
+        self.workload = copy.deepcopy(dict(workload or {}))
+        self.system = copy.deepcopy(dict(system or {}))
         self.events: List[JsonDict] = []
         self._start_ns = time.perf_counter_ns()
         self._pid = os.getpid()
@@ -172,7 +172,7 @@ class TraceRecorder:
             if metadata:
                 if not isinstance(metadata, Mapping):
                     raise SchemaError("metadata must be an object")
-                event["metadata"] = dict(metadata)
+                event["metadata"] = copy.deepcopy(dict(metadata))
             self.events.append(event)
             self._generation += 1
 
