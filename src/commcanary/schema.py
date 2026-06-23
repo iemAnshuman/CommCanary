@@ -539,6 +539,21 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             if abs(expected_error - as_float(fidelity.get("total_gap_error_us"))) > 1e-6:
                 raise SchemaError("canary compiler.fidelity.total_gap_error_us is inconsistent")
 
+    fidelity_budget = compiler.get("fidelity_budget")
+    if fidelity_budget is not None:
+        if not isinstance(fidelity_budget, Mapping):
+            raise SchemaError("canary compiler.fidelity_budget must be an object")
+        if fidelity is None:
+            raise SchemaError("canary compiler.fidelity_budget requires compiler.fidelity")
+        for key, budget in fidelity_budget.items():
+            if key not in FIDELITY_ERROR_FIELDS:
+                raise SchemaError(f"canary compiler.fidelity_budget contains unknown field {key!r}")
+            budget_value = as_float(budget)
+            if budget_value < 0.0:
+                raise SchemaError(f"canary compiler.fidelity_budget.{key} must be non-negative")
+            if as_float(fidelity.get(key), 0.0) > budget_value + 1e-6:
+                raise SchemaError(f"canary compiler.fidelity.{key} exceeds recorded fidelity budget")
+
     tail_signal = compiler.get("tail_signal")
     has_observed = bool(all_leaf_observed_flags and all(all_leaf_observed_flags))
     if tail_signal == "observed_exposed_us" and not has_observed:

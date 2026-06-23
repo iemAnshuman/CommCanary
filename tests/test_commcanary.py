@@ -1369,6 +1369,12 @@ class CommCanaryTests(unittest.TestCase):
             compile_trace(trace, timing_sample_limit=2, max_skew_error_us=0.0)
         with self.assertRaises(SchemaError):
             compile_trace(trace, timing_sample_limit=2, max_prefix_gap_error_us=0.0)
+        malformed = copy.deepcopy(canary)
+        malformed["compiler"]["fidelity_budget"] = {
+            "max_skew_error_us": malformed["compiler"]["fidelity"]["max_skew_error_us"] - 0.001
+        }
+        with self.assertRaises(SchemaError):
+            validate_canary(malformed)
 
     def test_lossless_timing_is_an_explicit_invariant(self):
         trace = {"format": TRACE_FORMAT, "workload": {"name": "lossless"}, "events": []}
