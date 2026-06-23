@@ -1840,6 +1840,11 @@ class CommCanaryTests(unittest.TestCase):
         }
         with self.assertRaises(SchemaError):
             validate_canary(malformed)
+        malformed = copy.deepcopy(canary)
+        malformed["compiler"].pop("fidelity")
+        malformed["compiler"].pop("fidelity_budget", None)
+        with self.assertRaises(SchemaError):
+            validate_canary(malformed)
 
     def test_lossless_timing_is_an_explicit_invariant(self):
         trace = {"format": TRACE_FORMAT, "workload": {"name": "lossless"}, "events": []}

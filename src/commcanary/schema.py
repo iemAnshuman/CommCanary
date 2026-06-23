@@ -601,6 +601,8 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
 
     fidelity = compiler.get("fidelity")
+    if actual_approximate_records and fidelity is None:
+        raise SchemaError("canary compiler.fidelity is required for approximate timing records")
     if fidelity is not None:
         if not isinstance(fidelity, Mapping):
             raise SchemaError("canary compiler.fidelity must be an object")
