@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from .schema import (
+    MAX_TIME_US,
     REPORT_FORMAT,
     JsonDict,
     SchemaError,
@@ -93,12 +94,16 @@ def replay_canary(
                     compute_pressure=compute_pressure,
                 )
                 logical_clock_us += core["gap_us"]
+                if logical_clock_us > MAX_TIME_US:
+                    raise SchemaError("replay logical clock exceeds maximum supported duration")
                 group = str(core["scheduler_resource"])
                 first_arrival_us = logical_clock_us
                 last_arrival_us = first_arrival_us + core["arrival_skew_us"]
                 collective_start_us = max(last_arrival_us, group_available_us.get(group, 0.0))
                 queue_wait_us = collective_start_us - last_arrival_us
                 completion_us = collective_start_us + core["collective_us"]
+                if completion_us > MAX_TIME_US:
+                    raise SchemaError("replay completion time exceeds maximum supported duration")
                 total_us = completion_us - first_arrival_us
                 hidden_us = min(total_us, max(0.0, core["compute_overlap_us"]) * overlap_efficiency)
                 exposed_us = total_us - hidden_us

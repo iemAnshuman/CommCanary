@@ -1958,6 +1958,27 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             validate_canary(canary)
 
+    def test_cumulative_replay_clock_is_bounded(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "cumulative-clock"}, "events": []}
+        for index in range(101):
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "gap_us": 10_000_000_000.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.1},
+                }
+            )
+        canary = compile_trace(trace)
+        validate_canary(canary)
+        with self.assertRaises(SchemaError):
+            replay_canary(canary)
+        with self.assertRaises(SchemaError):
+            replay_canary(canary, include_samples=True)
+
     def test_observed_tail_signal_is_preserved_and_calibrated(self):
         trace = {"format": TRACE_FORMAT, "workload": {"name": "observed-tail"}, "events": []}
         for index in range(100):
