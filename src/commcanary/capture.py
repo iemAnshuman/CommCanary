@@ -341,6 +341,7 @@ def merge_trace_shards(shard_dir: str, *, workload_name: str) -> JsonDict:
         raise SchemaError("trace shard directory must contain exactly one capture session")
 
     events = [_coalesce_events(group) for group in buckets.values()]
+    _reject_unordered_uncalibrated_domains(events, systems)
     events.sort(key=lambda event: as_float(event.get("start_us"), 0.0))
     merged: JsonDict = {
         "format": TRACE_FORMAT,
@@ -397,6 +398,20 @@ def _trace_shard_paths(shard_dir: str) -> List[str]:
     for pattern in patterns:
         paths.update(glob.glob(os.path.join(shard_dir, pattern)))
     return sorted(paths)
+
+
+def _reject_unordered_uncalibrated_domains(events: List[JsonDict], systems: List[JsonDict]) -> None:
+    if len(events) < 2 or len(systems) < 2:
+        return
+    if all(system.get("clock_alignment") == "explicit_offset_us" for system in systems):
+        return
+    rank_domains = [set(normalize_ranks(event.get("ranks"))) for event in events]
+    for left_index, left in enumerate(rank_domains):
+        for right in rank_domains[left_index + 1:]:
+            if left and right and left.isdisjoint(right):
+                raise SchemaError(
+                    "cannot globally order disjoint collectives from uncalibrated rank clocks"
+                )
 
 
 def _clock_offset_us(system: Mapping[str, Any]) -> Optional[float]:
