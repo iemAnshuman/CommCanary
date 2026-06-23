@@ -1335,6 +1335,100 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             compare_reports(replay_canary(baseline_canary, seed=3), replay_canary(changed_phase, seed=3))
 
+    def test_scheduler_hash_ignores_calibration_and_noncausal_compute_before(self):
+        observed_trace = small_trace()
+        for event in observed_trace["events"]:
+            event["observed_exposed_us"] = 20.0
+        observed_canary = compile_trace(observed_trace)
+        changed_observed = copy.deepcopy(observed_canary)
+        changed_observed["events"][0]["observed_exposed_us"] = 999.0
+        for sample in changed_observed["events"][0]["timing_samples"]:
+            sample["observed_exposed_us"] = 999.0
+        changed_observed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_observed)
+        self.assertEqual(
+            observed_canary["compiler"]["execution_semantic_sha256"],
+            changed_observed["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertTrue(
+            compare_reports(
+                replay_canary(observed_canary, seed=3),
+                replay_canary(changed_observed, seed=3),
+            )["compatibility"]["compatible"]
+        )
+
+        trace = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "compute-before-hash"},
+            "events": [
+                {
+                    "id": "event-0",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [0, 1],
+                    "gap_us": 1.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_before_us": 1.0,
+                }
+            ],
+        }
+        canary = compile_trace(trace)
+        changed_before = copy.deepcopy(canary)
+        changed_before["events"][0]["compute_before_us"] = 1_000_000.0
+        changed_before["events"][0]["timing_samples"][0]["compute_before_us"] = 1_000_000.0
+        changed_before["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_before)
+        self.assertEqual(
+            canary["compiler"]["execution_semantic_sha256"],
+            changed_before["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertEqual(
+            replay_canary(canary, seed=3)["metrics"],
+            replay_canary(changed_before, seed=3)["metrics"],
+        )
+
+    def test_scheduler_hash_canonicalizes_equivalent_timing_encodings(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "flat-vs-pattern"}, "events": []}
+        for index in range(4):
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [0, 1],
+                    "gap_us": 1.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                }
+            )
+        flat = compile_trace(trace)
+        patterned = copy.deepcopy(flat)
+        pattern_parent = copy.deepcopy(patterned["events"][0]["timing_samples"][0])
+        child = copy.deepcopy(pattern_parent)
+        child.update({"source_index": 0, "source_start": 0, "source_end": 0, "weight": 1, "gap_sum_us": 1.0})
+        pattern_parent.update(
+            {
+                "source_index": 0,
+                "source_start": 0,
+                "source_end": 3,
+                "weight": 4,
+                "gap_sum_us": 4.0,
+                "timing_pattern": [child],
+                "pattern_repeats": 4,
+            }
+        )
+        patterned["events"][0]["timing_samples"] = [pattern_parent]
+        patterned["events"][0]["source"]["sampled_timing_records"] = 2
+        patterned["compiler"]["recursive_timing_records"] = 2
+        patterned["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(patterned)
+        self.assertEqual(
+            flat["compiler"]["execution_semantic_sha256"],
+            patterned["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertEqual(
+            replay_canary(flat, seed=3)["metrics"],
+            replay_canary(patterned, seed=3)["metrics"],
+        )
+
     def test_zero_baseline_regression_is_not_clamped_to_100_percent(self):
         baseline = replay_canary(compile_trace(small_trace()), seed=3)
         candidate = copy.deepcopy(baseline)

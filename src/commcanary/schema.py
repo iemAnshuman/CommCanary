@@ -121,40 +121,65 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["rank_count"] = event.get("rank_count")
     samples = event.get("timing_samples")
     if isinstance(samples, list):
-        projected["timing_samples"] = [
-            _execution_timing_projection(sample)
-            for sample in samples
-            if isinstance(sample, Mapping)
-        ]
+        projected["timing_runs"] = _execution_timing_runs(samples)
     return projected
 
 
-def _execution_timing_projection(sample: Mapping[str, Any]) -> JsonDict:
-    projected: JsonDict = {}
-    weight = as_int(sample.get("weight"), 1)
-    if "gap_sum_us" in sample:
-        projected["gap_sum_us"] = round(as_float(sample.get("gap_sum_us")), 9)
-    elif "gap_us" in sample:
-        projected["gap_sum_us"] = round(as_float(sample.get("gap_us"), 0.0) * weight, 9)
-    for key in (
-        "arrival_offsets_us",
-        "compute_before_us",
-        "compute_overlap_us",
-        "compute_pressure",
-        "observed_exposed_us",
-        "weight",
-        "pattern_repeats",
-    ):
+def _execution_timing_runs(samples: Sequence[Any]) -> List[JsonDict]:
+    runs: List[JsonDict] = []
+    for item in _execution_timing_items(samples):
+        if runs and runs[-1]["item"] == item:
+            runs[-1]["weight"] += 1
+        else:
+            runs.append({"item": item, "weight": 1})
+    return runs
+
+
+def _execution_timing_items(samples: Sequence[Any]) -> Iterable[JsonDict]:
+    for sample in samples:
+        if not isinstance(sample, Mapping):
+            continue
+        pattern = sample.get("timing_pattern")
+        if isinstance(pattern, list) and pattern:
+            emitted = list(_execution_timing_items(pattern))
+            repeats = as_int(sample.get("pattern_repeats"), 1)
+            expected_gap_sum = sum(as_float(item.get("gap_us"), 0.0) for item in emitted) * repeats
+            residual = _execution_record_gap_sum(sample) - expected_gap_sum
+            total = len(emitted) * repeats
+            index = 0
+            for _repeat in range(repeats):
+                for item in emitted:
+                    index += 1
+                    if index == total and abs(residual) > 0.0:
+                        adjusted = dict(item)
+                        adjusted["gap_us"] = round(as_float(adjusted.get("gap_us"), 0.0) + residual, 9)
+                        yield adjusted
+                    else:
+                        yield item
+        else:
+            weight = as_int(sample.get("weight"), 1)
+            gap_sum_us = _execution_record_gap_sum(sample)
+            base_gap_us = gap_sum_us / weight
+            consumed = 0.0
+            for index in range(weight):
+                gap_us = gap_sum_us - consumed if index == weight - 1 else base_gap_us
+                if index != weight - 1:
+                    consumed += gap_us
+                yield _execution_timing_item(sample, gap_us)
+
+
+def _execution_timing_item(sample: Mapping[str, Any], gap_us: float) -> JsonDict:
+    item: JsonDict = {"gap_us": round(as_float(gap_us), 9)}
+    for key in ("arrival_offsets_us", "compute_overlap_us", "compute_pressure"):
         if key in sample:
-            projected[key] = sample.get(key)
-    pattern = sample.get("timing_pattern")
-    if isinstance(pattern, list):
-        projected["timing_pattern"] = [
-            _execution_timing_projection(child)
-            for child in pattern
-            if isinstance(child, Mapping)
-        ]
-    return projected
+            item[key] = sample.get(key)
+    return item
+
+
+def _execution_record_gap_sum(sample: Mapping[str, Any]) -> float:
+    if "gap_sum_us" in sample:
+        return as_float(sample.get("gap_sum_us"))
+    return as_float(sample.get("gap_us"), 0.0) * as_int(sample.get("weight"), 1)
 
 
 def require_format(data: Mapping[str, Any], expected: str, label: str) -> None:
