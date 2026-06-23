@@ -1435,6 +1435,27 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             validate_canary(malformed)
 
+    def test_exact_period_detection_exceeds_sixteen_when_budget_allows(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "period-17"}, "events": []}
+        for index in range(17 * 10):
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [0, 1],
+                    "gap_us": float(index % 17),
+                    "rank_arrival_us": {"0": 0.0, "1": float((index % 17) * 2)},
+                }
+            )
+        canary = compile_trace(trace, timing_sample_limit=32)
+        timing_samples = canary["events"][0]["timing_samples"]
+        self.assertEqual(len(timing_samples), 1)
+        self.assertEqual(len(timing_samples[0]["timing_pattern"]), 17)
+        self.assertEqual(timing_samples[0]["pattern_repeats"], 10)
+        validate_canary(canary)
+
     def test_mixed_timing_modes_and_fractional_limits_are_rejected(self):
         base = {
             "phase": "decode",

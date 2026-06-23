@@ -697,7 +697,7 @@ def _run_length_timing_samples(samples: List[JsonDict]) -> List[JsonDict]:
 
 
 def _short_repeated_pattern_length(samples: List[JsonDict], sample_limit: int) -> Optional[int]:
-    max_pattern = min(16, max(1, sample_limit - 1), len(samples) // 2)
+    max_pattern = min(max(1, sample_limit - 1), len(samples) // 2)
     for pattern_length in range(1, max_pattern + 1):
         if len(samples) % pattern_length:
             continue
@@ -711,7 +711,7 @@ def _prefix_pattern_records(samples: List[JsonDict], sample_limit: int) -> Optio
         return None
     for start in range(1, min(4, len(samples) - 1)):
         remaining = len(samples) - start
-        max_pattern = min(16, max(1, sample_limit - start - 1), remaining // 2)
+        max_pattern = min(max(1, sample_limit - start - 1), remaining // 2)
         for pattern_length in range(1, max_pattern + 1):
             if remaining % pattern_length:
                 continue
