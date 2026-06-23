@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import copy
 import glob
 import os
 import threading
@@ -178,15 +179,15 @@ class TraceRecorder:
     def to_trace(self) -> JsonDict:
         with self._lock:
             self._ensure_current_process_locked()
-            return self._to_trace_locked(list(self.events))
+            return self._to_trace_locked(copy.deepcopy(self.events))
 
     def _to_trace_locked(self, events: List[JsonDict]) -> JsonDict:
         return {
             "format": TRACE_FORMAT,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "workload": self.workload,
+            "workload": copy.deepcopy(self.workload),
             "system": {
-                **self.system,
+                **copy.deepcopy(self.system),
                 "pid": self._pid,
                 "rank": _rank_label(),
                 "capture_session_id": self._session_id,
@@ -199,7 +200,7 @@ class TraceRecorder:
         with self._lock:
             self._ensure_current_process_locked()
             generation = self._generation
-            snapshot = list(self.events)
+            snapshot = copy.deepcopy(self.events)
             trace = self._to_trace_locked(snapshot)
             output_path = self.output_path
         validate_trace(trace, allow_partial_arrivals=True)

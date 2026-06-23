@@ -1603,6 +1603,26 @@ class CommCanaryTests(unittest.TestCase):
             with self.assertRaises(SchemaError):
                 recorder.record_collective(op="all_reduce", bytes=16, ranks=[0], concurrent_groups=1.5)
 
+    def test_recorder_trace_snapshot_does_not_share_nested_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            recorder = TraceRecorder(
+                os.path.join(tmp, "trace.json"),
+                workload={"name": "snapshot", "tags": ["before"]},
+            )
+            recorder.record_collective(
+                op="all_reduce",
+                bytes=16,
+                ranks=[0],
+                rank_arrival_us={"0": 0.0},
+                metadata={"nested": {"value": 1}},
+            )
+            trace = recorder.to_trace()
+            trace["workload"]["tags"].append("after")
+            trace["events"][0]["metadata"]["nested"]["value"] = 2
+
+            self.assertEqual(recorder.workload["tags"], ["before"])
+            self.assertEqual(recorder.events[0]["metadata"]["nested"]["value"], 1)
+
     def test_one_rank_skew_and_malformed_gap_sum_are_rejected(self):
         trace = {
             "format": TRACE_FORMAT,
