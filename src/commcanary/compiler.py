@@ -136,6 +136,11 @@ def compile_trace(
     event_ratio = round(source_count / compiled_count, 3) if compiled_count else 0.0
     recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in finalized)
     approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in finalized)
+    compute_uncertain_events = sum(
+        as_int(event.get("repeat"), 1)
+        for event in finalized
+        if event.get("compute_fields_uncertain") is True
+    )
 
     source_gap_total = _round_us(sum(ordered_gaps))
     encoded_gap_total = _round_us(
@@ -189,6 +194,11 @@ def compile_trace(
         },
         "events": finalized,
     }
+    if compute_uncertain_events:
+        canary["compiler"]["capture_uncertainty"] = {
+            "compute_fields_uncertain_events": compute_uncertain_events,
+            "status": "rank_local_compute_fields_uncertain",
+        }
     canary["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(canary)
     _update_size_metrics(canary)
     validate_canary(canary)
@@ -302,6 +312,8 @@ def _event_to_step(
     }
     if event.get("custom_op") is True:
         step["custom_op"] = True
+    if event.get("compute_fields_uncertain") is True:
+        step["compute_fields_uncertain"] = True
     return step
 
 
@@ -315,6 +327,8 @@ def _append_sample(target: Dict[str, Any], sample: Mapping[str, Any]) -> None:
     timing_sample = dict(sample["timing_samples"][0])
     timing_sample["source_index"] = current_repeat
     target["_all_timing_samples"].append(timing_sample)
+    if sample.get("compute_fields_uncertain") is True:
+        target["compute_fields_uncertain"] = True
     target["repeat"] = current_repeat + 1
 
 

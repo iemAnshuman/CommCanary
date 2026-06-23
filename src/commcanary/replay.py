@@ -237,6 +237,8 @@ def _simulate_step(
     }
     if "observed_exposed_us" in timing_sample:
         sample["observed_exposed_us"] = as_float(timing_sample.get("observed_exposed_us"))
+    if step.get("compute_fields_uncertain") is True:
+        sample["compute_fields_uncertain"] = True
     return sample
 
 

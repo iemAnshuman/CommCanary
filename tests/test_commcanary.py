@@ -491,6 +491,19 @@ class CommCanaryTests(unittest.TestCase):
             self.assertTrue(event["compute_fields_uncertain"])
             self.assertEqual(event["compute_by_rank"]["0"]["compute_overlap_us"], 0.0)
             self.assertEqual(event["compute_by_rank"]["1"]["compute_overlap_us"], 1000.0)
+            canary = compile_trace(merged)
+            self.assertTrue(canary["events"][0]["compute_fields_uncertain"])
+            self.assertEqual(
+                canary["compiler"]["capture_uncertainty"]["compute_fields_uncertain_events"],
+                1,
+            )
+            report = replay_canary(canary, include_samples=True)
+            self.assertTrue(report["samples"][0]["compute_fields_uncertain"])
+            comparison = compare_reports(report, copy.deepcopy(report))
+            self.assertEqual(comparison["verdict"], "warn")
+            self.assertTrue(
+                any("uncertain rank-local compute fields" in reason for reason in comparison["reasons"])
+            )
 
     def test_capture_rejects_rank_swapped_partial_arrivals_and_mixed_clocks(self):
         with tempfile.TemporaryDirectory() as tmp:

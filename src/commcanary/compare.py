@@ -78,6 +78,11 @@ def compare_reports(
         if verdict == "pass":
             verdict = "warn"
         reasons.extend(compatibility["reasons"])
+    uncertainty_reasons = _uncertainty_reasons(baseline, candidate)
+    if uncertainty_reasons:
+        if verdict == "pass":
+            verdict = "warn"
+        reasons.extend(uncertainty_reasons)
     if not reasons:
         reasons.append("candidate is within configured thresholds")
 
@@ -249,6 +254,18 @@ def _compatibility(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) ->
         "baseline_replay_protocol_sha256": base_protocol.get("sha256"),
         "candidate_replay_protocol_sha256": cand_protocol.get("sha256"),
     }
+
+
+def _uncertainty_reasons(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> List[str]:
+    reasons: List[str] = []
+    for label, report in (("baseline", baseline), ("candidate", candidate)):
+        uncertainty = report.get("canary_summary", {}).get("capture_uncertainty", {})
+        if not isinstance(uncertainty, Mapping):
+            continue
+        count = as_int(uncertainty.get("compute_fields_uncertain_events"), 0)
+        if count > 0:
+            reasons.append(f"{label} has {count} events with uncertain rank-local compute fields")
+    return reasons
 
 
 def _non_negative_threshold(value: Any, name: str) -> float:
