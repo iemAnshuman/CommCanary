@@ -22,6 +22,7 @@ from commcanary.schema import (
     canary_execution_sha256,
     load_json,
     validate_canary,
+    validate_comparison,
     validate_report,
     validate_trace,
     write_json,
@@ -1644,6 +1645,30 @@ class CommCanaryTests(unittest.TestCase):
         self.assertTrue(
             any("phase 'rare-middle-tail' p95" in reason for reason in comparison["reasons"])
         )
+
+    def test_comparison_artifacts_are_validated(self):
+        canary = compile_trace(small_trace())
+        baseline = replay_canary(canary, seed=3)
+        candidate = replay_canary(canary, seed=3)
+        comparison = compare_reports(baseline, candidate)
+        validate_comparison(comparison)
+
+        malformed = copy.deepcopy(comparison)
+        malformed["delta"]["median_pct"] = 999.0
+        with self.assertRaises(SchemaError):
+            validate_comparison(malformed)
+
+        malformed = copy.deepcopy(comparison)
+        malformed["verdict"] = "pass"
+        malformed["reasons"] = ["p99 regression 99.0% exceeds 1.0%"]
+        with self.assertRaises(SchemaError):
+            validate_comparison(malformed)
+
+        malformed = copy.deepcopy(comparison)
+        malformed["compatibility"]["compatible"] = True
+        malformed["compatibility"]["reasons"] = ["reports use different replay protocol fingerprints"]
+        with self.assertRaises(SchemaError):
+            validate_comparison(malformed)
 
     def test_write_json_wraps_bad_parent_errors(self):
         with tempfile.TemporaryDirectory() as tmp:

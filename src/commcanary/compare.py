@@ -3,7 +3,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional
 
-from .schema import COMPARE_FORMAT, JsonDict, SchemaError, as_float, as_int, validate_report
+from .schema import (
+    COMPARE_FORMAT,
+    JsonDict,
+    SchemaError,
+    as_float,
+    as_int,
+    validate_comparison,
+    validate_report,
+)
 
 
 def compare_reports(
@@ -104,7 +112,7 @@ def compare_reports(
     if not reasons:
         reasons.append("candidate is within configured thresholds")
 
-    return {
+    comparison = {
         "format": COMPARE_FORMAT,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "verdict": verdict,
@@ -137,6 +145,8 @@ def compare_reports(
             "operation": op_deltas[0] if op_deltas else None,
         },
     }
+    validate_comparison(comparison)
+    return comparison
 
 
 def _breakdown_deltas(base_rows: Any, candidate_rows: Any) -> List[JsonDict]:

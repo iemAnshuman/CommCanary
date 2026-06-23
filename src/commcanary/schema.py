@@ -1062,6 +1062,105 @@ def _reconcile_report_samples(
     elif calibration is not None:
         raise SchemaError("report calibration requires observed_exposed_us samples")
 
+
+def validate_comparison(comparison: Mapping[str, Any]) -> None:
+    require_format(comparison, COMPARE_FORMAT, "comparison")
+    verdict = comparison.get("verdict")
+    if verdict not in {"pass", "warn", "fail"}:
+        raise SchemaError("comparison verdict must be pass, warn or fail")
+    reasons = comparison.get("reasons")
+    if not isinstance(reasons, list) or not reasons:
+        raise SchemaError("comparison must contain non-empty reasons")
+    if any(not isinstance(reason, str) or not reason for reason in reasons):
+        raise SchemaError("comparison reasons must be non-empty strings")
+    if verdict == "pass" and any(_comparison_reason_indicates_failure(reason) for reason in reasons):
+        raise SchemaError("comparison pass verdict contradicts failure reasons")
+
+    thresholds = comparison.get("thresholds")
+    if not isinstance(thresholds, Mapping):
+        raise SchemaError("comparison thresholds must be an object")
+    for key, value in thresholds.items():
+        if as_float(value) < 0.0:
+            raise SchemaError(f"comparison threshold {key} must be non-negative")
+
+    compatibility = comparison.get("compatibility")
+    if not isinstance(compatibility, Mapping):
+        raise SchemaError("comparison compatibility must be an object")
+    compatible = compatibility.get("compatible")
+    if not isinstance(compatible, bool):
+        raise SchemaError("comparison compatibility.compatible must be a boolean")
+    compatibility_reasons = compatibility.get("reasons", [])
+    if not isinstance(compatibility_reasons, list):
+        raise SchemaError("comparison compatibility.reasons must be a list")
+    if compatible and compatibility_reasons:
+        raise SchemaError("comparison compatibility cannot be true with mismatch reasons")
+    if not compatible and not compatibility_reasons:
+        raise SchemaError("comparison compatibility mismatch requires reasons")
+
+    baseline_metrics = _comparison_metrics(comparison, "baseline")
+    candidate_metrics = _comparison_metrics(comparison, "candidate")
+    delta = comparison.get("delta")
+    if not isinstance(delta, Mapping):
+        raise SchemaError("comparison delta must be an object")
+    for metric in ("median", "p95", "p99"):
+        base_value = as_float(baseline_metrics.get(f"{metric}_us"))
+        candidate_value = as_float(candidate_metrics.get(f"{metric}_us"))
+        expected_pct = _comparison_round_optional(_comparison_pct_delta(base_value, candidate_value))
+        if delta.get(f"{metric}_pct") != expected_pct:
+            raise SchemaError(f"comparison delta.{metric}_pct does not match embedded metrics")
+        if delta.get(f"{metric}_relative_status") != _comparison_delta_status(base_value, candidate_value):
+            raise SchemaError(f"comparison delta.{metric}_relative_status does not match embedded metrics")
+        expected_abs = round(candidate_value - base_value, 3)
+        if abs(as_float(delta.get(f"{metric}_absolute_us")) - expected_abs) > 0.001:
+            raise SchemaError(f"comparison delta.{metric}_absolute_us does not match embedded metrics")
+    hidden_delta = round(
+        as_float(candidate_metrics.get("communication_hidden_pct"))
+        - as_float(baseline_metrics.get("communication_hidden_pct")),
+        2,
+    )
+    if abs(as_float(delta.get("communication_hidden_pct_points")) - hidden_delta) > 0.01:
+        raise SchemaError("comparison delta.communication_hidden_pct_points does not match embedded metrics")
+
+
+def _comparison_metrics(comparison: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    section = comparison.get(key)
+    if not isinstance(section, Mapping) or not isinstance(section.get("metrics"), Mapping):
+        raise SchemaError(f"comparison {key}.metrics must be an object")
+    return section.get("metrics", {})
+
+
+def _comparison_pct_delta(base: float, candidate: float) -> Optional[float]:
+    if base == 0.0:
+        return 0.0 if candidate == 0.0 else None
+    return (candidate - base) / base * 100.0
+
+
+def _comparison_round_optional(value: Optional[float]) -> Optional[float]:
+    return None if value is None else round(value, 2)
+
+
+def _comparison_delta_status(base: float, candidate: float) -> str:
+    if base == 0.0 and candidate == 0.0:
+        return "both_zero"
+    if base == 0.0:
+        return "new_nonzero_regression" if candidate > 0.0 else "undefined"
+    return "finite"
+
+
+def _comparison_reason_indicates_failure(reason: str) -> bool:
+    lowered = reason.lower()
+    return any(
+        token in lowered
+        for token in (
+            "exceeds",
+            "dropped",
+            "different",
+            "mismatch",
+            "uncertain",
+            "regression",
+        )
+    )
+
 def merge_metadata(base: Optional[Mapping[str, Any]], override: Optional[Mapping[str, Any]]) -> JsonDict:
     merged: JsonDict = dict(base or {})
     merged.update(dict(override or {}))
