@@ -106,6 +106,8 @@ def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
 
 
 def require_format(data: Mapping[str, Any], expected: str, label: str) -> None:
+    if not isinstance(data, Mapping):
+        raise SchemaError(f"{label} must be a JSON object")
     actual = data.get("format")
     if actual != expected:
         raise SchemaError(f"{label} format must be {expected!r}, got {actual!r}")
@@ -290,6 +292,9 @@ def validate_trace(trace: Mapping[str, Any], *, allow_partial_arrivals: bool = F
         if "op" not in event:
             raise SchemaError(f"trace event {index} is missing 'op'")
         _validate_op(event.get("op"), f"trace event {index}", custom=event.get("custom_op") is True)
+        for text_key in ("phase", "group"):
+            if text_key in event:
+                _validate_nonempty_string(event.get(text_key), f"trace event {index} {text_key}")
         if "bytes" not in event:
             raise SchemaError(f"trace event {index} is missing 'bytes'")
         if as_int(event.get("bytes")) <= 0:
@@ -355,6 +360,10 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             if key not in event:
                 raise SchemaError(f"canary event {index} is missing {key!r}")
         _validate_op(event.get("op"), f"canary event {index}", custom=event.get("custom_op") is True)
+        for text_key in ("phase", "group"):
+            if text_key not in event:
+                raise SchemaError(f"canary event {index} is missing {text_key!r}")
+            _validate_nonempty_string(event.get(text_key), f"canary event {index} {text_key}")
         if as_int(event.get("bytes")) <= 0:
             raise SchemaError(f"canary event {index} bytes must be positive")
         repeat = as_int(event.get("repeat"))
@@ -933,6 +942,11 @@ def _validate_op(value: Any, label: str, *, custom: bool) -> None:
         raise SchemaError(f"{label} op must be a non-empty string")
     if value not in SUPPORTED_OPS and not custom:
         raise SchemaError(f"{label} op {value!r} is unsupported; set custom_op=true for custom operations")
+
+
+def _validate_nonempty_string(value: Any, label: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise SchemaError(f"{label} must be a non-empty string")
 
 
 def _validate_arrival_keys(raw: Any, ranks: List[int], label: str, *, allow_subset: bool) -> None:

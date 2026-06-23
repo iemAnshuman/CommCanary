@@ -15,7 +15,16 @@ from commcanary.compiler import compile_trace
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.html_report import render_compare_html, render_report_html
 from commcanary.replay import replay_canary
-from commcanary.schema import SchemaError, TRACE_FORMAT, as_int, load_json, validate_canary, validate_report, write_json
+from commcanary.schema import (
+    SchemaError,
+    TRACE_FORMAT,
+    as_int,
+    load_json,
+    validate_canary,
+    validate_report,
+    validate_trace,
+    write_json,
+)
 
 
 def small_trace():
@@ -1024,6 +1033,26 @@ class CommCanaryTests(unittest.TestCase):
 
         with self.assertRaises(SchemaError):
             as_int("9" * 5000)
+
+    def test_public_apis_reject_non_mapping_inputs_and_bad_categories(self):
+        with self.assertRaises(SchemaError):
+            validate_trace([])
+        with self.assertRaises(SchemaError):
+            compile_trace([])
+        with self.assertRaises(SchemaError):
+            validate_canary([])
+        with self.assertRaises(SchemaError):
+            validate_report([])
+
+        trace = small_trace()
+        trace["events"][0]["phase"] = []
+        with self.assertRaises(SchemaError):
+            compile_trace(trace)
+
+        canary = compile_trace(small_trace())
+        canary["events"][0]["group"] = {}
+        with self.assertRaises(SchemaError):
+            validate_canary(canary)
 
     def test_schema_rejects_interval_skew_and_report_closure_gaps(self):
         canary = compile_trace(small_trace())
