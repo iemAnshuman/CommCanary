@@ -41,7 +41,9 @@ def _build_parser() -> argparse.ArgumentParser:
     compile_parser.add_argument("--max-gap-error-us", type=float)
     compile_parser.add_argument("--max-skew-error-us", type=float)
     compile_parser.add_argument("--max-arrival-offset-error-us", type=float)
+    compile_parser.add_argument("--max-compute-before-error-us", type=float)
     compile_parser.add_argument("--max-overlap-error-us", type=float)
+    compile_parser.add_argument("--max-pressure-error", type=float)
     compile_parser.add_argument("--max-observed-exposed-error-us", type=float)
     compile_parser.add_argument("--max-prefix-gap-error-us", type=float)
     compile_parser.add_argument(
@@ -100,7 +102,9 @@ def _cmd_compile(args: Any) -> int:
         max_gap_error_us=args.max_gap_error_us,
         max_skew_error_us=args.max_skew_error_us,
         max_arrival_offset_error_us=args.max_arrival_offset_error_us,
+        max_compute_before_error_us=args.max_compute_before_error_us,
         max_overlap_error_us=args.max_overlap_error_us,
+        max_pressure_error=args.max_pressure_error,
         max_observed_exposed_error_us=args.max_observed_exposed_error_us,
         max_prefix_gap_error_us=args.max_prefix_gap_error_us,
         require_lossless_timing=args.lossless_timing,
@@ -121,6 +125,8 @@ def _cmd_compile(args: Any) -> int:
             "approximation: "
             f"gap<={fidelity.get('max_gap_error_us', 0.0)} us, "
             f"skew<={fidelity.get('max_skew_error_us', 0.0)} us, "
+            f"compute-before<={fidelity.get('max_compute_before_error_us', 0.0)} us, "
+            f"pressure<={fidelity.get('max_pressure_error', 0.0)}, "
             f"prefix-gap<={fidelity.get('max_prefix_gap_error_us', 0.0)} us"
         )
     return 0

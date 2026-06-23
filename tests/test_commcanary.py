@@ -1260,7 +1260,21 @@ class CommCanaryTests(unittest.TestCase):
             report_path = os.path.join(tmp, "report.json")
             html_path = os.path.join(tmp, "report.html")
             write_json(trace_path, small_trace())
-            self.assertEqual(cli_main(["compile", trace_path, "--output", canary_path]), 0)
+            self.assertEqual(
+                cli_main(
+                    [
+                        "compile",
+                        trace_path,
+                        "--output",
+                        canary_path,
+                        "--max-compute-before-error-us",
+                        "0",
+                        "--max-pressure-error",
+                        "0",
+                    ]
+                ),
+                0,
+            )
             self.assertEqual(cli_main(["replay", canary_path, "--output", report_path, "--include-samples"]), 0)
             self.assertEqual(cli_main(["report", report_path, "--output", html_path]), 0)
             self.assertTrue(os.path.exists(html_path))
