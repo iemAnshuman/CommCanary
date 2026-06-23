@@ -1359,6 +1359,43 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(comparison["delta"]["p99_pct"], 0.0)
         self.assertTrue(any("phase 'rare_finalize' p99" in reason for reason in comparison["reasons"]))
 
+    def test_p95_and_hidden_drop_regressions_fail_comparison(self):
+        baseline = replay_canary(compile_trace(small_trace()), seed=3)
+        candidate = copy.deepcopy(baseline)
+        for report, p95, hidden, mean in (
+            (baseline, 10.0, 90.0, 20.0),
+            (candidate, 90.0, 0.0, 30.0),
+        ):
+            report["canary"]["source_events"] = 100
+            report["metrics"].update(
+                {
+                    "count": 100,
+                    "median_us": 10.0,
+                    "p95_us": p95,
+                    "p99_us": 100.0,
+                    "max_us": 100.0,
+                    "mean_us": mean,
+                    "communication_hidden_pct": hidden,
+                }
+            )
+            row = {
+                "name": "decode",
+                "count": 100,
+                "median_us": 10.0,
+                "p95_us": p95,
+                "p99_us": 100.0,
+                "max_us": 100.0,
+                "mean_us": mean,
+            }
+            report["by_phase"] = [dict(row)]
+            report["by_op"] = [{**row, "name": "all_reduce"}]
+
+        comparison = compare_reports(baseline, candidate)
+        self.assertEqual(comparison["verdict"], "fail")
+        self.assertEqual(comparison["delta"]["p99_pct"], 0.0)
+        self.assertTrue(any("p95 regression" in reason for reason in comparison["reasons"]))
+        self.assertTrue(any("hidden percentage dropped" in reason for reason in comparison["reasons"]))
+
     def test_write_json_wraps_bad_parent_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent_file = os.path.join(tmp, "not-a-dir")
