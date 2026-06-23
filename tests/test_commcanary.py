@@ -1572,6 +1572,35 @@ class CommCanaryTests(unittest.TestCase):
         self.assertIsNone(comparison["delta"]["p99_pct"])
         self.assertEqual(comparison["delta"]["p99_relative_status"], "new_nonzero_regression")
 
+    def test_tiny_absolute_latency_delta_does_not_fail_relative_policy(self):
+        baseline = replay_canary(compile_trace(small_trace()), seed=3)
+        candidate = copy.deepcopy(baseline)
+        for report, value in ((baseline, 0.001), (candidate, 0.002)):
+            report["metrics"].update(
+                {
+                    "median_us": value,
+                    "p95_us": value,
+                    "p99_us": value,
+                    "max_us": value,
+                    "mean_us": value,
+                }
+            )
+            for key in ("by_phase", "by_op"):
+                for row in report[key]:
+                    row.update(
+                        {
+                            "median_us": value,
+                            "p95_us": value,
+                            "p99_us": value,
+                            "max_us": value,
+                            "mean_us": value,
+                        }
+                    )
+        comparison = compare_reports(baseline, candidate)
+        self.assertEqual(comparison["verdict"], "pass")
+        self.assertEqual(comparison["delta"]["p99_pct"], 100.0)
+        self.assertEqual(comparison["evaluations"][2]["threshold_result"], "pass")
+
     def test_rare_phase_regression_fails_global_verdict(self):
         baseline = replay_canary(compile_trace(small_trace()), seed=3)
         candidate = copy.deepcopy(baseline)

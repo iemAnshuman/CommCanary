@@ -1156,6 +1156,7 @@ def comparison_policy_evaluations(comparison: Mapping[str, Any]) -> List[JsonDic
             as_float(baseline_metrics.get(f"{metric}_us")),
             as_float(candidate_metrics.get(f"{metric}_us")),
             as_float(thresholds.get(f"{metric}_threshold_pct")),
+            as_float(thresholds.get(f"{metric}_absolute_threshold_us")),
         )
         for metric in ("median", "p95", "p99")
     ]
@@ -1178,6 +1179,7 @@ def comparison_policy_evaluations(comparison: Mapping[str, Any]) -> List[JsonDic
     if not isinstance(breakdown, Mapping):
         raise SchemaError("comparison breakdown_delta must be an object")
     breakdown_threshold = as_float(thresholds.get("breakdown_threshold_pct"))
+    breakdown_absolute_threshold = as_float(thresholds.get("breakdown_absolute_threshold_us"))
     for scope, key in (("phase", "by_phase"), ("operation", "by_op")):
         rows = breakdown.get(key, [])
         if not isinstance(rows, list):
@@ -1206,6 +1208,7 @@ def comparison_policy_evaluations(comparison: Mapping[str, Any]) -> List[JsonDic
                     base,
                     candidate,
                     breakdown_threshold,
+                    breakdown_absolute_threshold,
                 )
                 evaluation["name"] = name
                 evaluations.append(evaluation)
@@ -1255,6 +1258,7 @@ def _comparison_relative_evaluation(
     baseline: float,
     candidate: float,
     threshold_pct: float,
+    absolute_threshold_us: float,
 ) -> JsonDict:
     delta_pct = _comparison_pct_delta(baseline, candidate)
     return {
@@ -1265,7 +1269,14 @@ def _comparison_relative_evaluation(
         "relative_delta_pct": _comparison_round_optional(delta_pct),
         "relative_status": _comparison_delta_status(baseline, candidate),
         "threshold_pct": threshold_pct,
-        "threshold_result": _comparison_relative_result(delta_pct, baseline, candidate, threshold_pct),
+        "absolute_threshold_us": absolute_threshold_us,
+        "threshold_result": _comparison_relative_result(
+            delta_pct,
+            baseline,
+            candidate,
+            threshold_pct,
+            absolute_threshold_us,
+        ),
     }
 
 
@@ -1274,10 +1285,17 @@ def _comparison_relative_result(
     baseline: float,
     candidate: float,
     threshold_pct: float,
+    absolute_threshold_us: float,
 ) -> str:
-    if _comparison_exceeds_relative_threshold(delta_pct, baseline, candidate, threshold_pct):
+    if _comparison_exceeds_relative_threshold(delta_pct, baseline, candidate, threshold_pct, absolute_threshold_us):
         return "fail"
-    if _comparison_exceeds_relative_threshold(delta_pct, baseline, candidate, threshold_pct / 2.0):
+    if _comparison_exceeds_relative_threshold(
+        delta_pct,
+        baseline,
+        candidate,
+        threshold_pct / 2.0,
+        absolute_threshold_us / 2.0,
+    ):
         return "warn"
     return "pass"
 
@@ -1313,7 +1331,10 @@ def _comparison_exceeds_relative_threshold(
     base: float,
     candidate: float,
     threshold_pct: float,
+    absolute_threshold_us: float,
 ) -> bool:
+    if candidate - base <= absolute_threshold_us:
+        return False
     if delta_pct is None:
         return candidate > base
     return delta_pct > threshold_pct

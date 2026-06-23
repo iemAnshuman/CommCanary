@@ -76,8 +76,12 @@ def _build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--p99-threshold-pct", type=float, default=15.0)
     compare_parser.add_argument("--p95-threshold-pct", type=float, default=10.0)
     compare_parser.add_argument("--median-threshold-pct", type=float, default=8.0)
+    compare_parser.add_argument("--p99-absolute-threshold-us", type=float, default=1.0)
+    compare_parser.add_argument("--p95-absolute-threshold-us", type=float, default=1.0)
+    compare_parser.add_argument("--median-absolute-threshold-us", type=float, default=1.0)
     compare_parser.add_argument("--hidden-drop-threshold-points", type=float, default=5.0)
     compare_parser.add_argument("--breakdown-threshold-pct", type=float)
+    compare_parser.add_argument("--breakdown-absolute-threshold-us", type=float)
     compare_parser.add_argument("--allow-mismatch", action="store_true")
     compare_parser.set_defaults(func=_cmd_compare)
 
@@ -170,8 +174,12 @@ def _cmd_compare(args: Any) -> int:
         p99_threshold_pct=args.p99_threshold_pct,
         p95_threshold_pct=args.p95_threshold_pct,
         median_threshold_pct=args.median_threshold_pct,
+        p99_absolute_threshold_us=args.p99_absolute_threshold_us,
+        p95_absolute_threshold_us=args.p95_absolute_threshold_us,
+        median_absolute_threshold_us=args.median_absolute_threshold_us,
         hidden_drop_threshold_points=args.hidden_drop_threshold_points,
         breakdown_threshold_pct=args.breakdown_threshold_pct,
+        breakdown_absolute_threshold_us=args.breakdown_absolute_threshold_us,
         require_compatible=not args.allow_mismatch,
     )
     write_json(args.output, comparison)

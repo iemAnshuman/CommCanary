@@ -23,8 +23,12 @@ def compare_reports(
     p99_threshold_pct: float = 15.0,
     p95_threshold_pct: float = 10.0,
     median_threshold_pct: float = 8.0,
+    p99_absolute_threshold_us: float = 1.0,
+    p95_absolute_threshold_us: float = 1.0,
+    median_absolute_threshold_us: float = 1.0,
     hidden_drop_threshold_points: float = 5.0,
     breakdown_threshold_pct: Optional[float] = None,
+    breakdown_absolute_threshold_us: Optional[float] = None,
     require_compatible: bool = True,
 ) -> JsonDict:
     validate_report(baseline)
@@ -32,6 +36,11 @@ def compare_reports(
     p99_threshold_pct = _non_negative_threshold(p99_threshold_pct, "p99_threshold_pct")
     p95_threshold_pct = _non_negative_threshold(p95_threshold_pct, "p95_threshold_pct")
     median_threshold_pct = _non_negative_threshold(median_threshold_pct, "median_threshold_pct")
+    p99_absolute_threshold_us = _non_negative_threshold(p99_absolute_threshold_us, "p99_absolute_threshold_us")
+    p95_absolute_threshold_us = _non_negative_threshold(p95_absolute_threshold_us, "p95_absolute_threshold_us")
+    median_absolute_threshold_us = _non_negative_threshold(
+        median_absolute_threshold_us, "median_absolute_threshold_us"
+    )
     hidden_drop_threshold_points = _non_negative_threshold(
         hidden_drop_threshold_points, "hidden_drop_threshold_points"
     )
@@ -39,6 +48,11 @@ def compare_reports(
         breakdown_threshold_pct = p99_threshold_pct
     breakdown_threshold_pct = _non_negative_threshold(
         breakdown_threshold_pct, "breakdown_threshold_pct"
+    )
+    if breakdown_absolute_threshold_us is None:
+        breakdown_absolute_threshold_us = p99_absolute_threshold_us
+    breakdown_absolute_threshold_us = _non_negative_threshold(
+        breakdown_absolute_threshold_us, "breakdown_absolute_threshold_us"
     )
     compatibility = _compatibility(baseline, candidate)
     if require_compatible and not compatibility["compatible"]:
@@ -63,13 +77,15 @@ def compare_reports(
 
     verdict = "pass"
     reasons: List[str] = []
-    if _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct):
+    if _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct, p99_absolute_threshold_us):
         verdict = "fail"
         reasons.append(_regression_reason("p99", p99_delta, base_p99, cand_p99, p99_threshold_pct))
-    if _exceeds_relative_threshold(p95_delta, base_p95, cand_p95, p95_threshold_pct):
+    if _exceeds_relative_threshold(p95_delta, base_p95, cand_p95, p95_threshold_pct, p95_absolute_threshold_us):
         verdict = "fail"
         reasons.append(_regression_reason("p95", p95_delta, base_p95, cand_p95, p95_threshold_pct))
-    if _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct):
+    if _exceeds_relative_threshold(
+        median_delta, base_median, cand_median, median_threshold_pct, median_absolute_threshold_us
+    ):
         verdict = "fail"
         reasons.append(_regression_reason("median", median_delta, base_median, cand_median, median_threshold_pct))
     hidden_drop = max(0.0, -hidden_delta)
@@ -80,24 +96,40 @@ def compare_reports(
             f"{hidden_drop:.2f} points, exceeding {hidden_drop_threshold_points:.2f}"
         )
     breakdown_failures = (
-        _breakdown_regression_reasons("phase", phase_deltas, breakdown_threshold_pct)
-        + _breakdown_regression_reasons("operation", op_deltas, breakdown_threshold_pct)
+        _breakdown_regression_reasons("phase", phase_deltas, breakdown_threshold_pct, breakdown_absolute_threshold_us)
+        + _breakdown_regression_reasons(
+            "operation", op_deltas, breakdown_threshold_pct, breakdown_absolute_threshold_us
+        )
     )
     if breakdown_failures:
         verdict = "fail"
         reasons.extend(breakdown_failures)
     if verdict == "pass" and (
-        _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct / 2.0)
-        or _exceeds_relative_threshold(p95_delta, base_p95, cand_p95, p95_threshold_pct / 2.0)
-        or _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct / 2.0)
+        _exceeds_relative_threshold(
+            p99_delta, base_p99, cand_p99, p99_threshold_pct / 2.0, p99_absolute_threshold_us / 2.0
+        )
+        or _exceeds_relative_threshold(
+            p95_delta, base_p95, cand_p95, p95_threshold_pct / 2.0, p95_absolute_threshold_us / 2.0
+        )
+        or _exceeds_relative_threshold(
+            median_delta,
+            base_median,
+            cand_median,
+            median_threshold_pct / 2.0,
+            median_absolute_threshold_us / 2.0,
+        )
         or hidden_drop > hidden_drop_threshold_points / 2.0
     ):
         verdict = "warn"
         reasons.append("latency regression is below the failure threshold but large enough to inspect")
     if verdict == "pass":
         breakdown_warnings = (
-            _breakdown_regression_reasons("phase", phase_deltas, breakdown_threshold_pct / 2.0)
-            + _breakdown_regression_reasons("operation", op_deltas, breakdown_threshold_pct / 2.0)
+            _breakdown_regression_reasons(
+                "phase", phase_deltas, breakdown_threshold_pct / 2.0, breakdown_absolute_threshold_us / 2.0
+            )
+            + _breakdown_regression_reasons(
+                "operation", op_deltas, breakdown_threshold_pct / 2.0, breakdown_absolute_threshold_us / 2.0
+            )
         )
         if breakdown_warnings:
             verdict = "warn"
@@ -124,8 +156,12 @@ def compare_reports(
             "p99_threshold_pct": p99_threshold_pct,
             "p95_threshold_pct": p95_threshold_pct,
             "median_threshold_pct": median_threshold_pct,
+            "p99_absolute_threshold_us": p99_absolute_threshold_us,
+            "p95_absolute_threshold_us": p95_absolute_threshold_us,
+            "median_absolute_threshold_us": median_absolute_threshold_us,
             "hidden_drop_threshold_points": hidden_drop_threshold_points,
             "breakdown_threshold_pct": breakdown_threshold_pct,
+            "breakdown_absolute_threshold_us": breakdown_absolute_threshold_us,
         },
         "compatibility": compatibility,
         "uncertainty": uncertainty,
@@ -199,7 +235,12 @@ def _breakdown_deltas(base_rows: Any, candidate_rows: Any) -> List[JsonDict]:
     return rows
 
 
-def _breakdown_regression_reasons(scope: str, rows: List[JsonDict], threshold_pct: float) -> List[str]:
+def _breakdown_regression_reasons(
+    scope: str,
+    rows: List[JsonDict],
+    threshold_pct: float,
+    absolute_threshold_us: float,
+) -> List[str]:
     reasons: List[str] = []
     for row in rows:
         name = str(row.get("name"))
@@ -208,7 +249,7 @@ def _breakdown_regression_reasons(scope: str, rows: List[JsonDict], threshold_pc
             candidate = as_float(row.get(f"candidate_{metric}_us"))
             delta = row.get(f"{metric}_pct")
             delta_pct = as_float(delta) if delta is not None else None
-            if _exceeds_relative_threshold(delta_pct, base, candidate, threshold_pct):
+            if _exceeds_relative_threshold(delta_pct, base, candidate, threshold_pct, absolute_threshold_us):
                 reasons.append(
                     _regression_reason(f"{scope} {name!r} {metric}", delta_pct, base, candidate, threshold_pct)
                 )
@@ -239,7 +280,10 @@ def _exceeds_relative_threshold(
     base: float,
     candidate: float,
     threshold_pct: float,
+    absolute_threshold_us: float,
 ) -> bool:
+    if candidate - base <= absolute_threshold_us:
+        return False
     if delta_pct is None:
         return candidate > base
     return delta_pct > threshold_pct
