@@ -371,35 +371,35 @@ def _iter_timing_samples(step: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]
 def _pattern_repetitions(parent: Mapping[str, Any], pattern: List[Any]) -> Iterable[Mapping[str, Any]]:
     repeats = as_int(parent.get("pattern_repeats"), 1)
     expected_gap_sum = 0.0
+    child_weight = 0
     for child in pattern:
         if isinstance(child, Mapping):
             expected_gap_sum += _record_gap_sum(child)
+            child_weight += as_int(child.get("weight"), 1)
     expected_gap_sum *= repeats
     parent_gap_sum = _record_gap_sum(parent)
     residual = parent_gap_sum - expected_gap_sum
+    total_emitted = child_weight * repeats
 
-    emitted: List[Mapping[str, Any]] = []
-    for _ in range(repeats):
+    emitted = 0
+    for _repeat_index in range(repeats):
         for child in pattern:
             if isinstance(child, Mapping):
-                emitted.extend(_sample_repetitions(child))
-    if not emitted:
-        return
-    for index, item in enumerate(emitted):
-        if index == len(emitted) - 1 and abs(residual) > 0.0:
-            adjusted = dict(item)
-            adjusted["gap_us"] = as_float(adjusted.get("gap_us"), 0.0) + residual
-            yield adjusted
-        else:
-            yield item
+                for item in _sample_repetitions(child):
+                    emitted += 1
+                    if emitted == total_emitted and abs(residual) > 0.0:
+                        adjusted = dict(item)
+                        adjusted["gap_us"] = as_float(adjusted.get("gap_us"), 0.0) + residual
+                        yield adjusted
+                    else:
+                        yield item
 
 
-def _sample_repetitions(sample: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
     weight = as_int(sample.get("weight"), 1)
     gap_sum_us = _record_gap_sum(sample)
     base_gap_us = gap_sum_us / weight
     consumed = 0.0
-    repeated: List[Mapping[str, Any]] = []
     for index in range(weight):
         item = dict(sample)
         gap_us = gap_sum_us - consumed if index == weight - 1 else base_gap_us
@@ -407,8 +407,7 @@ def _sample_repetitions(sample: Mapping[str, Any]) -> List[Mapping[str, Any]]:
             consumed += gap_us
         item["gap_us"] = gap_us
         item["weight"] = 1
-        repeated.append(item)
-    return repeated
+        yield item
 
 
 def _record_gap_sum(sample: Mapping[str, Any]) -> float:
