@@ -100,9 +100,53 @@ def replay_protocol_sha256(protocol: Mapping[str, Any]) -> str:
 def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
     stable = {
         "format": canary.get("format"),
-        "events": canary.get("events", []),
+        "events": [
+            _execution_event_projection(event)
+            for event in canary.get("events", [])
+            if isinstance(event, Mapping)
+        ],
     }
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
+
+
+def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
+    projected: JsonDict = {}
+    for key in ("op", "bytes", "ranks", "rank_count", "group", "concurrent_groups"):
+        if key in event:
+            projected[key] = event.get(key)
+    samples = event.get("timing_samples")
+    if isinstance(samples, list):
+        projected["timing_samples"] = [
+            _execution_timing_projection(sample)
+            for sample in samples
+            if isinstance(sample, Mapping)
+        ]
+    return projected
+
+
+def _execution_timing_projection(sample: Mapping[str, Any]) -> JsonDict:
+    projected: JsonDict = {}
+    for key in (
+        "gap_us",
+        "gap_sum_us",
+        "arrival_offsets_us",
+        "compute_before_us",
+        "compute_overlap_us",
+        "compute_pressure",
+        "observed_exposed_us",
+        "weight",
+        "pattern_repeats",
+    ):
+        if key in sample:
+            projected[key] = sample.get(key)
+    pattern = sample.get("timing_pattern")
+    if isinstance(pattern, list):
+        projected["timing_pattern"] = [
+            _execution_timing_projection(child)
+            for child in pattern
+            if isinstance(child, Mapping)
+        ]
+    return projected
 
 
 def require_format(data: Mapping[str, Any], expected: str, label: str) -> None:

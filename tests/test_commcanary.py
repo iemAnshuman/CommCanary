@@ -19,6 +19,7 @@ from commcanary.schema import (
     SchemaError,
     TRACE_FORMAT,
     as_int,
+    canary_execution_sha256,
     load_json,
     validate_canary,
     validate_report,
@@ -1150,6 +1151,24 @@ class CommCanaryTests(unittest.TestCase):
         )
         comparison = compare_reports(baseline, candidate)
         self.assertTrue(comparison["compatibility"]["compatible"])
+
+    def test_semantic_canary_hash_ignores_non_executed_event_fields(self):
+        baseline_canary = compile_trace(small_trace())
+        candidate_canary = copy.deepcopy(baseline_canary)
+        candidate_canary["events"][0]["source"]["first_id"] = "renamed-source-event"
+        candidate_canary["events"][0]["source"]["digest"] = "0" * 64
+        candidate_canary["events"][0]["arrival_skew_us"] = 999.0
+        candidate_canary["events"][0]["compute_pressure"] = 1.25
+        candidate_canary["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(candidate_canary)
+
+        self.assertEqual(
+            baseline_canary["compiler"]["execution_semantic_sha256"],
+            candidate_canary["compiler"]["execution_semantic_sha256"],
+        )
+        baseline = replay_canary(baseline_canary, seed=3)
+        candidate = replay_canary(candidate_canary, seed=3)
+        self.assertEqual(baseline["metrics"], candidate["metrics"])
+        self.assertTrue(compare_reports(baseline, candidate)["compatibility"]["compatible"])
 
     def test_zero_baseline_regression_is_not_clamped_to_100_percent(self):
         baseline = replay_canary(compile_trace(small_trace()), seed=3)
