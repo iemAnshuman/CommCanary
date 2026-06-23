@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "commcanary"
+version = "0.2.0"
+description = "Workload-derived communication canaries for distributed LLM inference."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "CommCanary contributors" }
+]
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+commcanary = "commcanary.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

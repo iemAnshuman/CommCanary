@@ -1,0 +1,107 @@
+from __future__ import annotations
+
+import random
+from pathlib import Path
+
+from commcanary.schema import TRACE_FORMAT, write_json
+
+
+def main() -> None:
+    rng = random.Random(70)
+    ranks = list(range(8))
+    events = []
+    now = 0.0
+    event_id = 0
+
+    for step in range(8):
+        skew = 6.0 + step * 0.8 + rng.uniform(-0.6, 0.8)
+        events.append(
+            event(
+                event_id,
+                "prefill",
+                "all_reduce",
+                256 * 1024,
+                ranks,
+                now,
+                skew,
+                compute_before_us=55 + rng.uniform(-4, 3),
+                compute_overlap_us=34 + rng.uniform(-3, 5),
+            )
+        )
+        event_id += 1
+        now += 74 + rng.uniform(-4, 5)
+
+    for token in range(48):
+        size = 64 * 1024 if token % 3 == 0 else 128 * 1024
+        skew = 9 + (token % 7) * 2.2 + rng.uniform(-1.0, 1.2)
+        if token in (17, 31, 43):
+            skew += 16.0
+        events.append(
+            event(
+                event_id,
+                "decode",
+                "all_reduce",
+                size,
+                ranks,
+                now,
+                skew,
+                compute_before_us=28 + rng.uniform(-2, 3),
+                compute_overlap_us=18 + rng.uniform(-3, 4),
+            )
+        )
+        event_id += 1
+        now += 42 + rng.uniform(-3, 4)
+
+    trace = {
+        "format": TRACE_FORMAT,
+        "workload": {
+            "name": "llama70b-tp8-synthetic",
+            "model": "70B",
+            "tensor_parallel": 8,
+            "notes": "Synthetic decode-heavy trace for CommCanary MVP demos.",
+        },
+        "system": {
+            "gpu": "simulated 8x NVIDIA",
+            "backend": "PyTorch NCCL",
+        },
+        "events": events,
+    }
+    output = Path(__file__).parent / "traces" / "llama70b_tp8_trace.json"
+    write_json(str(output), trace)
+    print(output)
+
+
+def event(
+    event_id,
+    phase,
+    op,
+    bytes_,
+    ranks,
+    start_us,
+    skew_us,
+    *,
+    compute_before_us,
+    compute_overlap_us,
+):
+    offsets = {}
+    for rank in ranks:
+        fraction = rank / max(1, len(ranks) - 1)
+        offsets[str(rank)] = round(skew_us * fraction + (rank % 2) * 0.7, 3)
+    return {
+        "id": f"{phase}-{event_id:04d}",
+        "phase": phase,
+        "op": op,
+        "bytes": bytes_,
+        "ranks": ranks,
+        "group": "tp0",
+        "start_us": round(start_us, 3),
+        "rank_arrival_us": offsets,
+        "compute_before_us": round(compute_before_us, 3),
+        "compute_overlap_us": round(compute_overlap_us, 3),
+        "compute_pressure": 0.62 if phase == "decode" else 0.48,
+        "concurrent_groups": 1,
+    }
+
+
+if __name__ == "__main__":
+    main()

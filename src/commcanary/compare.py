@@ -1,0 +1,220 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Mapping, Optional
+
+from .schema import COMPARE_FORMAT, JsonDict, SchemaError, as_float, as_int, validate_report
+
+
+def compare_reports(
+    baseline: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    *,
+    p99_threshold_pct: float = 15.0,
+    median_threshold_pct: float = 8.0,
+    require_compatible: bool = True,
+) -> JsonDict:
+    validate_report(baseline)
+    validate_report(candidate)
+    p99_threshold_pct = _non_negative_threshold(p99_threshold_pct, "p99_threshold_pct")
+    median_threshold_pct = _non_negative_threshold(median_threshold_pct, "median_threshold_pct")
+    compatibility = _compatibility(baseline, candidate)
+    if require_compatible and not compatibility["compatible"]:
+        raise SchemaError("; ".join(compatibility["reasons"]))
+
+    base_metrics = baseline.get("metrics", {})
+    cand_metrics = candidate.get("metrics", {})
+    base_median = as_float(base_metrics.get("median_us"))
+    cand_median = as_float(cand_metrics.get("median_us"))
+    base_p95 = as_float(base_metrics.get("p95_us"))
+    cand_p95 = as_float(cand_metrics.get("p95_us"))
+    base_p99 = as_float(base_metrics.get("p99_us"))
+    cand_p99 = as_float(cand_metrics.get("p99_us"))
+    median_delta = _pct_delta(base_median, cand_median)
+    p95_delta = _pct_delta(base_p95, cand_p95)
+    p99_delta = _pct_delta(base_p99, cand_p99)
+    hidden_delta = as_float(cand_metrics.get("communication_hidden_pct")) - as_float(
+        base_metrics.get("communication_hidden_pct")
+    )
+
+    verdict = "pass"
+    reasons: List[str] = []
+    if _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct):
+        verdict = "fail"
+        reasons.append(_regression_reason("p99", p99_delta, base_p99, cand_p99, p99_threshold_pct))
+    if _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct):
+        verdict = "fail"
+        reasons.append(_regression_reason("median", median_delta, base_median, cand_median, median_threshold_pct))
+    if verdict == "pass" and (
+        _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct / 2.0)
+        or _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct / 2.0)
+    ):
+        verdict = "warn"
+        reasons.append("latency regression is below the failure threshold but large enough to inspect")
+    if not compatibility["compatible"]:
+        if verdict == "pass":
+            verdict = "warn"
+        reasons.extend(compatibility["reasons"])
+    if not reasons:
+        reasons.append("candidate is within configured thresholds")
+
+    phase_deltas = _breakdown_deltas(baseline.get("by_phase", []), candidate.get("by_phase", []))
+    op_deltas = _breakdown_deltas(baseline.get("by_op", []), candidate.get("by_op", []))
+
+    return {
+        "format": COMPARE_FORMAT,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "verdict": verdict,
+        "reasons": reasons,
+        "thresholds": {
+            "p99_threshold_pct": p99_threshold_pct,
+            "median_threshold_pct": median_threshold_pct,
+        },
+        "compatibility": compatibility,
+        "baseline": {"backend": baseline.get("backend", {}), "metrics": base_metrics},
+        "candidate": {"backend": candidate.get("backend", {}), "metrics": cand_metrics},
+        "delta": {
+            "median_pct": _round_optional(median_delta),
+            "median_relative_status": _delta_status(base_median, cand_median),
+            "p95_pct": _round_optional(p95_delta),
+            "p95_relative_status": _delta_status(base_p95, cand_p95),
+            "p99_pct": _round_optional(p99_delta),
+            "p99_relative_status": _delta_status(base_p99, cand_p99),
+            "median_absolute_us": round(cand_median - base_median, 3),
+            "p95_absolute_us": round(cand_p95 - base_p95, 3),
+            "p99_absolute_us": round(cand_p99 - base_p99, 3),
+            "communication_hidden_pct_points": round(hidden_delta, 2),
+        },
+        "breakdown_delta": {"by_phase": phase_deltas, "by_op": op_deltas},
+        "worst_regressions": {
+            "phase": phase_deltas[0] if phase_deltas else None,
+            "operation": op_deltas[0] if op_deltas else None,
+        },
+    }
+
+
+def _breakdown_deltas(base_rows: Any, candidate_rows: Any) -> List[JsonDict]:
+    base = {
+        str(row.get("name")): row
+        for row in base_rows
+        if isinstance(row, Mapping) and isinstance(row.get("name"), str)
+    }
+    candidate = {
+        str(row.get("name")): row
+        for row in candidate_rows
+        if isinstance(row, Mapping) and isinstance(row.get("name"), str)
+    }
+    rows: List[JsonDict] = []
+    for name in sorted(set(base) | set(candidate)):
+        base_row = base.get(name)
+        candidate_row = candidate.get(name)
+        row: JsonDict = {
+            "name": name,
+            "baseline_count": as_int(base_row.get("count")) if base_row else 0,
+            "candidate_count": as_int(candidate_row.get("count")) if candidate_row else 0,
+            "status": "matched" if base_row and candidate_row else ("added" if candidate_row else "removed"),
+        }
+        for key in ("median_us", "p95_us", "p99_us"):
+            base_value = as_float(base_row.get(key)) if base_row else 0.0
+            candidate_value = as_float(candidate_row.get(key)) if candidate_row else 0.0
+            row[f"baseline_{key}"] = base_value
+            row[f"candidate_{key}"] = candidate_value
+            pct_delta = _pct_delta(base_value, candidate_value)
+            row[f"{key[:-3]}_pct"] = _round_optional(pct_delta)
+            row[f"{key[:-3]}_relative_status"] = _delta_status(base_value, candidate_value)
+            row[f"{key[:-3]}_absolute_us"] = round(candidate_value - base_value, 3)
+        rows.append(row)
+    rows.sort(
+        key=lambda row: (
+            row.get("p99_relative_status") == "new_nonzero_regression",
+            as_float(row.get("p99_pct")),
+            as_float(row.get("p99_absolute_us")),
+            as_float(row.get("median_pct")),
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _pct_delta(base: float, candidate: float) -> Optional[float]:
+    if base == 0.0:
+        return 0.0 if candidate == 0.0 else None
+    return (candidate - base) / base * 100.0
+
+
+def _round_optional(value: Optional[float]) -> Optional[float]:
+    return None if value is None else round(value, 2)
+
+
+def _delta_status(base: float, candidate: float) -> str:
+    if base == 0.0 and candidate == 0.0:
+        return "both_zero"
+    if base == 0.0:
+        return "new_nonzero_regression" if candidate > 0.0 else "undefined"
+    return "finite"
+
+
+def _exceeds_relative_threshold(
+    delta_pct: Optional[float],
+    base: float,
+    candidate: float,
+    threshold_pct: float,
+) -> bool:
+    if delta_pct is None:
+        return candidate > base
+    return delta_pct > threshold_pct
+
+
+def _regression_reason(
+    label: str,
+    delta_pct: Optional[float],
+    base: float,
+    candidate: float,
+    threshold_pct: float,
+) -> str:
+    if delta_pct is None:
+        return (
+            f"{label} regression is new nonzero latency "
+            f"({candidate - base:.3f} us absolute delta from a zero baseline)"
+        )
+    return f"{label} regression {delta_pct:.1f}% exceeds {threshold_pct:.1f}%"
+
+
+def _compatibility(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> JsonDict:
+    reasons: List[str] = []
+    base_canary = baseline.get("canary", {})
+    cand_canary = candidate.get("canary", {})
+    base_semantic = base_canary.get("execution_semantic_sha256")
+    cand_semantic = cand_canary.get("execution_semantic_sha256")
+    if base_semantic and cand_semantic:
+        if base_semantic != cand_semantic:
+            reasons.append("reports were produced from different executable canary fingerprints")
+    elif base_canary.get("sha256") != cand_canary.get("sha256"):
+        reasons.append("reports were produced from different canary fingerprints")
+    base_model = baseline.get("simulation_model", {})
+    cand_model = candidate.get("simulation_model", {})
+    if base_model.get("version") != cand_model.get("version"):
+        reasons.append("reports use different simulation model versions")
+    base_protocol = baseline.get("replay_protocol", {})
+    cand_protocol = candidate.get("replay_protocol", {})
+    if base_protocol.get("sha256") != cand_protocol.get("sha256"):
+        reasons.append("reports use different replay protocol fingerprints")
+    return {
+        "compatible": not reasons,
+        "reasons": reasons,
+        "baseline_canary_sha256": base_canary.get("sha256"),
+        "candidate_canary_sha256": cand_canary.get("sha256"),
+        "baseline_execution_semantic_sha256": base_semantic,
+        "candidate_execution_semantic_sha256": cand_semantic,
+        "baseline_simulation_model": base_model.get("version"),
+        "candidate_simulation_model": cand_model.get("version"),
+        "baseline_replay_protocol_sha256": base_protocol.get("sha256"),
+        "candidate_replay_protocol_sha256": cand_protocol.get("sha256"),
+    }
+
+
+def _non_negative_threshold(value: Any, name: str) -> float:
+    parsed = as_float(value)
+    if parsed < 0.0:
+        raise SchemaError(f"{name} must be non-negative")
+    return parsed
