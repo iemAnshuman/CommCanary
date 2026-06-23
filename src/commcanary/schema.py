@@ -111,9 +111,14 @@ def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
 
 def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
     projected: JsonDict = {}
-    for key in ("op", "bytes", "ranks", "rank_count", "group", "concurrent_groups"):
+    for key in ("phase", "op", "bytes", "ranks", "group", "concurrent_groups"):
         if key in event:
             projected[key] = event.get(key)
+    ranks = event.get("ranks")
+    if isinstance(ranks, list):
+        projected["rank_count"] = len(ranks)
+    elif "rank_count" in event:
+        projected["rank_count"] = event.get("rank_count")
     samples = event.get("timing_samples")
     if isinstance(samples, list):
         projected["timing_samples"] = [
@@ -126,9 +131,12 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
 
 def _execution_timing_projection(sample: Mapping[str, Any]) -> JsonDict:
     projected: JsonDict = {}
+    weight = as_int(sample.get("weight"), 1)
+    if "gap_sum_us" in sample:
+        projected["gap_sum_us"] = round(as_float(sample.get("gap_sum_us")), 9)
+    elif "gap_us" in sample:
+        projected["gap_sum_us"] = round(as_float(sample.get("gap_us"), 0.0) * weight, 9)
     for key in (
-        "gap_us",
-        "gap_sum_us",
         "arrival_offsets_us",
         "compute_before_us",
         "compute_overlap_us",

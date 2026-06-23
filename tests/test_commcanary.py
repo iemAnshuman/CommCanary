@@ -1235,6 +1235,32 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(baseline["metrics"], candidate["metrics"])
         self.assertTrue(compare_reports(baseline, candidate)["compatibility"]["compatible"])
 
+    def test_semantic_canary_hash_canonicalizes_rank_count_but_includes_phase(self):
+        baseline_canary = compile_trace(small_trace())
+        without_rank_count = copy.deepcopy(baseline_canary)
+        without_rank_count["events"][0].pop("rank_count")
+        without_rank_count["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(without_rank_count)
+        self.assertEqual(
+            baseline_canary["compiler"]["execution_semantic_sha256"],
+            without_rank_count["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertTrue(
+            compare_reports(
+                replay_canary(baseline_canary, seed=3),
+                replay_canary(without_rank_count, seed=3),
+            )["compatibility"]["compatible"]
+        )
+
+        changed_phase = copy.deepcopy(baseline_canary)
+        changed_phase["events"][0]["phase"] = "prefill"
+        changed_phase["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_phase)
+        self.assertNotEqual(
+            baseline_canary["compiler"]["execution_semantic_sha256"],
+            changed_phase["compiler"]["execution_semantic_sha256"],
+        )
+        with self.assertRaises(SchemaError):
+            compare_reports(replay_canary(baseline_canary, seed=3), replay_canary(changed_phase, seed=3))
+
     def test_zero_baseline_regression_is_not_clamped_to_100_percent(self):
         baseline = replay_canary(compile_trace(small_trace()), seed=3)
         candidate = copy.deepcopy(baseline)
