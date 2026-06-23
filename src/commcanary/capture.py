@@ -335,6 +335,8 @@ def merge_trace_shards(shard_dir: str, *, workload_name: str) -> JsonDict:
             copied["_aligned_start_us"] = as_float(event.get("start_us"), 0.0) + (clock_offset_us or 0.0)
             buckets.setdefault(_coalesce_key(copied), []).append(copied)
 
+    if len(session_ids) > 1:
+        raise SchemaError("trace shard directory must contain exactly one capture session")
     if strict_sharded_merge and len(session_ids) != 1:
         raise SchemaError("trace shard directory must contain exactly one capture session")
 

@@ -1835,6 +1835,27 @@ class CommCanaryTests(unittest.TestCase):
             with self.assertRaises(SchemaError):
                 merge_trace_shards(tmp, workload_name="mixed")
 
+        with tempfile.TemporaryDirectory() as tmp:
+            events = []
+            for index, session in enumerate(("s0", "s1")):
+                events.append(
+                    {
+                        "id": f"event-{index}",
+                        "capture_session_id": session,
+                        "op": "all_reduce",
+                        "bytes": 16,
+                        "ranks": [0],
+                        "start_us": float(index),
+                        "rank_arrival_us": {"0": 0.0},
+                    }
+                )
+            write_json(
+                os.path.join(tmp, "single.trace.json"),
+                {"format": TRACE_FORMAT, "workload": {"name": "mixed"}, "system": {}, "events": events},
+            )
+            with self.assertRaises(SchemaError):
+                merge_trace_shards(tmp, workload_name="mixed")
+
 
 
 if __name__ == "__main__":
