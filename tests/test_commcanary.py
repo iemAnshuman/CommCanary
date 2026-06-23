@@ -1230,6 +1230,75 @@ class CommCanaryTests(unittest.TestCase):
         self.assertIsNone(comparison["delta"]["p99_pct"])
         self.assertEqual(comparison["delta"]["p99_relative_status"], "new_nonzero_regression")
 
+    def test_rare_phase_regression_fails_global_verdict(self):
+        baseline = replay_canary(compile_trace(small_trace()), seed=3)
+        candidate = copy.deepcopy(baseline)
+        for report in (baseline, candidate):
+            report["canary"]["source_events"] = 1000
+            report["metrics"].update(
+                {
+                    "count": 1000,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 10.0,
+                    "max_us": 10.0,
+                    "mean_us": 10.0,
+                    "arrival_skew_median_us": 0.0,
+                    "arrival_skew_p95_us": 0.0,
+                    "arrival_skew_max_us": 0.0,
+                    "avg_rank_wait_median_us": 0.0,
+                    "communication_hidden_pct": 0.0,
+                }
+            )
+            report["by_phase"] = [
+                {
+                    "name": "common",
+                    "count": 999,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 10.0,
+                    "max_us": 10.0,
+                    "mean_us": 10.0,
+                },
+                {
+                    "name": "rare_finalize",
+                    "count": 1,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 10.0,
+                    "max_us": 10.0,
+                    "mean_us": 10.0,
+                },
+            ]
+            report["by_op"] = [
+                {
+                    "name": "all_reduce",
+                    "count": 1000,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 10.0,
+                    "max_us": 10.0,
+                    "mean_us": 10.0,
+                }
+            ]
+        candidate["metrics"]["max_us"] = 1000.0
+        candidate["metrics"]["mean_us"] = 10.99
+        candidate["by_phase"][1].update(
+            {
+                "median_us": 1000.0,
+                "p95_us": 1000.0,
+                "p99_us": 1000.0,
+                "max_us": 1000.0,
+                "mean_us": 1000.0,
+            }
+        )
+        candidate["by_op"][0].update({"max_us": 1000.0, "mean_us": 10.99})
+
+        comparison = compare_reports(baseline, candidate, p99_threshold_pct=15.0)
+        self.assertEqual(comparison["verdict"], "fail")
+        self.assertEqual(comparison["delta"]["p99_pct"], 0.0)
+        self.assertTrue(any("phase 'rare_finalize' p99" in reason for reason in comparison["reasons"]))
+
     def test_write_json_wraps_bad_parent_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent_file = os.path.join(tmp, "not-a-dir")

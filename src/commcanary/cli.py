@@ -75,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--html")
     compare_parser.add_argument("--p99-threshold-pct", type=float, default=15.0)
     compare_parser.add_argument("--median-threshold-pct", type=float, default=8.0)
+    compare_parser.add_argument("--breakdown-threshold-pct", type=float)
     compare_parser.add_argument("--allow-mismatch", action="store_true")
     compare_parser.set_defaults(func=_cmd_compare)
 
@@ -166,6 +167,7 @@ def _cmd_compare(args: Any) -> int:
         candidate,
         p99_threshold_pct=args.p99_threshold_pct,
         median_threshold_pct=args.median_threshold_pct,
+        breakdown_threshold_pct=args.breakdown_threshold_pct,
         require_compatible=not args.allow_mismatch,
     )
     write_json(args.output, comparison)

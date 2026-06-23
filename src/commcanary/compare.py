@@ -12,12 +12,18 @@ def compare_reports(
     *,
     p99_threshold_pct: float = 15.0,
     median_threshold_pct: float = 8.0,
+    breakdown_threshold_pct: Optional[float] = None,
     require_compatible: bool = True,
 ) -> JsonDict:
     validate_report(baseline)
     validate_report(candidate)
     p99_threshold_pct = _non_negative_threshold(p99_threshold_pct, "p99_threshold_pct")
     median_threshold_pct = _non_negative_threshold(median_threshold_pct, "median_threshold_pct")
+    if breakdown_threshold_pct is None:
+        breakdown_threshold_pct = p99_threshold_pct
+    breakdown_threshold_pct = _non_negative_threshold(
+        breakdown_threshold_pct, "breakdown_threshold_pct"
+    )
     compatibility = _compatibility(baseline, candidate)
     if require_compatible and not compatibility["compatible"]:
         raise SchemaError("; ".join(compatibility["reasons"]))
@@ -36,6 +42,8 @@ def compare_reports(
     hidden_delta = as_float(cand_metrics.get("communication_hidden_pct")) - as_float(
         base_metrics.get("communication_hidden_pct")
     )
+    phase_deltas = _breakdown_deltas(baseline.get("by_phase", []), candidate.get("by_phase", []))
+    op_deltas = _breakdown_deltas(baseline.get("by_op", []), candidate.get("by_op", []))
 
     verdict = "pass"
     reasons: List[str] = []
@@ -45,21 +53,33 @@ def compare_reports(
     if _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct):
         verdict = "fail"
         reasons.append(_regression_reason("median", median_delta, base_median, cand_median, median_threshold_pct))
+    breakdown_failures = (
+        _breakdown_regression_reasons("phase", phase_deltas, breakdown_threshold_pct)
+        + _breakdown_regression_reasons("operation", op_deltas, breakdown_threshold_pct)
+    )
+    if breakdown_failures:
+        verdict = "fail"
+        reasons.extend(breakdown_failures)
     if verdict == "pass" and (
         _exceeds_relative_threshold(p99_delta, base_p99, cand_p99, p99_threshold_pct / 2.0)
         or _exceeds_relative_threshold(median_delta, base_median, cand_median, median_threshold_pct / 2.0)
     ):
         verdict = "warn"
         reasons.append("latency regression is below the failure threshold but large enough to inspect")
+    if verdict == "pass":
+        breakdown_warnings = (
+            _breakdown_regression_reasons("phase", phase_deltas, breakdown_threshold_pct / 2.0)
+            + _breakdown_regression_reasons("operation", op_deltas, breakdown_threshold_pct / 2.0)
+        )
+        if breakdown_warnings:
+            verdict = "warn"
+            reasons.extend(breakdown_warnings)
     if not compatibility["compatible"]:
         if verdict == "pass":
             verdict = "warn"
         reasons.extend(compatibility["reasons"])
     if not reasons:
         reasons.append("candidate is within configured thresholds")
-
-    phase_deltas = _breakdown_deltas(baseline.get("by_phase", []), candidate.get("by_phase", []))
-    op_deltas = _breakdown_deltas(baseline.get("by_op", []), candidate.get("by_op", []))
 
     return {
         "format": COMPARE_FORMAT,
@@ -69,6 +89,7 @@ def compare_reports(
         "thresholds": {
             "p99_threshold_pct": p99_threshold_pct,
             "median_threshold_pct": median_threshold_pct,
+            "breakdown_threshold_pct": breakdown_threshold_pct,
         },
         "compatibility": compatibility,
         "baseline": {"backend": baseline.get("backend", {}), "metrics": base_metrics},
@@ -134,6 +155,23 @@ def _breakdown_deltas(base_rows: Any, candidate_rows: Any) -> List[JsonDict]:
         reverse=True,
     )
     return rows
+
+
+def _breakdown_regression_reasons(scope: str, rows: List[JsonDict], threshold_pct: float) -> List[str]:
+    reasons: List[str] = []
+    for row in rows:
+        name = str(row.get("name"))
+        for metric in ("p99", "median"):
+            base = as_float(row.get(f"baseline_{metric}_us"))
+            candidate = as_float(row.get(f"candidate_{metric}_us"))
+            delta = row.get(f"{metric}_pct")
+            delta_pct = as_float(delta) if delta is not None else None
+            if _exceeds_relative_threshold(delta_pct, base, candidate, threshold_pct):
+                reasons.append(
+                    _regression_reason(f"{scope} {name!r} {metric}", delta_pct, base, candidate, threshold_pct)
+                )
+                break
+    return reasons
 
 
 def _pct_delta(base: float, candidate: float) -> Optional[float]:
