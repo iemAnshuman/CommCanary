@@ -1072,6 +1072,8 @@ def _validate_timing_record(sample: Mapping[str, Any], ranks: List[int], label: 
     approximation = sample.get("approximation")
     if approximation is not None and approximation != "bounded_interval":
         raise SchemaError(f"{label} approximation is unsupported")
+    if approximation == "bounded_interval":
+        _validate_bounded_interval_evidence(sample, label)
     if "weight" in sample and "source_start" in sample and "source_end" in sample:
         expected_weight = as_int(sample.get("source_end")) - as_int(sample.get("source_start")) + 1
         if as_int(sample.get("weight")) != expected_weight:
@@ -1093,6 +1095,29 @@ def _accumulate_fidelity_maxima(maxima: MutableMapping[str, float], sample: Mapp
     for key in FIDELITY_ERROR_FIELDS:
         if key in sample:
             maxima[key] = max(maxima[key], as_float(sample.get(key)))
+
+
+def _validate_bounded_interval_evidence(sample: Mapping[str, Any], label: str) -> None:
+    required = (
+        "source_index",
+        "source_start",
+        "source_end",
+        "weight",
+        "gap_sum_us",
+        "max_gap_error_us",
+        "max_skew_error_us",
+        "max_arrival_offset_error_us",
+        "max_compute_before_error_us",
+        "max_overlap_error_us",
+        "max_pressure_error",
+        "representative_gap_error_us",
+        "max_prefix_gap_error_us",
+    )
+    for key in required:
+        if key not in sample:
+            raise SchemaError(f"{label} bounded interval missing {key!r}")
+    if "observed_exposed_us" in sample and "max_observed_exposed_error_us" not in sample:
+        raise SchemaError(f"{label} bounded interval missing 'max_observed_exposed_error_us'")
 
 
 def _validate_event_summary_matches_single_sample(

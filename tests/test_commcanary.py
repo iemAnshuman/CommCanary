@@ -152,6 +152,16 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             validate_canary(malformed)
 
+        malformed = copy.deepcopy(canary)
+        interval = next(
+            sample
+            for sample in malformed["events"][0]["timing_samples"]
+            if sample.get("approximation") == "bounded_interval"
+        )
+        interval.pop("max_pressure_error")
+        with self.assertRaises(SchemaError):
+            validate_canary(malformed)
+
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
         trace = small_trace()
         trace["events"] = [
