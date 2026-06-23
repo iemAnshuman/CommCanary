@@ -1736,9 +1736,21 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             validate_comparison(malformed)
 
-        malformed = copy.deepcopy(comparison)
+        failing = compare_reports(
+            baseline,
+            replay_canary(canary, seed=3, latency_floor_us=1000.0),
+            p99_threshold_pct=1.0,
+        )
+        self.assertEqual(failing["verdict"], "fail")
+        malformed = copy.deepcopy(failing)
         malformed["verdict"] = "pass"
-        malformed["reasons"] = ["p99 regression 99.0% exceeds 1.0%"]
+        malformed["derived_verdict"] = "pass"
+        malformed["reasons"] = ["candidate got much slower"]
+        with self.assertRaises(SchemaError):
+            validate_comparison(malformed)
+
+        malformed = copy.deepcopy(failing)
+        malformed["evaluations"][0]["threshold_result"] = "pass"
         with self.assertRaises(SchemaError):
             validate_comparison(malformed)
 

@@ -9,6 +9,8 @@ from .schema import (
     SchemaError,
     as_float,
     as_int,
+    comparison_policy_evaluations,
+    derive_comparison_verdict,
     validate_comparison,
     validate_report,
 )
@@ -104,7 +106,8 @@ def compare_reports(
         if verdict == "pass":
             verdict = "warn"
         reasons.extend(compatibility["reasons"])
-    uncertainty_reasons = _uncertainty_reasons(baseline, candidate)
+    uncertainty = _uncertainty_summary(baseline, candidate)
+    uncertainty_reasons = _uncertainty_reasons(uncertainty)
     if uncertainty_reasons:
         if verdict == "pass":
             verdict = "warn"
@@ -125,6 +128,7 @@ def compare_reports(
             "breakdown_threshold_pct": breakdown_threshold_pct,
         },
         "compatibility": compatibility,
+        "uncertainty": uncertainty,
         "baseline": {"backend": baseline.get("backend", {}), "metrics": base_metrics},
         "candidate": {"backend": candidate.get("backend", {}), "metrics": cand_metrics},
         "delta": {
@@ -145,6 +149,9 @@ def compare_reports(
             "operation": op_deltas[0] if op_deltas else None,
         },
     }
+    comparison["evaluations"] = comparison_policy_evaluations(comparison)
+    comparison["derived_verdict"] = derive_comparison_verdict(comparison)
+    comparison["verdict"] = comparison["derived_verdict"]
     validate_comparison(comparison)
     return comparison
 
@@ -286,13 +293,21 @@ def _compatibility(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) ->
     }
 
 
-def _uncertainty_reasons(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> List[str]:
-    reasons: List[str] = []
+def _uncertainty_summary(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) -> JsonDict:
+    summary: JsonDict = {}
     for label, report in (("baseline", baseline), ("candidate", candidate)):
         uncertainty = report.get("canary_summary", {}).get("capture_uncertainty", {})
-        if not isinstance(uncertainty, Mapping):
-            continue
-        count = as_int(uncertainty.get("compute_fields_uncertain_events"), 0)
+        count = 0
+        if isinstance(uncertainty, Mapping):
+            count = as_int(uncertainty.get("compute_fields_uncertain_events"), 0)
+        summary[f"{label}_compute_fields_uncertain_events"] = count
+    return summary
+
+
+def _uncertainty_reasons(uncertainty: Mapping[str, Any]) -> List[str]:
+    reasons: List[str] = []
+    for label in ("baseline", "candidate"):
+        count = as_int(uncertainty.get(f"{label}_compute_fields_uncertain_events"), 0)
         if count > 0:
             reasons.append(f"{label} has {count} events with uncertain rank-local compute fields")
     return reasons
