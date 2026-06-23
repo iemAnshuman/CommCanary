@@ -186,7 +186,7 @@ def _breakdown_regression_reasons(scope: str, rows: List[JsonDict], threshold_pc
     reasons: List[str] = []
     for row in rows:
         name = str(row.get("name"))
-        for metric in ("p99", "median"):
+        for metric in ("p99", "p95", "median"):
             base = as_float(row.get(f"baseline_{metric}_us"))
             candidate = as_float(row.get(f"candidate_{metric}_us"))
             delta = row.get(f"{metric}_pct")

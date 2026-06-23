@@ -1470,6 +1470,52 @@ class CommCanaryTests(unittest.TestCase):
         self.assertTrue(any("p95 regression" in reason for reason in comparison["reasons"]))
         self.assertTrue(any("hidden percentage dropped" in reason for reason in comparison["reasons"]))
 
+    def test_localized_p95_regression_fails_comparison(self):
+        baseline = replay_canary(compile_trace(small_trace()), seed=3)
+        candidate = copy.deepcopy(baseline)
+        for report, phase_p95 in ((baseline, 10.0), (candidate, 90.0)):
+            report["canary"]["source_events"] = 100
+            report["metrics"].update(
+                {
+                    "count": 100,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 100.0,
+                    "max_us": 100.0,
+                    "mean_us": 20.0,
+                    "communication_hidden_pct": 50.0,
+                }
+            )
+            report["by_phase"] = [
+                {
+                    "name": "rare-middle-tail",
+                    "count": 100,
+                    "median_us": 10.0,
+                    "p95_us": phase_p95,
+                    "p99_us": 100.0,
+                    "max_us": 100.0,
+                    "mean_us": 20.0,
+                }
+            ]
+            report["by_op"] = [
+                {
+                    "name": "all_reduce",
+                    "count": 100,
+                    "median_us": 10.0,
+                    "p95_us": 10.0,
+                    "p99_us": 100.0,
+                    "max_us": 100.0,
+                    "mean_us": 20.0,
+                }
+            ]
+
+        comparison = compare_reports(baseline, candidate)
+        self.assertEqual(comparison["verdict"], "fail")
+        self.assertEqual(comparison["delta"]["p95_pct"], 0.0)
+        self.assertTrue(
+            any("phase 'rare-middle-tail' p95" in reason for reason in comparison["reasons"])
+        )
+
     def test_write_json_wraps_bad_parent_errors(self):
         with tempfile.TemporaryDirectory() as tmp:
             parent_file = os.path.join(tmp, "not-a-dir")
