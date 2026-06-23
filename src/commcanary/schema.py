@@ -14,6 +14,7 @@ REPORT_FORMAT = "commcanary.report.v2"
 COMPARE_FORMAT = "commcanary.compare.v2"
 MAX_RANK_COUNT = 65536
 MAX_ABS_INTEGER = 2**63 - 1
+MAX_TIME_US = 1_000_000_000_000.0
 SUPPORTED_OPS = {"all_reduce", "reduce_scatter", "all_gather", "all_to_all", "broadcast", "send", "recv"}
 PROTOCOL_FINGERPRINT_EXCLUDE = {"sha256", "max_replay_events"}
 FIDELITY_ERROR_FIELDS = (
@@ -406,8 +407,11 @@ def validate_trace(trace: Mapping[str, Any], *, allow_partial_arrivals: bool = F
             "observed_exposed_us",
         ):
             if numeric_key in event:
-                if as_float(event.get(numeric_key)) < 0.0:
+                numeric_value = as_float(event.get(numeric_key))
+                if numeric_value < 0.0:
                     raise SchemaError(f"trace event {index} {numeric_key} must be non-negative")
+                if numeric_key.endswith("_us") and numeric_value > MAX_TIME_US:
+                    raise SchemaError(f"trace event {index} {numeric_key} exceeds maximum supported duration")
         if "concurrent_groups" in event and as_int(event.get("concurrent_groups")) <= 0:
             raise SchemaError(f"trace event {index} concurrent_groups must be positive")
 
@@ -1136,6 +1140,8 @@ def _validate_timing_record(sample: Mapping[str, Any], ranks: List[int], label: 
     ):
         if numeric_key in sample and as_float(sample.get(numeric_key), 0.0) < 0.0:
             raise SchemaError(f"{label} {numeric_key} must be non-negative")
+        if numeric_key in sample and numeric_key.endswith("_us") and as_float(sample.get(numeric_key), 0.0) > MAX_TIME_US:
+            raise SchemaError(f"{label} {numeric_key} exceeds maximum supported duration")
     approximation = sample.get("approximation")
     if approximation is not None and approximation != "bounded_interval":
         raise SchemaError(f"{label} approximation is unsupported")

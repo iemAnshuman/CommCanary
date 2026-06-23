@@ -1822,6 +1822,27 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             compile_trace(small_trace(), timing_sample_limit=2.5)
 
+    def test_extremely_large_timestamps_are_rejected_early(self):
+        trace = {
+            "format": TRACE_FORMAT,
+            "events": [
+                {
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "start_us": 1e15,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                }
+            ],
+        }
+        with self.assertRaises(SchemaError):
+            compile_trace(trace)
+
+        canary = compile_trace(small_trace())
+        canary["events"][0]["timing_samples"][0]["gap_us"] = 1e15
+        with self.assertRaises(SchemaError):
+            validate_canary(canary)
+
     def test_observed_tail_signal_is_preserved_and_calibrated(self):
         trace = {"format": TRACE_FORMAT, "workload": {"name": "observed-tail"}, "events": []}
         for index in range(100):
