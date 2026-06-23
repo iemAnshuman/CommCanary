@@ -4,7 +4,7 @@ import html
 from pathlib import Path
 from typing import Any, Iterable, List, Mapping
 
-from .schema import SchemaError, as_float, validate_report
+from .schema import SchemaError, as_float, validate_comparison, validate_report
 
 
 def write_report_html(path: str, report: Mapping[str, Any]) -> None:
@@ -77,6 +77,7 @@ def render_report_html(report: Mapping[str, Any]) -> str:
 
 
 def render_compare_html(comparison: Mapping[str, Any]) -> str:
+    validate_comparison(comparison)
     raw_verdict = str(comparison.get("verdict", "unknown"))
     verdict = raw_verdict if raw_verdict in {"pass", "warn", "fail"} else "warn"
     delta = comparison.get("delta", {})
@@ -282,13 +283,14 @@ def _regression_table(rows: Iterable[Mapping[str, Any]]) -> str:
             "<tr>"
             f"<td>{_esc(row.get('name', 'unknown'))}</td>"
             f"<td>{_esc(_format_pct_delta(row.get('median_pct'), row.get('median_relative_status')))}</td>"
+            f"<td>{_esc(_format_pct_delta(row.get('p95_pct'), row.get('p95_relative_status')))}</td>"
             f"<td>{_esc(_format_pct_delta(row.get('p99_pct'), row.get('p99_relative_status')))}</td>"
             "</tr>"
         )
     if not body:
         return "<p>No breakdown data.</p>"
     return (
-        "<table><thead><tr><th>Name</th><th>Median Δ</th><th>P99 Δ</th></tr></thead><tbody>"
+        "<table><thead><tr><th>Name</th><th>Median Δ</th><th>P95 Δ</th><th>P99 Δ</th></tr></thead><tbody>"
         + "".join(body)
         + "</tbody></table>"
     )

@@ -1723,6 +1723,7 @@ class CommCanaryTests(unittest.TestCase):
         self.assertTrue(
             any("phase 'rare-middle-tail' p95" in reason for reason in comparison["reasons"])
         )
+        self.assertIn("<th>P95 Δ</th>", render_compare_html(comparison))
 
     def test_comparison_artifacts_are_validated(self):
         canary = compile_trace(small_trace())
@@ -1814,18 +1815,17 @@ class CommCanaryTests(unittest.TestCase):
         self.assertIn("<title>CommCanary Report - A&amp;B</title>", html)
         self.assertNotIn("A&amp;amp;B", html)
 
-        comparison = {
-            "verdict": 'fail" onclick="bad',
-            "created_at": "now",
-            "delta": {"median_pct": 0, "p95_pct": 0, "p99_pct": 0},
-            "baseline": {"metrics": report["metrics"]},
-            "candidate": {"metrics": report["metrics"]},
-            "reasons": ["A&B"],
-        }
+        comparison = compare_reports(report, copy.deepcopy(report))
+        comparison["reasons"] = ["A&B"]
         compare_html = render_compare_html(comparison)
-        self.assertIn('class="hero warn"', compare_html)
+        self.assertIn('class="hero pass"', compare_html)
         self.assertNotIn("onclick", compare_html)
         self.assertIn("A&amp;B", compare_html)
+
+        malformed = copy.deepcopy(comparison)
+        malformed["verdict"] = 'fail" onclick="bad'
+        with self.assertRaises(SchemaError):
+            render_compare_html(malformed)
 
     def test_html_report_rejects_malformed_metadata(self):
         report = replay_canary(compile_trace(small_trace()))
