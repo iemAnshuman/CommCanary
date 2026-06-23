@@ -112,14 +112,24 @@ def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
 
 def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
     projected: JsonDict = {}
-    for key in ("phase", "op", "bytes", "ranks", "group", "concurrent_groups"):
-        if key in event:
-            projected[key] = event.get(key)
-    ranks = event.get("ranks")
-    if isinstance(ranks, list):
+    if "phase" in event:
+        projected["phase"] = str(event.get("phase"))
+    if "op" in event:
+        projected["op"] = str(event.get("op"))
+    if "bytes" in event:
+        projected["bytes"] = as_int(event.get("bytes"))
+    ranks = None
+    if "ranks" in event:
+        ranks = normalize_ranks(event.get("ranks"))
+        projected["ranks"] = ranks
+    if "group" in event:
+        projected["group"] = str(event.get("group"))
+    if "concurrent_groups" in event:
+        projected["concurrent_groups"] = as_int(event.get("concurrent_groups"))
+    if ranks is not None:
         projected["rank_count"] = len(ranks)
     elif "rank_count" in event:
-        projected["rank_count"] = event.get("rank_count")
+        projected["rank_count"] = as_int(event.get("rank_count"))
     samples = event.get("timing_samples")
     if isinstance(samples, list):
         projected["timing_runs"] = _execution_timing_runs(samples)
@@ -171,9 +181,13 @@ def _execution_timing_items(samples: Sequence[Any]) -> Iterable[JsonDict]:
 
 def _execution_timing_item(sample: Mapping[str, Any], gap_us: float) -> JsonDict:
     item: JsonDict = {"gap_us": round(as_float(gap_us), 9)}
-    for key in ("arrival_offsets_us", "compute_overlap_us", "compute_pressure"):
-        if key in sample:
-            item[key] = sample.get(key)
+    offsets = sample.get("arrival_offsets_us")
+    if isinstance(offsets, list):
+        item["arrival_offsets_us"] = [round(as_float(value), 9) for value in offsets]
+    if "compute_overlap_us" in sample:
+        item["compute_overlap_us"] = round(as_float(sample.get("compute_overlap_us")), 9)
+    if "compute_pressure" in sample:
+        item["compute_pressure"] = round(as_float(sample.get("compute_pressure")), 9)
     return item
 
 

@@ -1424,6 +1424,31 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             compare_reports(replay_canary(baseline_canary, seed=3), replay_canary(changed_phase, seed=3))
 
+    def test_semantic_hash_and_replay_normalize_numeric_json_forms(self):
+        canary = compile_trace(small_trace())
+        changed = copy.deepcopy(canary)
+        event = changed["events"][0]
+        event["bytes"] = str(event["bytes"])
+        event["ranks"] = [str(rank) for rank in event["ranks"]]
+        event["rank_count"] = str(event["rank_count"])
+        event["concurrent_groups"] = str(event["concurrent_groups"])
+        for sample in event["timing_samples"]:
+            sample["gap_us"] = str(sample["gap_us"])
+            sample["gap_sum_us"] = str(sample["gap_sum_us"])
+            sample["arrival_offsets_us"] = [str(offset) for offset in sample["arrival_offsets_us"]]
+            sample["compute_overlap_us"] = str(sample["compute_overlap_us"])
+            sample["compute_pressure"] = str(sample["compute_pressure"])
+        changed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed)
+
+        self.assertEqual(
+            canary["compiler"]["execution_semantic_sha256"],
+            changed["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertEqual(
+            replay_canary(canary, seed=3)["metrics"],
+            replay_canary(changed, seed=3)["metrics"],
+        )
+
     def test_scheduler_hash_ignores_calibration_and_noncausal_compute_before(self):
         observed_trace = small_trace()
         for event in observed_trace["events"]:
