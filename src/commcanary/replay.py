@@ -237,7 +237,7 @@ def _simulate_step(
     }
     if "observed_exposed_us" in timing_sample:
         sample["observed_exposed_us"] = as_float(timing_sample.get("observed_exposed_us"))
-    if step.get("compute_fields_uncertain") is True:
+    if timing_sample.get("compute_fields_uncertain") is True:
         sample["compute_fields_uncertain"] = True
     return sample
 
@@ -350,6 +350,9 @@ def _fallback_timing(step: Mapping[str, Any]) -> JsonDict:
     }
     if "observed_exposed_us" in step:
         sample["observed_exposed_us"] = step.get("observed_exposed_us")
+    if step.get("compute_fields_uncertain") is True:
+        sample["compute_fields_uncertain"] = True
+        sample["uncertain_weight"] = sample["weight"]
     return sample
 
 
@@ -397,6 +400,12 @@ def _pattern_repetitions(parent: Mapping[str, Any], pattern: List[Any]) -> Itera
 
 def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
     weight = as_int(sample.get("weight"), 1)
+    uncertain_weight = as_int(
+        sample.get(
+            "uncertain_weight",
+            weight if sample.get("compute_fields_uncertain") is True else 0,
+        )
+    )
     gap_sum_us = _record_gap_sum(sample)
     base_gap_us = gap_sum_us / weight
     consumed = 0.0
@@ -407,6 +416,12 @@ def _sample_repetitions(sample: Mapping[str, Any]) -> Iterable[Mapping[str, Any]
             consumed += gap_us
         item["gap_us"] = gap_us
         item["weight"] = 1
+        if index < uncertain_weight:
+            item["compute_fields_uncertain"] = True
+            item["uncertain_weight"] = 1
+        else:
+            item.pop("compute_fields_uncertain", None)
+            item.pop("uncertain_weight", None)
         yield item
 
 

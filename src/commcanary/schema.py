@@ -1102,6 +1102,15 @@ def _validate_timing_record(sample: Mapping[str, Any], ranks: List[int], label: 
         expected_weight = as_int(sample.get("source_end")) - as_int(sample.get("source_start")) + 1
         if as_int(sample.get("weight")) != expected_weight:
             raise SchemaError(f"{label} weight must match source interval length")
+    if "compute_fields_uncertain" in sample and not isinstance(sample.get("compute_fields_uncertain"), bool):
+        raise SchemaError(f"{label} compute_fields_uncertain must be a boolean")
+    if "uncertain_weight" in sample:
+        uncertain_weight = as_int(sample.get("uncertain_weight"))
+        weight = as_int(sample.get("weight"), 1)
+        if uncertain_weight < 0 or uncertain_weight > weight:
+            raise SchemaError(f"{label} uncertain_weight must be between zero and weight")
+        if uncertain_weight and sample.get("compute_fields_uncertain") is not True:
+            raise SchemaError(f"{label} uncertain_weight requires compute_fields_uncertain")
     if "source_index" in sample:
         source_index = as_int(sample.get("source_index"))
         if source_index < 0 or source_index >= repeat:

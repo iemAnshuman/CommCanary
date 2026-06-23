@@ -515,6 +515,43 @@ class CommCanaryTests(unittest.TestCase):
                 any("uncertain rank-local compute fields" in reason for reason in comparison["reasons"])
             )
 
+    def test_compute_uncertainty_is_record_scoped_inside_repeated_motifs(self):
+        trace = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "uncertainty-scope"},
+            "events": [
+                {
+                    "id": "a",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_fields_uncertain": True,
+                },
+                {
+                    "id": "b",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                },
+            ],
+        }
+        canary = compile_trace(trace)
+        self.assertEqual(canary["events"][0]["repeat"], 2)
+        self.assertTrue(canary["events"][0]["compute_fields_uncertain"])
+        self.assertEqual(
+            canary["compiler"]["capture_uncertainty"]["compute_fields_uncertain_events"],
+            1,
+        )
+        samples = replay_canary(canary, include_samples=True)["samples"]
+        self.assertEqual(
+            [sample.get("compute_fields_uncertain", False) for sample in samples],
+            [True, False],
+        )
+
     def test_capture_rejects_rank_swapped_partial_arrivals_and_mixed_clocks(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = {

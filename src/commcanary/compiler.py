@@ -137,9 +137,9 @@ def compile_trace(
     recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in finalized)
     approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in finalized)
     compute_uncertain_events = sum(
-        as_int(event.get("repeat"), 1)
+        _timing_record_uncertain_weight(record)
         for event in finalized
-        if event.get("compute_fields_uncertain") is True
+        for record in _walk_timing_records(event.get("timing_samples"))
     )
 
     source_gap_total = _round_us(sum(ordered_gaps))
@@ -286,6 +286,9 @@ def _event_to_step(
     }
     if observed_exposed is not None:
         timing_sample["observed_exposed_us"] = _round_us(as_float(observed_exposed))
+    if event.get("compute_fields_uncertain") is True:
+        timing_sample["compute_fields_uncertain"] = True
+        timing_sample["uncertain_weight"] = 1
 
     hasher = hashlib.sha256()
     _update_source_digest(hasher, source_id)
@@ -312,8 +315,6 @@ def _event_to_step(
     }
     if event.get("custom_op") is True:
         step["custom_op"] = True
-    if event.get("compute_fields_uncertain") is True:
-        step["compute_fields_uncertain"] = True
     return step
 
 
@@ -327,8 +328,6 @@ def _append_sample(target: Dict[str, Any], sample: Mapping[str, Any]) -> None:
     timing_sample = dict(sample["timing_samples"][0])
     timing_sample["source_index"] = current_repeat
     target["_all_timing_samples"].append(timing_sample)
-    if sample.get("compute_fields_uncertain") is True:
-        target["compute_fields_uncertain"] = True
     target["repeat"] = current_repeat + 1
 
 
@@ -360,6 +359,10 @@ def _finalize_step(step: Dict[str, Any]) -> JsonDict:
         )
     result["source"]["digest"] = step["_source_hasher"].hexdigest()
     result["source"]["sampled_timing_records"] = _recursive_timing_record_count(timing_samples)
+    if any(_timing_record_uncertain_weight(record) for record in _walk_timing_records(timing_samples)):
+        result["compute_fields_uncertain"] = True
+    else:
+        result.pop("compute_fields_uncertain", None)
     return result
 
 
@@ -592,6 +595,10 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
         ),
         "max_prefix_gap_error_us": _round_us(max_prefix_error),
     }
+    uncertain_weight = sum(_source_sample_uncertain_weight(sample) for sample in segment)
+    if uncertain_weight:
+        record["compute_fields_uncertain"] = True
+        record["uncertain_weight"] = uncertain_weight
     if "observed_exposed_us" in representative:
         representative_observed = as_float(representative.get("observed_exposed_us"))
         record["observed_exposed_us"] = _round_us(representative_observed)
@@ -666,6 +673,10 @@ def _timing_record(sample: Mapping[str, Any], source_start: int, source_end: int
         "weight": weight,
         "gap_sum_us": _round_us(gap_us * weight),
     }
+    uncertain_weight = _source_sample_uncertain_weight(sample) * weight
+    if uncertain_weight:
+        record["compute_fields_uncertain"] = True
+        record["uncertain_weight"] = uncertain_weight
     if "observed_exposed_us" in sample:
         record["observed_exposed_us"] = _round_us(as_float(sample.get("observed_exposed_us")))
     return record
@@ -695,6 +706,10 @@ def _pattern_record(
             "pattern_repeats": repeats,
         }
     )
+    uncertain_weight = sum(_timing_record_uncertain_weight(child) for child in pattern) * repeats
+    if uncertain_weight:
+        record["compute_fields_uncertain"] = True
+        record["uncertain_weight"] = uncertain_weight
     return record
 
 
@@ -753,6 +768,8 @@ def _timing_equal(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
     left_offsets = tuple(_round_us(as_float(value)) for value in left.get("arrival_offsets_us", []))
     right_offsets = tuple(_round_us(as_float(value)) for value in right.get("arrival_offsets_us", []))
     if left_offsets != right_offsets:
+        return False
+    if bool(left.get("compute_fields_uncertain")) != bool(right.get("compute_fields_uncertain")):
         return False
     left_observed = "observed_exposed_us" in left
     right_observed = "observed_exposed_us" in right
@@ -832,6 +849,18 @@ def _walk_timing_records(records: Any) -> Iterable[Mapping[str, Any]]:
             continue
         yield record
         yield from _walk_timing_records(record.get("timing_pattern"))
+
+
+def _source_sample_uncertain_weight(sample: Mapping[str, Any]) -> int:
+    return 1 if sample.get("compute_fields_uncertain") is True else 0
+
+
+def _timing_record_uncertain_weight(record: Mapping[str, Any]) -> int:
+    if "uncertain_weight" in record:
+        return as_int(record.get("uncertain_weight"))
+    if record.get("compute_fields_uncertain") is True:
+        return as_int(record.get("weight"), 1)
+    return 0
 
 
 def _enforce_fidelity_budgets(fidelity: Mapping[str, Any], budgets: Mapping[str, Optional[float]]) -> None:
