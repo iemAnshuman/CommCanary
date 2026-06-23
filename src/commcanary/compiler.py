@@ -137,9 +137,8 @@ def compile_trace(
     recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in finalized)
     approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in finalized)
     compute_uncertain_events = sum(
-        _timing_record_uncertain_weight(record)
+        _timing_records_uncertain_weight(event.get("timing_samples"))
         for event in finalized
-        for record in _walk_timing_records(event.get("timing_samples"))
     )
 
     source_gap_total = _round_us(sum(ordered_gaps))
@@ -815,6 +814,16 @@ def _timing_records_gap_sum(records: Any) -> float:
     return sum(_timing_record_gap_sum(record) for record in records if isinstance(record, Mapping))
 
 
+def _timing_records_uncertain_weight(records: Any) -> int:
+    if not isinstance(records, list):
+        return 0
+    return sum(
+        _timing_record_logical_uncertain_weight(record)
+        for record in records
+        if isinstance(record, Mapping)
+    )
+
+
 def _summarize_fidelity(
     events: Sequence[Mapping[str, Any]],
     *,
@@ -861,6 +870,20 @@ def _timing_record_uncertain_weight(record: Mapping[str, Any]) -> int:
     if record.get("compute_fields_uncertain") is True:
         return as_int(record.get("weight"), 1)
     return 0
+
+
+def _timing_record_logical_uncertain_weight(record: Mapping[str, Any]) -> int:
+    if "uncertain_weight" in record:
+        return as_int(record.get("uncertain_weight"))
+    pattern = record.get("timing_pattern")
+    if isinstance(pattern, list) and pattern:
+        repeats = as_int(record.get("pattern_repeats"), 1)
+        return sum(
+            _timing_record_logical_uncertain_weight(child)
+            for child in pattern
+            if isinstance(child, Mapping)
+        ) * repeats
+    return _timing_record_uncertain_weight(record)
 
 
 def _enforce_fidelity_budgets(fidelity: Mapping[str, Any], budgets: Mapping[str, Optional[float]]) -> None:

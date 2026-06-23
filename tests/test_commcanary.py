@@ -552,6 +552,37 @@ class CommCanaryTests(unittest.TestCase):
             [True, False],
         )
 
+    def test_exact_pattern_uncertainty_is_not_double_counted(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "uncertain-pattern"}, "events": []}
+        for index in range(200):
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_fields_uncertain": index % 2 == 0,
+                }
+            )
+        canary = compile_trace(trace, timing_sample_limit=8)
+        self.assertEqual(canary["events"][0]["repeat"], 200)
+        self.assertEqual(len(canary["events"][0]["timing_samples"][0]["timing_pattern"]), 2)
+        self.assertEqual(
+            canary["compiler"]["capture_uncertainty"]["compute_fields_uncertain_events"],
+            100,
+        )
+        report = replay_canary(canary, include_samples=True)
+        self.assertEqual(
+            sum(1 for sample in report["samples"] if sample.get("compute_fields_uncertain")),
+            100,
+        )
+        malformed = copy.deepcopy(canary)
+        malformed["compiler"]["capture_uncertainty"]["compute_fields_uncertain_events"] = 101
+        with self.assertRaises(SchemaError):
+            validate_canary(malformed)
+
     def test_capture_rejects_rank_swapped_partial_arrivals_and_mixed_clocks(self):
         with tempfile.TemporaryDirectory() as tmp:
             base = {

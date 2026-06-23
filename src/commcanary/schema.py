@@ -404,6 +404,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     actual_recursive_records = 0
     actual_approximate_records = 0
     actual_encoded_gap_total = 0.0
+    actual_compute_uncertain_events = 0
     actual_fidelity_maxima = {field: 0.0 for field in FIDELITY_ERROR_FIELDS}
     for index, event in enumerate(events):
         if not isinstance(event, Mapping):
@@ -472,6 +473,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             _validate_timing_record(sample, ranks, label, repeat=repeat)
             actual_recursive_records += 1
             actual_encoded_gap_total += _timing_record_gap_sum(sample, label)
+            actual_compute_uncertain_events += _timing_record_logical_uncertain_weight(sample)
             _accumulate_fidelity_maxima(actual_fidelity_maxima, sample)
             if sample.get("approximation") == "bounded_interval":
                 actual_approximate_records += 1
@@ -549,6 +551,20 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
         raise SchemaError("canary compiler.recursive_timing_records must match timing records")
     if "approximate_timing_records" in compiler and as_int(compiler.get("approximate_timing_records")) != actual_approximate_records:
         raise SchemaError("canary compiler.approximate_timing_records must match timing records")
+    capture_uncertainty = compiler.get("capture_uncertainty")
+    if actual_compute_uncertain_events:
+        if not isinstance(capture_uncertainty, Mapping):
+            raise SchemaError("canary compiler.capture_uncertainty is required for uncertain timing records")
+        if as_int(capture_uncertainty.get("compute_fields_uncertain_events")) != actual_compute_uncertain_events:
+            raise SchemaError("canary compiler.capture_uncertainty compute count must match timing records")
+        status = capture_uncertainty.get("status")
+        if not isinstance(status, str) or not status:
+            raise SchemaError("canary compiler.capture_uncertainty.status must be a non-empty string")
+    elif capture_uncertainty is not None:
+        if not isinstance(capture_uncertainty, Mapping):
+            raise SchemaError("canary compiler.capture_uncertainty must be an object")
+        if as_int(capture_uncertainty.get("compute_fields_uncertain_events"), 0) != 0:
+            raise SchemaError("canary compiler.capture_uncertainty contradicts timing records")
     if "source_trace_sha256" in compiler:
         _validate_sha256(compiler.get("source_trace_sha256"), "canary compiler.source_trace_sha256")
     if "execution_semantic_sha256" in compiler:
@@ -1151,6 +1167,22 @@ def _validate_bounded_interval_evidence(sample: Mapping[str, Any], label: str) -
             raise SchemaError(f"{label} bounded interval missing {key!r}")
     if "observed_exposed_us" in sample and "max_observed_exposed_error_us" not in sample:
         raise SchemaError(f"{label} bounded interval missing 'max_observed_exposed_error_us'")
+
+
+def _timing_record_logical_uncertain_weight(sample: Mapping[str, Any]) -> int:
+    if "uncertain_weight" in sample:
+        return as_int(sample.get("uncertain_weight"))
+    pattern = sample.get("timing_pattern")
+    if isinstance(pattern, list) and pattern:
+        repeats = as_int(sample.get("pattern_repeats"), 1)
+        return sum(
+            _timing_record_logical_uncertain_weight(child)
+            for child in pattern
+            if isinstance(child, Mapping)
+        ) * repeats
+    if sample.get("compute_fields_uncertain") is True:
+        return as_int(sample.get("weight"), 1)
+    return 0
 
 
 def _validate_event_summary_matches_single_sample(
