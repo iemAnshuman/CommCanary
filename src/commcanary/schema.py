@@ -849,6 +849,9 @@ def _reconcile_report_samples(
             raise SchemaError(f"report sample {index} op must be a non-empty string")
         if not isinstance(sample.get("group"), str) or not sample.get("group"):
             raise SchemaError(f"report sample {index} group must be a non-empty string")
+        scheduler_resource = sample.get("scheduler_resource", sample.get("group"))
+        if not isinstance(scheduler_resource, str) or not scheduler_resource:
+            raise SchemaError(f"report sample {index} scheduler_resource must be a non-empty string")
         sequence_index = as_int(sample.get("index"))
         iteration = as_int(sample.get("iteration"))
         if sequence_index != index:
@@ -875,7 +878,7 @@ def _reconcile_report_samples(
             raise SchemaError(f"report sample {index} last_arrival_us must match arrival_skew_us")
         if avg_rank_wait_us > arrival_skew_us + tolerance:
             raise SchemaError(f"report sample {index} avg_rank_wait_us must not exceed arrival_skew_us")
-        group_key = (iteration, str(sample.get("group")))
+        group_key = (iteration, scheduler_resource)
         expected_start = max(last_arrival_us, group_available.get(group_key, 0.0))
         if abs(collective_start_us - expected_start) > tolerance:
             raise SchemaError(f"report sample {index} collective_start_us is inconsistent")

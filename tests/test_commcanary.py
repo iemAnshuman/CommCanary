@@ -298,6 +298,37 @@ class CommCanaryTests(unittest.TestCase):
         self.assertAlmostEqual(samples[1]["collective_start_us"], expected_start, places=3)
         self.assertAlmostEqual(samples[1]["queue_wait_us"], expected_start - samples[1]["last_arrival_us"], places=3)
 
+    def test_default_scheduler_resources_are_rank_scoped(self):
+        trace = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "independent-default-groups"},
+            "events": [
+                {
+                    "id": "a",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [0, 1],
+                    "start_us": 0.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                },
+                {
+                    "id": "b",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [2, 3],
+                    "start_us": 0.0,
+                    "rank_arrival_us": {"2": 0.0, "3": 0.0},
+                },
+            ],
+        }
+        samples = replay_canary(compile_trace(trace), include_samples=True, seed=1)["samples"]
+        self.assertEqual(samples[0]["group"], "default")
+        self.assertEqual(samples[1]["group"], "default")
+        self.assertNotEqual(samples[0]["scheduler_resource"], samples[1]["scheduler_resource"])
+        self.assertEqual([sample["queue_wait_us"] for sample in samples], [0.0, 0.0])
+
     def test_report_mismatch_is_rejected_by_default(self):
         baseline = replay_canary(compile_trace(small_trace()), seed=3)
         other = small_trace()

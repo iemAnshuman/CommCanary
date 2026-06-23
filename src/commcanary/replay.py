@@ -93,7 +93,7 @@ def replay_canary(
                     compute_pressure=compute_pressure,
                 )
                 logical_clock_us += core["gap_us"]
-                group = str(core["group"])
+                group = str(core["scheduler_resource"])
                 first_arrival_us = logical_clock_us
                 last_arrival_us = first_arrival_us + core["arrival_skew_us"]
                 collective_start_us = max(last_arrival_us, group_available_us.get(group, 0.0))
@@ -189,8 +189,10 @@ def _simulate_step(
     )
     wait_us = average_wait_us(offsets) if offsets else skew_us / 2.0
     bytes_ = as_int(step.get("bytes"))
-    rank_count = max(1, as_int(step.get("rank_count"), len(step.get("ranks", [])) or 1))
+    ranks = _sample_ranks(step)
+    rank_count = max(1, as_int(step.get("rank_count"), len(ranks) or 1))
     op = str(step.get("op", "unknown"))
+    group = str(step.get("group", "default"))
     concurrent_groups = max(1, as_int(step.get("concurrent_groups"), 1))
     pressure = min(
         1.5,
@@ -223,7 +225,8 @@ def _simulate_step(
         "op": op,
         "bytes": bytes_,
         "rank_count": rank_count,
-        "group": step.get("group", "default"),
+        "group": group,
+        "scheduler_resource": _scheduler_resource_label(group, ranks),
         "gap_us": as_float(timing_sample.get("gap_us"), 0.0),
         "compute_before_us": as_float(timing_sample.get("compute_before_us"), 0.0),
         "arrival_skew_us": arrival_skew,
@@ -317,6 +320,21 @@ def _sample_offsets(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -
     skew = as_float(step.get("arrival_skew_us"), 0.0)
     rank_count = max(1, as_int(step.get("rank_count"), len(step.get("ranks", [])) or 1))
     return [0.0 for _ in range(max(0, rank_count - 1))] + [skew]
+
+
+def _sample_ranks(step: Mapping[str, Any]) -> Tuple[int, ...]:
+    raw = step.get("ranks", [])
+    if not isinstance(raw, list):
+        return ()
+    return tuple(as_int(rank) for rank in raw)
+
+
+def _scheduler_resource_label(group: str, ranks: Tuple[int, ...]) -> str:
+    if group and group != "default":
+        return group
+    if ranks:
+        return "default:ranks=" + ",".join(str(rank) for rank in ranks)
+    return group or "default"
 
 
 def _fallback_timing(step: Mapping[str, Any]) -> JsonDict:
