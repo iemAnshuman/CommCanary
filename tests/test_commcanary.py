@@ -1150,6 +1150,12 @@ class CommCanaryTests(unittest.TestCase):
             validate_report(report)
 
         report = replay_canary(compile_trace(small_trace()), include_samples=True)
+        report["samples"][0]["exposed_us"] = report["samples"][0]["total_us"]
+        report["samples"][0]["hidden_us"] = 0.0
+        with self.assertRaises(SchemaError):
+            validate_report(report)
+
+        report = replay_canary(compile_trace(small_trace()), include_samples=True)
         report["samples"][0]["index"] = 2
         with self.assertRaises(SchemaError):
             validate_report(report)

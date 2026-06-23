@@ -907,8 +907,8 @@ def _reconcile_report_samples(
         if hidden_us > total_us or abs((hidden_us + exposed_us) - total_us) > 0.0021:
             raise SchemaError(f"report sample {index} hidden_us + exposed_us must equal total_us")
         maximum_hideable_us = min(total_us, max(0.0, compute_overlap_us) * overlap_efficiency)
-        if hidden_us > maximum_hideable_us + tolerance:
-            raise SchemaError(f"report sample {index} hidden_us exceeds compute overlap budget")
+        if abs(hidden_us - maximum_hideable_us) > tolerance:
+            raise SchemaError(f"report sample {index} hidden_us does not match deterministic overlap model")
         exposed.append(exposed_us)
         skew.append(arrival_skew_us)
         wait.append(avg_rank_wait_us)
