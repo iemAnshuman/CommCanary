@@ -821,6 +821,7 @@ def _reconcile_report_samples(
         "exposed_us",
         "arrival_skew_us",
         "avg_rank_wait_us",
+        "compute_overlap_us",
         "collective_us",
         "queue_wait_us",
     }
@@ -836,6 +837,10 @@ def _reconcile_report_samples(
     seen_indices: List[int] = []
     group_available: Dict[tuple, float] = {}
     iterations = as_int(report.get("replay_protocol", {}).get("iterations"), 1)
+    source_events = as_int(report.get("canary", {}).get("source_events"))
+    overlap_efficiency = as_float(report.get("backend", {}).get("overlap_efficiency"), 0.0)
+    if not 0.0 <= overlap_efficiency <= 1.0:
+        raise SchemaError("report backend.overlap_efficiency must be between 0 and 1")
 
     for index, sample in enumerate(samples):
         if not isinstance(sample, Mapping):
@@ -858,6 +863,8 @@ def _reconcile_report_samples(
             raise SchemaError("report sample indices must be contiguous and ordered")
         if iteration < 0 or iteration >= iterations:
             raise SchemaError(f"report sample {index} iteration is outside replay_protocol.iterations")
+        if source_events > 0 and iteration != index // source_events:
+            raise SchemaError(f"report sample {index} iteration does not match replay partitioning")
         seen_indices.append(sequence_index)
         for key in required_sample_keys - {"index", "iteration", "phase", "op", "group"}:
             if as_float(sample.get(key)) < 0.0:
@@ -873,6 +880,7 @@ def _reconcile_report_samples(
         total_us = as_float(sample.get("total_us"))
         hidden_us = as_float(sample.get("hidden_us"))
         exposed_us = as_float(sample.get("exposed_us"))
+        compute_overlap_us = as_float(sample.get("compute_overlap_us"))
         tolerance = 0.0051
         if abs((last_arrival_us - first_arrival_us) - arrival_skew_us) > tolerance:
             raise SchemaError(f"report sample {index} last_arrival_us must match arrival_skew_us")
@@ -890,6 +898,9 @@ def _reconcile_report_samples(
             raise SchemaError(f"report sample {index} total_us decomposition is inconsistent")
         if hidden_us > total_us or abs((hidden_us + exposed_us) - total_us) > 0.0021:
             raise SchemaError(f"report sample {index} hidden_us + exposed_us must equal total_us")
+        maximum_hideable_us = min(total_us, max(0.0, compute_overlap_us) * overlap_efficiency)
+        if hidden_us > maximum_hideable_us + tolerance:
+            raise SchemaError(f"report sample {index} hidden_us exceeds compute overlap budget")
         exposed.append(exposed_us)
         skew.append(arrival_skew_us)
         wait.append(avg_rank_wait_us)
