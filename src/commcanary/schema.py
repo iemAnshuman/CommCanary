@@ -688,6 +688,7 @@ def validate_report(report: Mapping[str, Any]) -> None:
     backend = report.get("backend", {})
     if not isinstance(backend, Mapping):
         raise SchemaError("report backend must be an object")
+    _validate_report_backend(backend)
     for key in ("seed", "iterations", "bandwidth_unit"):
         if key in backend and backend.get(key) != protocol.get(key):
             raise SchemaError(f"report backend.{key} must match replay_protocol.{key}")
@@ -730,6 +731,8 @@ def validate_report(report: Mapping[str, Any]) -> None:
     calibration = report.get("calibration")
     if calibration is not None:
         _validate_calibration(calibration)
+        if as_int(calibration.get("count")) != as_int(metrics.get("count")):
+            raise SchemaError("report calibration.count must match metrics.count")
 
     samples = report.get("samples")
     if samples is not None:
@@ -807,6 +810,19 @@ def _validate_calibration(calibration: Any) -> None:
     if not median_error <= p95_error <= max_error:
         raise SchemaError("report calibration absolute-error quantiles are unordered")
     as_float(calibration.get("mean_bias_us"))
+
+
+def _validate_report_backend(backend: Mapping[str, Any]) -> None:
+    if "bandwidth_gbps" in backend and as_float(backend.get("bandwidth_gbps")) <= 0.0:
+        raise SchemaError("report backend.bandwidth_gbps must be positive")
+    if "latency_floor_us" in backend and as_float(backend.get("latency_floor_us")) < 0.0:
+        raise SchemaError("report backend.latency_floor_us must be non-negative")
+    if "compute_pressure" in backend and as_float(backend.get("compute_pressure")) < 0.0:
+        raise SchemaError("report backend.compute_pressure must be non-negative")
+    if "overlap_efficiency" in backend:
+        overlap_efficiency = as_float(backend.get("overlap_efficiency"))
+        if not 0.0 <= overlap_efficiency <= 1.0:
+            raise SchemaError("report backend.overlap_efficiency must be between 0 and 1")
 
 
 def _reconcile_report_samples(

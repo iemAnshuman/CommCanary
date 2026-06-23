@@ -1683,6 +1683,28 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             validate_report(malformed)
 
+    def test_sample_free_report_backend_and_calibration_are_validated(self):
+        report = replay_canary(compile_trace(small_trace()))
+        for key, value in (
+            ("bandwidth_gbps", -5.0),
+            ("latency_floor_us", -7.0),
+            ("compute_pressure", -1.0),
+            ("overlap_efficiency", 3.0),
+        ):
+            malformed = copy.deepcopy(report)
+            malformed["backend"][key] = value
+            with self.assertRaises(SchemaError):
+                validate_report(malformed)
+
+        trace = small_trace()
+        for event in trace["events"]:
+            event["observed_exposed_us"] = 20.0
+        report = replay_canary(compile_trace(trace))
+        malformed = copy.deepcopy(report)
+        malformed["calibration"]["count"] -= 1
+        with self.assertRaises(SchemaError):
+            validate_report(malformed)
+
     def test_recorder_rejects_fractional_nonfinite_and_negative_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             recorder = TraceRecorder(os.path.join(tmp, "trace.json"))
