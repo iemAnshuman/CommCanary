@@ -204,6 +204,64 @@ def compile_trace(
     return canary
 
 
+def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) -> JsonDict:
+    """Recompute compiler fidelity from source trace and compare it to a canary."""
+
+    validate_canary(canary)
+    compiler = canary.get("compiler", {})
+    source_events = as_int(compiler.get("source_events"))
+    trace_events = trace.get("events", [])
+    trace_event_count = len(trace_events) if isinstance(trace_events, list) else 0
+    max_events = source_events if source_events < trace_event_count else None
+    expected = compile_trace(
+        trace,
+        max_events=max_events,
+        timing_sample_limit=as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+        allow_empty=source_events == 0,
+    )
+    expected_compiler = expected.get("compiler", {})
+    checks = [
+        _verification_check(
+            "source_trace_sha256",
+            expected_compiler.get("source_trace_sha256"),
+            compiler.get("source_trace_sha256"),
+        ),
+        _verification_check(
+            "execution_semantic_sha256",
+            expected_compiler.get("execution_semantic_sha256"),
+            compiler.get("execution_semantic_sha256"),
+        ),
+        _verification_check("fidelity", expected_compiler.get("fidelity"), compiler.get("fidelity")),
+        _verification_check(
+            "recursive_timing_records",
+            expected_compiler.get("recursive_timing_records"),
+            compiler.get("recursive_timing_records"),
+        ),
+        _verification_check(
+            "approximate_timing_records",
+            expected_compiler.get("approximate_timing_records"),
+            compiler.get("approximate_timing_records"),
+        ),
+    ]
+    passed = all(check["status"] == "pass" for check in checks)
+    return {
+        "format": "commcanary.fidelity_verification.v1",
+        "status": "source_verified" if passed else "failed",
+        "source_events": source_events,
+        "timing_sample_limit": as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+        "checks": checks,
+    }
+
+
+def _verification_check(name: str, expected: Any, actual: Any) -> JsonDict:
+    return {
+        "name": name,
+        "status": "pass" if expected == actual else "fail",
+        "expected": expected,
+        "actual": actual,
+    }
+
+
 def _ordered_trace_events(events: List[Mapping[str, Any]]) -> Tuple[List[Mapping[str, Any]], List[float], str]:
     if not events:
         return [], [], "empty"

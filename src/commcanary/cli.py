@@ -10,7 +10,7 @@ from typing import Any, List, Optional
 
 from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
-from .compiler import compile_trace
+from .compiler import compile_trace, verify_canary_fidelity
 from .html_report import write_compare_html, write_report_html
 from .replay import replay_canary
 from .schema import CommCanaryError, load_json, validate_report, write_json
@@ -84,6 +84,12 @@ def _build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("--breakdown-absolute-threshold-us", type=float)
     compare_parser.add_argument("--allow-mismatch", action="store_true")
     compare_parser.set_defaults(func=_cmd_compare)
+
+    verify_parser = sub.add_parser("verify-fidelity", help="verify canary fidelity against a source trace")
+    verify_parser.add_argument("trace")
+    verify_parser.add_argument("canary")
+    verify_parser.add_argument("--output", "-o", required=True)
+    verify_parser.set_defaults(func=_cmd_verify_fidelity)
 
     capture_parser = sub.add_parser("capture", help="run an instrumented command and collect a trace")
     capture_parser.add_argument("--output", "-o", required=True)
@@ -189,6 +195,17 @@ def _cmd_compare(args: Any) -> int:
     for reason in comparison["reasons"]:
         print(f"- {reason}")
     return 0 if comparison["verdict"] != "fail" else 1
+
+
+def _cmd_verify_fidelity(args: Any) -> int:
+    trace = load_json(args.trace)
+    canary = load_json(args.canary)
+    verification = verify_canary_fidelity(trace, canary)
+    write_json(args.output, verification)
+    print(f"fidelity verification: {verification['status']}")
+    for check in verification["checks"]:
+        print(f"- {check['name']}: {check['status']}")
+    return 0 if verification["status"] == "source_verified" else 1
 
 
 def _cmd_capture(args: Any) -> int:

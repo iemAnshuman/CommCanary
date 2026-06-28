@@ -11,7 +11,7 @@ from pathlib import Path
 
 from commcanary.compare import compare_reports
 from commcanary.cli import main as cli_main
-from commcanary.compiler import compile_trace
+from commcanary.compiler import compile_trace, verify_canary_fidelity
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.html_report import render_compare_html, render_report_html
 from commcanary.replay import replay_canary
@@ -162,6 +162,56 @@ class CommCanaryTests(unittest.TestCase):
         interval.pop("max_pressure_error")
         with self.assertRaises(SchemaError):
             validate_canary(malformed)
+
+    def test_source_assisted_fidelity_verification_rejects_tampered_errors(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "verify-fidelity"}, "events": []}
+        for index in range(80):
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 1024,
+                    "ranks": [0, 1],
+                    "start_us": index * 10.0,
+                    "rank_arrival_us": {"0": 0.0, "1": float(index % 21)},
+                    "compute_overlap_us": float((index * 17) % 29),
+                    "compute_pressure": ((index * 31) % 100) / 100.0,
+                }
+            )
+        canary = compile_trace(trace, timing_sample_limit=4)
+        self.assertEqual(verify_canary_fidelity(trace, canary)["status"], "source_verified")
+
+        tampered = copy.deepcopy(canary)
+        fidelity_fields = (
+            "max_gap_error_us",
+            "max_skew_error_us",
+            "max_arrival_offset_error_us",
+            "max_compute_before_error_us",
+            "max_overlap_error_us",
+            "max_pressure_error",
+            "max_observed_exposed_error_us",
+            "max_prefix_gap_error_us",
+        )
+
+        def zero_record_errors(records):
+            for record in records:
+                for field in fidelity_fields:
+                    if field in record:
+                        record[field] = 0.0
+                if isinstance(record.get("timing_pattern"), list):
+                    zero_record_errors(record["timing_pattern"])
+
+        zero_record_errors(tampered["events"][0]["timing_samples"])
+        for field in fidelity_fields:
+            if field in tampered["compiler"]["fidelity"]:
+                tampered["compiler"]["fidelity"][field] = 0.0
+        validate_canary(tampered)
+        verification = verify_canary_fidelity(trace, tampered)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(check["name"] == "fidelity" and check["status"] == "fail" for check in verification["checks"])
+        )
 
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
         trace = small_trace()
@@ -1963,6 +2013,7 @@ class CommCanaryTests(unittest.TestCase):
             canary_path = os.path.join(tmp, "canary.json")
             report_path = os.path.join(tmp, "report.json")
             html_path = os.path.join(tmp, "report.html")
+            verification_path = os.path.join(tmp, "fidelity.json")
             write_json(trace_path, small_trace())
             self.assertEqual(
                 cli_main(
@@ -1981,7 +2032,9 @@ class CommCanaryTests(unittest.TestCase):
             )
             self.assertEqual(cli_main(["replay", canary_path, "--output", report_path, "--include-samples"]), 0)
             self.assertEqual(cli_main(["report", report_path, "--output", html_path]), 0)
+            self.assertEqual(cli_main(["verify-fidelity", trace_path, canary_path, "--output", verification_path]), 0)
             self.assertTrue(os.path.exists(html_path))
+            self.assertEqual(load_json(verification_path)["status"], "source_verified")
 
 
     def test_tiny_periodic_gaps_preserve_exact_timeline(self):
