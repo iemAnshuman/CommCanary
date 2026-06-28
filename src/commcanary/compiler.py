@@ -357,6 +357,7 @@ def _finalize_step(step: Dict[str, Any]) -> JsonDict:
             median(as_float(sample.get("observed_exposed_us")) for sample in all_samples)
         )
     result["source"]["digest"] = step["_source_hasher"].hexdigest()
+    result["execution_source_sha256"] = step["_source_hasher"].hexdigest()
     result["source"]["sampled_timing_records"] = _recursive_timing_record_count(timing_samples)
     if any(_timing_record_uncertain_weight(record) for record in _walk_timing_records(timing_samples)):
         result["compute_fields_uncertain"] = True

@@ -1359,6 +1359,27 @@ class CommCanaryTests(unittest.TestCase):
         unique_durations = {round(sample["collective_us"], 6) for sample in samples}
         self.assertGreater(len(unique_durations), 1)
 
+    def test_nonconsecutive_identical_events_do_not_share_noise_identity(self):
+        events = []
+        for index, bytes_ in enumerate((1024, 2048, 1024, 2048)):
+            events.append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": bytes_,
+                    "ranks": [0, 1],
+                    "gap_us": 0.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                }
+            )
+        samples = replay_canary(
+            compile_trace({"format": TRACE_FORMAT, "workload": {"name": "alternating-noise"}, "events": events}),
+            include_samples=True,
+            seed=9,
+        )["samples"]
+        self.assertNotEqual(samples[0]["collective_us"], samples[2]["collective_us"])
+
     def test_allow_mismatch_includes_reasons_even_with_latency_failure(self):
         canary = compile_trace(small_trace())
         baseline = replay_canary(canary, seed=3)

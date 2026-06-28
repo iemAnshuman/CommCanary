@@ -325,6 +325,7 @@ def _noise_identity(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -
         "ranks": list(_sample_ranks(step)),
         "group": str(step.get("group", "default")),
         "arrival_offsets_us": [round(value, 9) for value in _sample_offsets(step, timing_sample)],
+        "execution_source_sha256": step.get("execution_source_sha256"),
         "occurrence": as_int(timing_sample.get("noise_occurrence"), 0),
     }
 
