@@ -11,7 +11,7 @@ from pathlib import Path
 
 from commcanary.compare import compare_reports
 from commcanary.cli import main as cli_main
-from commcanary.compiler import compile_trace, verify_canary_fidelity
+from commcanary.compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.html_report import render_compare_html, render_report_html
 from commcanary.replay import replay_canary
@@ -211,6 +211,27 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(verification["status"], "failed")
         self.assertTrue(
             any(check["name"] == "fidelity" and check["status"] == "fail" for check in verification["checks"])
+        )
+
+    def test_behavior_verification_compares_source_and_canary_replay(self):
+        trace = small_trace()
+        canary = compile_trace(trace)
+        verification = verify_canary_behavior(trace, canary)
+        self.assertEqual(verification["status"], "behaviorally_verified")
+        self.assertEqual(verification["ranking"]["status"], "pass")
+
+        changed = copy.deepcopy(canary)
+        changed["events"][0]["bytes"] *= 64
+        changed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed)
+        validate_canary(changed)
+        verification = verify_canary_behavior(trace, changed)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(
+                check["status"] == "fail"
+                for row in verification["configurations"]
+                for check in row["checks"]
+            )
         )
 
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
@@ -2033,6 +2054,7 @@ class CommCanaryTests(unittest.TestCase):
             report_path = os.path.join(tmp, "report.json")
             html_path = os.path.join(tmp, "report.html")
             verification_path = os.path.join(tmp, "fidelity.json")
+            behavior_path = os.path.join(tmp, "behavior.json")
             write_json(trace_path, small_trace())
             self.assertEqual(
                 cli_main(
@@ -2052,8 +2074,10 @@ class CommCanaryTests(unittest.TestCase):
             self.assertEqual(cli_main(["replay", canary_path, "--output", report_path, "--include-samples"]), 0)
             self.assertEqual(cli_main(["report", report_path, "--output", html_path]), 0)
             self.assertEqual(cli_main(["verify-fidelity", trace_path, canary_path, "--output", verification_path]), 0)
+            self.assertEqual(cli_main(["verify-behavior", trace_path, canary_path, "--output", behavior_path]), 0)
             self.assertTrue(os.path.exists(html_path))
             self.assertEqual(load_json(verification_path)["status"], "source_verified")
+            self.assertEqual(load_json(behavior_path)["status"], "behaviorally_verified")
 
 
     def test_tiny_periodic_gaps_preserve_exact_timeline(self):

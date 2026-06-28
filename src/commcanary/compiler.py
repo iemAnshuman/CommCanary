@@ -36,6 +36,12 @@ _FIDELITY_FIELDS = (
     "max_observed_exposed_error_us",
     "max_prefix_gap_error_us",
 )
+_BEHAVIORAL_METRICS = ("median_us", "p95_us", "p99_us", "communication_hidden_pct")
+_DEFAULT_BEHAVIORAL_CONFIGS = (
+    {"name": "baseline", "bandwidth_gbps": 55.0, "latency_floor_us": 7.5, "compute_pressure": 0.55, "seed": 7},
+    {"name": "low_latency", "bandwidth_gbps": 55.0, "latency_floor_us": 3.5, "compute_pressure": 0.55, "seed": 7},
+    {"name": "congested", "bandwidth_gbps": 28.0, "latency_floor_us": 7.5, "compute_pressure": 0.95, "seed": 7},
+)
 
 
 def compile_trace(
@@ -254,6 +260,133 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
         "timing_sample_limit": as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
         "checks": checks,
     }
+
+
+def verify_canary_behavior(
+    trace: Mapping[str, Any],
+    canary: Mapping[str, Any],
+    *,
+    configurations: Optional[Sequence[Mapping[str, Any]]] = None,
+    relative_tolerance_pct: float = 10.0,
+    absolute_tolerance_us: float = 1.0,
+    hidden_tolerance_points: float = 5.0,
+) -> JsonDict:
+    """Replay source and canary canaries and compare behavioral metrics."""
+
+    from .replay import replay_canary
+
+    validate_canary(canary)
+    relative_tolerance_pct = _optional_non_negative(relative_tolerance_pct, "relative_tolerance_pct") or 0.0
+    absolute_tolerance_us = _optional_non_negative(absolute_tolerance_us, "absolute_tolerance_us") or 0.0
+    hidden_tolerance_points = _optional_non_negative(hidden_tolerance_points, "hidden_tolerance_points") or 0.0
+    compiler = canary.get("compiler", {})
+    source_events = as_int(compiler.get("source_events"))
+    trace_events = trace.get("events", [])
+    trace_event_count = len(trace_events) if isinstance(trace_events, list) else 0
+    max_events = source_events if source_events < trace_event_count else None
+    full_canary = compile_trace(
+        trace,
+        max_events=max_events,
+        timing_sample_limit=max(2, source_events),
+        require_lossless_timing=True,
+        allow_empty=source_events == 0,
+    )
+    config_rows: List[JsonDict] = []
+    for raw_config in configurations or _DEFAULT_BEHAVIORAL_CONFIGS:
+        config = dict(raw_config)
+        name = str(config.pop("name", f"config-{len(config_rows)}"))
+        replay_args = _behavioral_replay_args(config)
+        source_report = replay_canary(full_canary, backend_label=name, **replay_args)
+        canary_report = replay_canary(canary, backend_label=name, **replay_args)
+        checks = [
+            _behavior_metric_check(
+                metric,
+                source_report["metrics"],
+                canary_report["metrics"],
+                relative_tolerance_pct=relative_tolerance_pct,
+                absolute_tolerance_us=absolute_tolerance_us,
+                hidden_tolerance_points=hidden_tolerance_points,
+            )
+            for metric in _BEHAVIORAL_METRICS
+        ]
+        config_rows.append(
+            {
+                "name": name,
+                "status": "pass" if all(check["status"] == "pass" for check in checks) else "fail",
+                "source_metrics": {metric: source_report["metrics"][metric] for metric in _BEHAVIORAL_METRICS},
+                "canary_metrics": {metric: canary_report["metrics"][metric] for metric in _BEHAVIORAL_METRICS},
+                "checks": checks,
+            }
+        )
+    source_order = _behavior_ranking(config_rows, "source_metrics")
+    canary_order = _behavior_ranking(config_rows, "canary_metrics")
+    ranking = {
+        "metric": "median_us",
+        "status": "pass" if source_order == canary_order else "fail",
+        "source_order": source_order,
+        "canary_order": canary_order,
+    }
+    passed = all(row["status"] == "pass" for row in config_rows) and ranking["status"] == "pass"
+    return {
+        "format": "commcanary.behavior_verification.v1",
+        "status": "behaviorally_verified" if passed else "failed",
+        "source_events": source_events,
+        "relative_tolerance_pct": relative_tolerance_pct,
+        "absolute_tolerance_us": absolute_tolerance_us,
+        "hidden_tolerance_points": hidden_tolerance_points,
+        "configurations": config_rows,
+        "ranking": ranking,
+    }
+
+
+def _behavioral_replay_args(config: Mapping[str, Any]) -> JsonDict:
+    allowed = {
+        "bandwidth_gbps",
+        "latency_floor_us",
+        "compute_pressure",
+        "overlap_efficiency",
+        "iterations",
+        "seed",
+        "max_replay_events",
+    }
+    return {key: config[key] for key in allowed if key in config}
+
+
+def _behavior_metric_check(
+    metric: str,
+    source_metrics: Mapping[str, Any],
+    canary_metrics: Mapping[str, Any],
+    *,
+    relative_tolerance_pct: float,
+    absolute_tolerance_us: float,
+    hidden_tolerance_points: float,
+) -> JsonDict:
+    source_value = as_float(source_metrics.get(metric))
+    canary_value = as_float(canary_metrics.get(metric))
+    absolute_delta = canary_value - source_value
+    if metric == "communication_hidden_pct":
+        passed = abs(absolute_delta) <= hidden_tolerance_points
+        relative_delta = None
+    else:
+        relative_delta = None if source_value == 0.0 else absolute_delta / source_value * 100.0
+        passed = abs(absolute_delta) <= absolute_tolerance_us or (
+            relative_delta is not None and abs(relative_delta) <= relative_tolerance_pct
+        )
+    return {
+        "metric": metric,
+        "status": "pass" if passed else "fail",
+        "source": round(source_value, 3),
+        "canary": round(canary_value, 3),
+        "absolute_delta": round(absolute_delta, 3),
+        "relative_delta_pct": None if relative_delta is None else round(relative_delta, 2),
+    }
+
+
+def _behavior_ranking(rows: Sequence[Mapping[str, Any]], key: str) -> List[str]:
+    return [
+        str(row.get("name"))
+        for row in sorted(rows, key=lambda row: (as_float(row.get(key, {}).get("median_us")), str(row.get("name"))))
+    ]
 
 
 def _verification_check(name: str, expected: Any, actual: Any) -> JsonDict:

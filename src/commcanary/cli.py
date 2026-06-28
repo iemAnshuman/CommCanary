@@ -10,7 +10,7 @@ from typing import Any, List, Optional
 
 from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
-from .compiler import compile_trace, verify_canary_fidelity
+from .compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
 from .html_report import write_compare_html, write_report_html
 from .replay import replay_canary
 from .schema import CommCanaryError, load_json, validate_report, write_json
@@ -90,6 +90,15 @@ def _build_parser() -> argparse.ArgumentParser:
     verify_parser.add_argument("canary")
     verify_parser.add_argument("--output", "-o", required=True)
     verify_parser.set_defaults(func=_cmd_verify_fidelity)
+
+    behavior_parser = sub.add_parser("verify-behavior", help="verify canary replay behavior against a source trace")
+    behavior_parser.add_argument("trace")
+    behavior_parser.add_argument("canary")
+    behavior_parser.add_argument("--output", "-o", required=True)
+    behavior_parser.add_argument("--relative-tolerance-pct", type=float, default=10.0)
+    behavior_parser.add_argument("--absolute-tolerance-us", type=float, default=1.0)
+    behavior_parser.add_argument("--hidden-tolerance-points", type=float, default=5.0)
+    behavior_parser.set_defaults(func=_cmd_verify_behavior)
 
     capture_parser = sub.add_parser("capture", help="run an instrumented command and collect a trace")
     capture_parser.add_argument("--output", "-o", required=True)
@@ -206,6 +215,24 @@ def _cmd_verify_fidelity(args: Any) -> int:
     for check in verification["checks"]:
         print(f"- {check['name']}: {check['status']}")
     return 0 if verification["status"] == "source_verified" else 1
+
+
+def _cmd_verify_behavior(args: Any) -> int:
+    trace = load_json(args.trace)
+    canary = load_json(args.canary)
+    verification = verify_canary_behavior(
+        trace,
+        canary,
+        relative_tolerance_pct=args.relative_tolerance_pct,
+        absolute_tolerance_us=args.absolute_tolerance_us,
+        hidden_tolerance_points=args.hidden_tolerance_points,
+    )
+    write_json(args.output, verification)
+    print(f"behavior verification: {verification['status']}")
+    for row in verification["configurations"]:
+        print(f"- {row['name']}: {row['status']}")
+    print(f"- ranking: {verification['ranking']['status']}")
+    return 0 if verification["status"] == "behaviorally_verified" else 1
 
 
 def _cmd_capture(args: Any) -> int:
