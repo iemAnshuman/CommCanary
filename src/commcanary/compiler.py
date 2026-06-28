@@ -112,6 +112,7 @@ def compile_trace(
     has_observed_tail = bool(observed_flags and all(observed_flags))
 
     canary_events: List[JsonDict] = []
+    signature_occurrences: Dict[Tuple[Any, ...], int] = {}
     for source_index, (event, gap_us) in enumerate(zip(ordered_events, ordered_gaps)):
         step = _event_to_step(
             event,
@@ -120,6 +121,8 @@ def compile_trace(
             sample_limit=timing_sample_limit,
         )
         signature = _signature(step)
+        step["_execution_occurrence_base"] = signature_occurrences.get(signature, 0)
+        signature_occurrences[signature] = step["_execution_occurrence_base"] + 1
         if canary_events and canary_events[-1].get("_signature") == signature:
             _append_sample(canary_events[-1], step)
         else:
@@ -415,7 +418,7 @@ def _finalize_step(step: Dict[str, Any]) -> JsonDict:
             median(as_float(sample.get("observed_exposed_us")) for sample in all_samples)
         )
     result["source"]["digest"] = step["_source_hasher"].hexdigest()
-    result["execution_source_sha256"] = step["_source_hasher"].hexdigest()
+    result["execution_occurrence_base"] = as_int(step.get("_execution_occurrence_base"), 0)
     result["source"]["sampled_timing_records"] = _recursive_timing_record_count(timing_samples)
     if any(_timing_record_uncertain_weight(record) for record in _walk_timing_records(timing_samples)):
         result["compute_fields_uncertain"] = True

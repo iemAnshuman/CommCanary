@@ -1543,6 +1543,25 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(baseline["metrics"], candidate["metrics"])
         self.assertTrue(compare_reports(baseline, candidate)["compatibility"]["compatible"])
 
+    def test_semantic_identity_is_independent_of_source_event_ids(self):
+        renamed = small_trace()
+        for index, event in enumerate(renamed["events"]):
+            event["id"] = f"renamed-{index}"
+        baseline_canary = compile_trace(small_trace())
+        renamed_canary = compile_trace(renamed)
+        self.assertNotEqual(
+            baseline_canary["events"][0]["source"]["digest"],
+            renamed_canary["events"][0]["source"]["digest"],
+        )
+        self.assertEqual(
+            baseline_canary["compiler"]["execution_semantic_sha256"],
+            renamed_canary["compiler"]["execution_semantic_sha256"],
+        )
+        self.assertEqual(
+            replay_canary(baseline_canary, seed=3)["metrics"],
+            replay_canary(renamed_canary, seed=3)["metrics"],
+        )
+
     def test_semantic_canary_hash_canonicalizes_rank_count_but_includes_phase(self):
         baseline_canary = compile_trace(small_trace())
         without_rank_count = copy.deepcopy(baseline_canary)

@@ -135,8 +135,8 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["group"] = str(event.get("group"))
     if "concurrent_groups" in event:
         projected["concurrent_groups"] = as_int(event.get("concurrent_groups"))
-    if "execution_source_sha256" in event:
-        projected["execution_source_sha256"] = str(event.get("execution_source_sha256"))
+    if "execution_occurrence_base" in event:
+        projected["execution_occurrence_base"] = as_int(event.get("execution_occurrence_base"))
     if ranks is not None:
         projected["rank_count"] = len(ranks)
     elif "rank_count" in event:
@@ -489,8 +489,8 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             _validate_sha256(source.get("digest"), f"canary event {index} source.digest")
         if "sampled_timing_records" in source and as_int(source.get("sampled_timing_records")) <= 0:
             raise SchemaError(f"canary event {index} source.sampled_timing_records must be positive")
-        if "execution_source_sha256" in event:
-            _validate_sha256(event.get("execution_source_sha256"), f"canary event {index} execution_source_sha256")
+        if "execution_occurrence_base" in event and as_int(event.get("execution_occurrence_base")) < 0:
+            raise SchemaError(f"canary event {index} execution_occurrence_base must be non-negative")
         if "concurrent_groups" in event and as_int(event.get("concurrent_groups")) <= 0:
             raise SchemaError(f"canary event {index} concurrent_groups must be positive")
 
