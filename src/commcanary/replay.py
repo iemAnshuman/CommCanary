@@ -175,6 +175,54 @@ def replay_canary(
     return report
 
 
+def verify_report_against_canary(report: Mapping[str, Any], canary: Mapping[str, Any]) -> JsonDict:
+    """Recompute a replay report from its declared backend settings."""
+
+    validate_report(report)
+    validate_canary(canary)
+    backend = report.get("backend", {})
+    protocol = report.get("replay_protocol", {})
+    recomputed = replay_canary(
+        canary,
+        backend_label=str(backend.get("label", "simulated-nccl")),
+        bandwidth_gbps=as_float(backend.get("bandwidth_gbps"), 55.0),
+        latency_floor_us=as_float(backend.get("latency_floor_us"), 7.5),
+        compute_pressure=as_float(backend.get("compute_pressure"), 0.55),
+        overlap_efficiency=as_float(backend.get("overlap_efficiency"), 0.72),
+        iterations=as_int(protocol.get("iterations")),
+        seed=as_int(protocol.get("seed")),
+        include_samples="samples" in report,
+        max_replay_events=as_int(protocol.get("max_replay_events"), DEFAULT_MAX_REPLAY_EVENTS),
+    )
+    checks = [
+        _report_verification_check(
+            "canary.sha256",
+            recomputed.get("canary", {}).get("sha256"),
+            report.get("canary", {}).get("sha256"),
+        ),
+        _report_verification_check("metrics", recomputed.get("metrics"), report.get("metrics")),
+        _report_verification_check("by_phase", recomputed.get("by_phase"), report.get("by_phase")),
+        _report_verification_check("by_op", recomputed.get("by_op"), report.get("by_op")),
+        _report_verification_check("calibration", recomputed.get("calibration"), report.get("calibration")),
+    ]
+    if "samples" in report:
+        checks.append(_report_verification_check("samples", recomputed.get("samples"), report.get("samples")))
+    passed = all(check["status"] == "pass" for check in checks)
+    return {
+        "format": "commcanary.report_verification.v1",
+        "status": "model_recomputed" if passed else "failed",
+        "checks": checks,
+    }
+
+
+def _report_verification_check(name: str, expected: Any, actual: Any) -> JsonDict:
+    check: JsonDict = {"name": name, "status": "pass" if expected == actual else "fail"}
+    if check["status"] == "fail":
+        check["expected"] = expected
+        check["actual"] = actual
+    return check
+
+
 def _simulate_step(
     step: Mapping[str, Any],
     *,

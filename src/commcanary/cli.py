@@ -12,7 +12,7 @@ from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
 from .compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
 from .html_report import write_compare_html, write_report_html
-from .replay import replay_canary
+from .replay import replay_canary, verify_report_against_canary
 from .schema import CommCanaryError, load_json, validate_report, write_json
 
 
@@ -99,6 +99,12 @@ def _build_parser() -> argparse.ArgumentParser:
     behavior_parser.add_argument("--absolute-tolerance-us", type=float, default=1.0)
     behavior_parser.add_argument("--hidden-tolerance-points", type=float, default=5.0)
     behavior_parser.set_defaults(func=_cmd_verify_behavior)
+
+    report_verify_parser = sub.add_parser("verify-report", help="recompute a report from a canary and backend settings")
+    report_verify_parser.add_argument("report")
+    report_verify_parser.add_argument("canary")
+    report_verify_parser.add_argument("--output", "-o", required=True)
+    report_verify_parser.set_defaults(func=_cmd_verify_report)
 
     capture_parser = sub.add_parser("capture", help="run an instrumented command and collect a trace")
     capture_parser.add_argument("--output", "-o", required=True)
@@ -233,6 +239,17 @@ def _cmd_verify_behavior(args: Any) -> int:
         print(f"- {row['name']}: {row['status']}")
     print(f"- ranking: {verification['ranking']['status']}")
     return 0 if verification["status"] == "behaviorally_verified" else 1
+
+
+def _cmd_verify_report(args: Any) -> int:
+    report = load_json(args.report)
+    canary = load_json(args.canary)
+    verification = verify_report_against_canary(report, canary)
+    write_json(args.output, verification)
+    print(f"report verification: {verification['status']}")
+    for check in verification["checks"]:
+        print(f"- {check['name']}: {check['status']}")
+    return 0 if verification["status"] == "model_recomputed" else 1
 
 
 def _cmd_capture(args: Any) -> int:

@@ -14,7 +14,7 @@ from commcanary.cli import main as cli_main
 from commcanary.compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.html_report import render_compare_html, render_report_html
-from commcanary.replay import replay_canary
+from commcanary.replay import replay_canary, verify_report_against_canary
 from commcanary.schema import (
     SchemaError,
     TRACE_FORMAT,
@@ -67,6 +67,40 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(metrics["count"], 6)
         self.assertGreaterEqual(metrics["p99_us"], metrics["median_us"])
         self.assertGreater(metrics["arrival_skew_p95_us"], 0.0)
+
+    def test_report_verification_recomputes_declared_model(self):
+        canary = compile_trace(small_trace())
+        report = replay_canary(canary, seed=3)
+        verification = verify_report_against_canary(report, canary)
+        self.assertEqual(verification["status"], "model_recomputed")
+
+        forged = copy.deepcopy(report)
+        forged["metrics"].update(
+            {
+                "median_us": 1000.0,
+                "p95_us": 1000.0,
+                "p99_us": 1000.0,
+                "max_us": 1000.0,
+                "mean_us": 1000.0,
+            }
+        )
+        for key in ("by_phase", "by_op"):
+            for row in forged[key]:
+                row.update(
+                    {
+                        "median_us": 1000.0,
+                        "p95_us": 1000.0,
+                        "p99_us": 1000.0,
+                        "max_us": 1000.0,
+                        "mean_us": 1000.0,
+                    }
+                )
+        validate_report(forged)
+        verification = verify_report_against_canary(forged, canary)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(check["name"] == "metrics" and check["status"] == "fail" for check in verification["checks"])
+        )
 
     def test_compare_detects_candidate_regression(self):
         canary = compile_trace(small_trace())
@@ -2055,6 +2089,7 @@ class CommCanaryTests(unittest.TestCase):
             html_path = os.path.join(tmp, "report.html")
             verification_path = os.path.join(tmp, "fidelity.json")
             behavior_path = os.path.join(tmp, "behavior.json")
+            report_verification_path = os.path.join(tmp, "report-verification.json")
             write_json(trace_path, small_trace())
             self.assertEqual(
                 cli_main(
@@ -2075,9 +2110,14 @@ class CommCanaryTests(unittest.TestCase):
             self.assertEqual(cli_main(["report", report_path, "--output", html_path]), 0)
             self.assertEqual(cli_main(["verify-fidelity", trace_path, canary_path, "--output", verification_path]), 0)
             self.assertEqual(cli_main(["verify-behavior", trace_path, canary_path, "--output", behavior_path]), 0)
+            self.assertEqual(
+                cli_main(["verify-report", report_path, canary_path, "--output", report_verification_path]),
+                0,
+            )
             self.assertTrue(os.path.exists(html_path))
             self.assertEqual(load_json(verification_path)["status"], "source_verified")
             self.assertEqual(load_json(behavior_path)["status"], "behaviorally_verified")
+            self.assertEqual(load_json(report_verification_path)["status"], "model_recomputed")
 
 
     def test_tiny_periodic_gaps_preserve_exact_timeline(self):
