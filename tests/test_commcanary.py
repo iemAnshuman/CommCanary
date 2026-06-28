@@ -716,6 +716,42 @@ class CommCanaryTests(unittest.TestCase):
             with self.assertRaises(SchemaError):
                 merge_trace_shards(tmp, workload_name="ranked")
 
+    def test_capture_merges_send_recv_as_point_to_point(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = {
+                "capture_session_id": "s",
+                "collective_id": "msg-0",
+                "collective_seq": 0,
+                "phase": "decode",
+                "bytes": 16,
+                "ranks": [0, 1],
+                "start_us": 0.0,
+                "partial_rank_arrival": True,
+            }
+            write_json(
+                os.path.join(tmp, "rank-0.trace.json"),
+                {
+                    "format": TRACE_FORMAT,
+                    "workload": {"name": "ranked"},
+                    "system": {"rank": "0", "capture_session_id": "s", "clock_offset_us": 0.0},
+                    "events": [{**base, "op": "send", "recorder_rank": "0", "rank_arrival_us": {"0": 0.0}}],
+                },
+            )
+            write_json(
+                os.path.join(tmp, "rank-1.trace.json"),
+                {
+                    "format": TRACE_FORMAT,
+                    "workload": {"name": "ranked"},
+                    "system": {"rank": "1", "capture_session_id": "s", "clock_offset_us": 0.0},
+                    "events": [{**base, "op": "recv", "recorder_rank": "1", "rank_arrival_us": {"1": 0.0}}],
+                },
+            )
+            merged = merge_trace_shards(tmp, workload_name="ranked")
+            event = merged["events"][0]
+            self.assertEqual(event["op"], "point_to_point")
+            self.assertEqual(event["sender_rank"], 0)
+            self.assertEqual(event["receiver_rank"], 1)
+
     def test_capture_requires_session_and_all_scalar_ranks(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = {

@@ -268,6 +268,7 @@ def _collective_duration_us(
         "broadcast": 0.8,
         "send": 1.0,
         "recv": 1.0,
+        "point_to_point": 1.0,
     }.get(op, 1.0)
     contention = 1.0 + max(0, concurrent_groups - 1) * 0.22
     pressure_penalty = 1.0 + pressure * 0.18

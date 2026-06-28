@@ -458,7 +458,7 @@ def _coalesce_events(events: List[JsonDict]) -> JsonDict:
     identity_event = events[0]
     ranks = normalize_ranks(identity_event.get("ranks"))
     expected_ranks = {str(rank) for rank in ranks}
-    _validate_collective_identity(events, ranks)
+    merged_op, point_to_point = _validate_collective_identity(events, ranks)
     recorder_ranks = _recorder_ranks(events, expected_ranks)
     calibrated_values = {bool(event.get("_clock_calibrated")) for event in events}
     if len(calibrated_values) > 1:
@@ -479,7 +479,11 @@ def _coalesce_events(events: List[JsonDict]) -> JsonDict:
         if not key.startswith("_") and key not in {"shard", "rank_arrival_us", "recorder_rank"}
     }
     coalesced["id"] = f"collective-{timeline_event.get('collective_id', timeline_event.get('collective_seq', 0))}"
+    coalesced["op"] = merged_op
     coalesced["start_us"] = round(coalesced_start_us, 9)
+    if point_to_point is not None:
+        coalesced["sender_rank"] = point_to_point["sender_rank"]
+        coalesced["receiver_rank"] = point_to_point["receiver_rank"]
 
     raw_map_events = [event for event in events if isinstance(event.get("rank_arrival_us"), Mapping)]
     if raw_map_events:
@@ -532,7 +536,7 @@ def _coalesce_events(events: List[JsonDict]) -> JsonDict:
     return coalesced
 
 
-def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> None:
+def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> Tuple[str, Optional[JsonDict]]:
     first = events[0]
     session = first.get("capture_session_id")
     collective_id = first.get("collective_id")
@@ -544,18 +548,17 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> N
         "capture_session_id": session,
         "collective_id": collective_id,
         "phase": first.get("phase", "unknown"),
-        "op": first.get("op"),
         "bytes": as_int(first.get("bytes")),
         "group": first.get("group", "default"),
         "ranks": tuple(ranks),
         "concurrent_groups": as_int(first.get("concurrent_groups"), 1),
     }
+    ops = {str(first.get("op"))}
     for event in events[1:]:
         actual = {
             "capture_session_id": event.get("capture_session_id"),
             "collective_id": event.get("collective_id"),
             "phase": event.get("phase", "unknown"),
-            "op": event.get("op"),
             "bytes": as_int(event.get("bytes")),
             "group": event.get("group", "default"),
             "ranks": tuple(normalize_ranks(event.get("ranks"))),
@@ -563,6 +566,23 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> N
         }
         if actual != expected:
             raise SchemaError("conflicting records share the same collective identity")
+        ops.add(str(event.get("op")))
+    if len(ops) == 1:
+        return next(iter(ops)), None
+    if ops == {"send", "recv"}:
+        senders = [
+            as_int(event.get("_shard_rank", event.get("recorder_rank", "unknown")))
+            for event in events
+            if event.get("op") == "send"
+        ]
+        receivers = [
+            as_int(event.get("_shard_rank", event.get("recorder_rank", "unknown")))
+            for event in events
+            if event.get("op") == "recv"
+        ]
+        if len(senders) == 1 and len(receivers) == 1 and senders[0] != receivers[0]:
+            return "point_to_point", {"sender_rank": senders[0], "receiver_rank": receivers[0]}
+    raise SchemaError("conflicting records share the same collective identity")
 
 
 def _recorder_ranks(events: List[JsonDict], expected_ranks: Set[str]) -> Set[str]:

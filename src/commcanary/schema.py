@@ -15,7 +15,16 @@ COMPARE_FORMAT = "commcanary.compare.v2"
 MAX_RANK_COUNT = 65536
 MAX_ABS_INTEGER = 2**63 - 1
 MAX_TIME_US = 1_000_000_000_000.0
-SUPPORTED_OPS = {"all_reduce", "reduce_scatter", "all_gather", "all_to_all", "broadcast", "send", "recv"}
+SUPPORTED_OPS = {
+    "all_reduce",
+    "reduce_scatter",
+    "all_gather",
+    "all_to_all",
+    "broadcast",
+    "send",
+    "recv",
+    "point_to_point",
+}
 PROTOCOL_FINGERPRINT_EXCLUDE = {"sha256", "max_replay_events"}
 FIDELITY_ERROR_FIELDS = (
     "max_gap_error_us",
