@@ -408,9 +408,9 @@ def _reject_unordered_uncalibrated_domains(events: List[JsonDict], systems: List
     rank_domains = [set(normalize_ranks(event.get("ranks"))) for event in events]
     for left_index, left in enumerate(rank_domains):
         for right in rank_domains[left_index + 1:]:
-            if left and right and left.isdisjoint(right):
+            if left and right and left != right:
                 raise SchemaError(
-                    "cannot globally order disjoint collectives from uncalibrated rank clocks"
+                    "cannot globally order different collective rank domains from uncalibrated rank clocks"
                 )
 
 

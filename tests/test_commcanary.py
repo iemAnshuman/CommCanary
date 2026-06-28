@@ -899,6 +899,44 @@ class CommCanaryTests(unittest.TestCase):
             with self.assertRaises(SchemaError):
                 merge_trace_shards(tmp, workload_name="clock-domains")
 
+    def test_uncalibrated_overlapping_rank_domains_are_not_globally_ordered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shard_events = {
+                0: [("a", [0, 1], 500.0)],
+                1: [("a", [0, 1], 0.0), ("b", [1, 2], 10.0)],
+                2: [("b", [1, 2], 20.0)],
+            }
+            for rank, records in shard_events.items():
+                events = []
+                for collective_id, ranks, start_us in records:
+                    events.append(
+                        {
+                            "id": f"{collective_id}-{rank}",
+                            "capture_session_id": "s",
+                            "collective_id": collective_id,
+                            "collective_seq": 0,
+                            "recorder_rank": str(rank),
+                            "phase": "decode",
+                            "op": "all_reduce",
+                            "bytes": 16,
+                            "ranks": ranks,
+                            "start_us": start_us,
+                            "rank_arrival_us": {str(rank): 0.0},
+                            "partial_rank_arrival": True,
+                        }
+                    )
+                write_json(
+                    os.path.join(tmp, f"rank-{rank}.trace.json"),
+                    {
+                        "format": TRACE_FORMAT,
+                        "workload": {"name": "clock-domains"},
+                        "system": {"rank": str(rank), "capture_session_id": "s"},
+                        "events": events,
+                    },
+                )
+            with self.assertRaises(SchemaError):
+                merge_trace_shards(tmp, workload_name="clock-domains")
+
     def test_uncalibrated_merge_uses_canonical_rank_and_conservative_compute(self):
         with tempfile.TemporaryDirectory() as tmp:
             for rank, start_us, overlap, pressure, before in (
