@@ -62,6 +62,13 @@ injected and naturally occurring regressions.
   configuration rankings;
 - separate source-normalized, scheduler-execution, calibration-evaluation,
   artifact/provenance, and replay-protocol fingerprints;
+- replay-equivalent sequence motif compression for exact repeated multi-event
+  programs, with flat/motif scheduler-hash equivalence;
+- fail-closed behavior-gated compilation for canaries that must pass source,
+  behavioral, and ranking verification;
+- simulator ablation controls for skew, overlap, ordering, rare tails, queue
+  reset gaps, pressure, and observed exposed latency;
+- principled point-to-point identity fields for send/recv pairs;
 - a synthetic ranking-inversion scaffold contrasting isolated collective
   results, full workload replay, and verified/unverified canaries.
 
@@ -73,7 +80,8 @@ injected and naturally occurring regressions.
 - synthetic compute kernels calibrated to preserve interference;
 - dependency-graph and communicator reconstruction;
 - full optimisation that directly minimises canary size subject to ranking
-  preservation across multiple target configurations;
+  preservation across multiple target configurations; current behavior-gated
+  compilation can reject bad canaries but does not search the Pareto frontier;
 - delta debugging or sequence minimisation against a real regression oracle;
 - privacy leakage analysis;
 - multi-engine, multi-model, multi-generation hardware evaluation.
@@ -90,7 +98,8 @@ preservation, not demonstrated p99 preservation. The report labels this mode
 `structural-proxy`. `verify-behavior` is the gate for stronger behavioral
 claims: without a passing source verification, behavioral metric comparison,
 and pairwise ranking check, the artifact must be described as behaviorally
-unverified.
+unverified. `compile --require-behavior-verification` applies that same gate at
+artifact-generation time, but it is not yet a ranking-aware minimizer.
 
 ## Required baselines
 

@@ -54,9 +54,30 @@ Require a completely lossless timing representation with:
 commcanary compile trace.json -o canary.json --lossless-timing
 ```
 
+Compiled canaries can also be behavior-gated. This is intentionally stricter
+than field-level fidelity: compilation fails unless the generated canary passes
+source verification, behavioral checks, and pairwise configuration-ranking
+verification under the verifier's backend set.
+
+```bash
+commcanary compile trace.json -o canary.json --require-behavior-verification
+```
+
 The compiler reports both event compression and serialized-byte compression.
 A smaller event count is not described as compression when the artifact is
 actually larger.
+
+## Sequence motifs and scheduler identity
+
+CommCanary has a replay-equivalent `sequence_motif` representation for exact
+repeated multi-event programs such as `A-B-A-B`, `A-B-C` loops, or
+transformer-layer-like communication blocks. A motif is an artifact-level
+wrapper around child event templates plus a repeat count; replay, validation,
+source verification, and scheduler hashes expand it to the same ordered
+simulator inputs as the flat encoding. Source/provenance fields may differ, but
+flat and motif encodings that execute the same scheduler inputs share the same
+`scheduler_execution_sha256`. Use `--disable-sequence-motifs` to emit only flat
+events.
 
 ## Observed tail signal and calibration
 
@@ -102,9 +123,39 @@ commcanary verify-behavior trace.json canary.json -o behavior.json \
   --ranking-tie-tolerance-us 0.001
 ```
 
+`compile --require-behavior-verification` uses this verifier as a fail-closed
+compiler gate. This is meant for research claims, not for fastest iteration.
+
 A canary with rank-local compute uncertainty can still be replayed, but strong
 behavioral claims are downgraded to `behaviorally_unverified` rather than
 `behaviorally_verified`.
+
+## Replay ablations
+
+Replay supports research ablations that deliberately remove one preservation
+mechanism from the deterministic model:
+
+```bash
+commcanary replay canary.json -o out/ablation.report.json \
+  --ablate arrival_skew \
+  --ablate compute_overlap \
+  --ablate rare_tail_windows
+```
+
+Supported ablations are `arrival_skew`, `compute_overlap`,
+`operation_ordering`, `rare_tail_windows`, `queue_reset_gaps`, `pressure`, and
+`observed_exposed_us`. Ablations are recorded in the replay protocol and are
+therefore covered by `verify-report`. They are not a physical intervention;
+they are simulator controls for paper ablations.
+
+## Point-to-point messages
+
+Point-to-point traffic is represented as `point_to_point` rather than as a fake
+collective. Merged send/recv observations preserve `sender_rank`,
+`receiver_rank`, `tag`, `channel`, `message_sequence`, and rank-local send/recv
+observation metadata. Scheduler identity and resource labelling include these
+fields so reversing sender/receiver or changing a channel is not treated as the
+same execution.
 
 ## Ranking-inversion scaffold
 
@@ -179,7 +230,8 @@ Reports contain:
 - phase and operation breakdowns;
 - source-normalized, scheduler-execution, calibration-evaluation, artifact, and
   replay-protocol fingerprints;
-- compiler fidelity metadata and source commitments for approximate intervals;
+- compiler fidelity metadata, source commitments for approximate intervals, and
+  sequence-motif metadata;
 - model calibration when observed latency is available.
 
 Report validation reconciles metrics and breakdowns with included samples. Even

@@ -9,6 +9,10 @@
 - Added source commitments to bounded timing intervals: source count, source segment SHA-256, source gap sum, representative-selection method, representative index, and a complete error vector.
 - Added separate source-normalized, scheduler-execution, calibration-evaluation, and artifact/provenance fingerprints.
 - Added an adversarial ranking-inversion scaffold and tests that label too-small behaviorally lossy canaries as unverified.
+- Added replay-equivalent sequence motif compression for exact repeated multi-event programs, with scheduler-hash equivalence to flat encodings.
+- Added fail-closed behavior-gated compilation via `--require-behavior-verification`.
+- Added simulator ablation controls for skew, overlap, ordering, rare tails, queue-reset gaps, pressure, and observed exposed latency.
+- Strengthened point-to-point semantics with sender/receiver, tag, channel, message sequence, and send/recv observations.
 
 ## 0.2.0
 
