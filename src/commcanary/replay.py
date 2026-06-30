@@ -15,7 +15,9 @@ from .schema import (
     as_float,
     as_int,
     average_wait_us,
+    canary_calibration_sha256,
     canary_execution_sha256,
+    canary_scheduler_execution_sha256,
     canonical_json_bytes,
     percentile_from_sorted,
     replay_protocol_sha256,
@@ -143,6 +145,8 @@ def replay_canary(
         "canary": {
             "sha256": _canary_sha256(canary),
             "execution_semantic_sha256": canary_execution_sha256(canary),
+            "scheduler_execution_sha256": canary_scheduler_execution_sha256(canary),
+            "calibration_evaluation_sha256": canary_calibration_sha256(canary),
             "format": canary.get("format"),
             "source_events": compiler.get("source_events"),
         },

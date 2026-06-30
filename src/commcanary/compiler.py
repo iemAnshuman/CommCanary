@@ -14,7 +14,10 @@ from .schema import (
     as_float,
     as_int,
     arrival_skew_us,
+    canary_artifact_provenance_sha256,
+    canary_calibration_sha256,
     canary_execution_sha256,
+    canary_scheduler_execution_sha256,
     median,
     normalize_arrival_offsets,
     normalize_ranks,
@@ -197,6 +200,7 @@ def compile_trace(
             "approximate_timing_records": approximate_records,
             "source_bytes": source_bytes,
             "source_trace_sha256": source_sha,
+            "source_normalized_sha256": source_sha,
             "fidelity": fidelity,
             "fidelity_budget": {key: value for key, value in budgets.items() if value is not None},
         },
@@ -208,6 +212,9 @@ def compile_trace(
             "status": "rank_local_compute_fields_uncertain",
         }
     canary["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(canary)
+    canary["compiler"]["scheduler_execution_sha256"] = canary_scheduler_execution_sha256(canary)
+    canary["compiler"]["calibration_evaluation_sha256"] = canary_calibration_sha256(canary)
+    canary["compiler"]["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
     _update_size_metrics(canary)
     validate_canary(canary)
     return canary
@@ -229,6 +236,12 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
         allow_empty=source_events == 0,
     )
     expected_compiler = expected.get("compiler", {})
+    source_commitments = _verify_source_commitments(
+        trace,
+        canary,
+        max_events=max_events,
+        timing_sample_limit=as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+    )
     checks = [
         _verification_check(
             "source_trace_sha256",
@@ -236,9 +249,24 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
             compiler.get("source_trace_sha256"),
         ),
         _verification_check(
+            "source_normalized_sha256",
+            expected_compiler.get("source_normalized_sha256"),
+            compiler.get("source_normalized_sha256"),
+        ),
+        _verification_check(
             "execution_semantic_sha256",
             expected_compiler.get("execution_semantic_sha256"),
             compiler.get("execution_semantic_sha256"),
+        ),
+        _verification_check(
+            "scheduler_execution_sha256",
+            expected_compiler.get("scheduler_execution_sha256"),
+            compiler.get("scheduler_execution_sha256"),
+        ),
+        _verification_check(
+            "calibration_evaluation_sha256",
+            expected_compiler.get("calibration_evaluation_sha256"),
+            compiler.get("calibration_evaluation_sha256"),
         ),
         _verification_check("fidelity", expected_compiler.get("fidelity"), compiler.get("fidelity")),
         _verification_check(
@@ -251,6 +279,7 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
             expected_compiler.get("approximate_timing_records"),
             compiler.get("approximate_timing_records"),
         ),
+        source_commitments,
     ]
     passed = all(check["status"] == "pass" for check in checks)
     return {
@@ -337,6 +366,224 @@ def verify_canary_behavior(
         "configurations": config_rows,
         "ranking": ranking,
     }
+
+
+def _verify_source_commitments(
+    trace: Mapping[str, Any],
+    canary: Mapping[str, Any],
+    *,
+    max_events: Optional[int],
+    timing_sample_limit: int,
+) -> JsonDict:
+    ordered_events, ordered_gaps, _timing_mode = _ordered_trace_events(list(trace.get("events", [])))
+    if max_events is not None:
+        ordered_events = ordered_events[:max_events]
+        ordered_gaps = ordered_gaps[:max_events]
+    source_steps = [
+        _event_to_step(
+            event,
+            source_index=index,
+            gap_us=gap_us,
+            sample_limit=timing_sample_limit,
+        )
+        for index, (event, gap_us) in enumerate(zip(ordered_events, ordered_gaps))
+    ]
+    failures: List[JsonDict] = []
+    checked_intervals = 0
+    pointer = 0
+    for event_index, event in enumerate(canary.get("events", [])):
+        if not isinstance(event, Mapping):
+            continue
+        repeat = as_int(event.get("repeat"), 1)
+        source_slice = source_steps[pointer : pointer + repeat]
+        if len(source_slice) != repeat:
+            failures.append(
+                {
+                    "event_index": event_index,
+                    "reason": "source slice shorter than canary repeat",
+                    "expected": repeat,
+                    "actual": len(source_slice),
+                }
+            )
+            break
+        event_signature = _signature(event)
+        for local_index, source_step in enumerate(source_slice):
+            if _signature(source_step) != event_signature:
+                failures.append(
+                    {
+                        "event_index": event_index,
+                        "source_local_index": local_index,
+                        "reason": "source event signature does not match canary event",
+                        "source_signature": list(_signature(source_step)),
+                        "canary_signature": list(event_signature),
+                    }
+                )
+                break
+        source_samples = [step["timing_samples"][0] for step in source_slice]
+        for record in _walk_timing_records(event.get("timing_samples")):
+            if record.get("approximation") != "bounded_interval":
+                continue
+            checked_intervals += 1
+            start = as_int(record.get("source_start"))
+            end = as_int(record.get("source_end"))
+            if end >= len(source_samples):
+                failures.append(
+                    {
+                        "event_index": event_index,
+                        "source_start": start,
+                        "source_end": end,
+                        "reason": "bounded interval exceeds source slice",
+                    }
+                )
+                continue
+            expected = _recompute_interval_commitment(source_samples[start : end + 1], record, source_start=start)
+            mismatch = _first_commitment_mismatch(expected, record)
+            if mismatch is not None:
+                failures.append({"event_index": event_index, **mismatch})
+        pointer += repeat
+    if pointer != len(source_steps):
+        failures.append(
+            {
+                "reason": "canary events do not consume all selected source events",
+                "consumed": pointer,
+                "source_events": len(source_steps),
+            }
+        )
+    return {
+        "name": "source_commitments",
+        "status": "pass" if not failures else "fail",
+        "checked_bounded_intervals": checked_intervals,
+        "failures": failures[:20],
+    }
+
+
+def _recompute_interval_commitment(
+    segment: Sequence[Mapping[str, Any]],
+    record: Mapping[str, Any],
+    *,
+    source_start: int,
+) -> JsonDict:
+    weight = len(segment)
+    gap_sum_us = sum(as_float(sample.get("gap_us"), 0.0) for sample in segment)
+    encoded_gap = as_float(record.get("gap_us"), 0.0)
+    offsets = [_round_us(as_float(value)) for value in record.get("arrival_offsets_us", [])]
+    representative_skew = arrival_skew_us(offsets)
+    max_offset_error = 0.0
+    for sample in segment:
+        source_offsets = [as_float(value) for value in sample.get("arrival_offsets_us", [])]
+        if len(source_offsets) == len(offsets):
+            max_offset_error = max(
+                max_offset_error,
+                max((abs(left - right) for left, right in zip(source_offsets, offsets)), default=0.0),
+            )
+    prefix_source = 0.0
+    prefix_encoded = 0.0
+    max_prefix_error = 0.0
+    for sample in segment:
+        prefix_source += as_float(sample.get("gap_us"), 0.0)
+        prefix_encoded += encoded_gap
+        max_prefix_error = max(max_prefix_error, abs(prefix_source - prefix_encoded))
+    representative_source_index = as_int(record.get("representative_source_index"))
+    representative_local_index = representative_source_index - source_start
+    representative_gap_error = 0.0
+    if 0 <= representative_local_index < len(segment):
+        representative_gap_error = abs(as_float(segment[representative_local_index].get("gap_us"), 0.0) - encoded_gap)
+    errors: JsonDict = {
+        "max_gap_error_us": _round_us(
+            max(abs(as_float(sample.get("gap_us"), 0.0) - encoded_gap) for sample in segment)
+            if segment
+            else 0.0
+        ),
+        "max_skew_error_us": _round_us(
+            max(abs(as_float(sample.get("arrival_skew_us"), 0.0) - representative_skew) for sample in segment)
+            if segment
+            else 0.0
+        ),
+        "max_arrival_offset_error_us": _round_us(max_offset_error),
+        "max_compute_before_error_us": _round_us(
+            max(
+                abs(as_float(sample.get("compute_before_us"), 0.0) - as_float(record.get("compute_before_us"), 0.0))
+                for sample in segment
+            )
+            if segment
+            else 0.0
+        ),
+        "max_overlap_error_us": _round_us(
+            max(
+                abs(as_float(sample.get("compute_overlap_us"), 0.0) - as_float(record.get("compute_overlap_us"), 0.0))
+                for sample in segment
+            )
+            if segment
+            else 0.0
+        ),
+        "max_pressure_error": round(
+            max(
+                abs(as_float(sample.get("compute_pressure"), 0.5) - as_float(record.get("compute_pressure"), 0.5))
+                for sample in segment
+            )
+            if segment
+            else 0.0,
+            6,
+        ),
+        "representative_gap_error_us": _round_us(representative_gap_error),
+        "max_prefix_gap_error_us": _round_us(max_prefix_error),
+    }
+    if "observed_exposed_us" in record:
+        errors["max_observed_exposed_error_us"] = _round_us(
+            max(
+                abs(as_float(sample.get("observed_exposed_us")) - as_float(record.get("observed_exposed_us")))
+                for sample in segment
+            )
+            if segment
+            else 0.0
+        )
+    return {
+        "source_count": weight,
+        "source_gap_sum_us": _round_us(gap_sum_us),
+        "source_segment_sha256": _source_segment_sha256(segment),
+        "error_vector": errors,
+        **errors,
+    }
+
+
+def _first_commitment_mismatch(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> Optional[JsonDict]:
+    for key in ("source_count", "source_gap_sum_us", "source_segment_sha256"):
+        if actual.get(key) != expected.get(key):
+            return {
+                "source_start": actual.get("source_start"),
+                "source_end": actual.get("source_end"),
+                "field": key,
+                "expected": expected.get(key),
+                "actual": actual.get(key),
+            }
+    actual_vector = actual.get("error_vector", {})
+    expected_vector = expected.get("error_vector", {})
+    if not isinstance(actual_vector, Mapping):
+        return {
+            "source_start": actual.get("source_start"),
+            "source_end": actual.get("source_end"),
+            "field": "error_vector",
+            "expected": expected_vector,
+            "actual": actual_vector,
+        }
+    for key, expected_value in expected_vector.items():
+        if key not in actual_vector:
+            return {
+                "source_start": actual.get("source_start"),
+                "source_end": actual.get("source_end"),
+                "field": f"error_vector.{key}",
+                "expected": expected_value,
+                "actual": None,
+            }
+        if abs(as_float(actual_vector.get(key)) - as_float(expected_value)) > 1e-6:
+            return {
+                "source_start": actual.get("source_start"),
+                "source_end": actual.get("source_end"),
+                "field": f"error_vector.{key}",
+                "expected": expected_value,
+                "actual": actual_vector.get(key),
+            }
+    return None
 
 
 def _behavioral_replay_args(config: Mapping[str, Any]) -> JsonDict:
@@ -713,6 +960,9 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
     gap_sum_us = sum(as_float(sample.get("gap_us"), 0.0) for sample in segment)
     average_gap_us = gap_sum_us / weight
     representative = _joint_medoid_sample(segment, average_gap_us)
+    representative_source_index = start + next(
+        offset for offset, sample in enumerate(segment) if sample is representative
+    )
     offsets = [_round_us(as_float(value)) for value in representative.get("arrival_offsets_us", [])]
     representative_skew = arrival_skew_us(offsets)
 
@@ -744,6 +994,9 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
         "source_start": start,
         "source_end": end - 1,
         "weight": weight,
+        "source_count": weight,
+        "representative_source_index": representative_source_index,
+        "source_gap_sum_us": _round_us(gap_sum_us),
         "gap_sum_us": _round_us(gap_sum_us),
         "approximation": "bounded_interval",
         "max_gap_error_us": _round_us(
@@ -802,6 +1055,22 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
                 for sample in segment
             )
         )
+    record["source_segment_sha256"] = _source_segment_sha256(segment)
+    record["representative_selection_method"] = (
+        "joint_medoid_normalized_l1_gap_skew_offsets_compute_overlap_pressure_observed"
+    )
+    error_fields = (
+        "max_gap_error_us",
+        "max_skew_error_us",
+        "max_arrival_offset_error_us",
+        "max_compute_before_error_us",
+        "max_overlap_error_us",
+        "max_pressure_error",
+        "max_observed_exposed_error_us",
+        "representative_gap_error_us",
+        "max_prefix_gap_error_us",
+    )
+    record["error_vector"] = {field: record[field] for field in error_fields if field in record}
     return record
 
 
@@ -1101,6 +1370,34 @@ def _optional_non_negative(value: Optional[float], name: str) -> Optional[float]
 
 def _round_us(value: float) -> float:
     return round(as_float(value), 9)
+
+
+def _source_segment_sha256(samples: Sequence[Mapping[str, Any]]) -> str:
+    normalized = []
+    for sample in samples:
+        normalized.append(
+            {
+                "gap_us": _round_us(as_float(sample.get("gap_us"), 0.0)),
+                "arrival_offsets_us": [
+                    _round_us(as_float(value)) for value in sample.get("arrival_offsets_us", [])
+                ],
+                "arrival_skew_us": _round_us(as_float(sample.get("arrival_skew_us"), 0.0)),
+                "compute_before_us": _round_us(as_float(sample.get("compute_before_us"), 0.0)),
+                "compute_overlap_us": _round_us(as_float(sample.get("compute_overlap_us"), 0.0)),
+                "compute_pressure": round(as_float(sample.get("compute_pressure"), 0.5), 6),
+                **(
+                    {"observed_exposed_us": _round_us(as_float(sample.get("observed_exposed_us")))}
+                    if "observed_exposed_us" in sample
+                    else {}
+                ),
+                **(
+                    {"compute_fields_uncertain": True}
+                    if sample.get("compute_fields_uncertain") is True
+                    else {}
+                ),
+            }
+        )
+    return hashlib.sha256(_canonical_json_bytes({"samples": normalized})).hexdigest()
 
 
 def _canonical_json_bytes(data: Mapping[str, Any]) -> bytes:

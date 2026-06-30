@@ -308,9 +308,14 @@ def _compatibility(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) ->
     reasons: List[str] = []
     base_canary = baseline.get("canary", {})
     cand_canary = candidate.get("canary", {})
+    base_scheduler = base_canary.get("scheduler_execution_sha256")
+    cand_scheduler = cand_canary.get("scheduler_execution_sha256")
     base_semantic = base_canary.get("execution_semantic_sha256")
     cand_semantic = cand_canary.get("execution_semantic_sha256")
-    if base_semantic and cand_semantic:
+    if base_scheduler and cand_scheduler:
+        if base_scheduler != cand_scheduler:
+            reasons.append("reports were produced from different scheduler-execution fingerprints")
+    elif base_semantic and cand_semantic:
         if base_semantic != cand_semantic:
             reasons.append("reports were produced from different executable canary fingerprints")
     elif base_canary.get("sha256") != cand_canary.get("sha256"):
@@ -330,6 +335,8 @@ def _compatibility(baseline: Mapping[str, Any], candidate: Mapping[str, Any]) ->
         "candidate_canary_sha256": cand_canary.get("sha256"),
         "baseline_execution_semantic_sha256": base_semantic,
         "candidate_execution_semantic_sha256": cand_semantic,
+        "baseline_scheduler_execution_sha256": base_scheduler,
+        "candidate_scheduler_execution_sha256": cand_scheduler,
         "baseline_simulation_model": base_model.get("version"),
         "candidate_simulation_model": cand_model.get("version"),
         "baseline_replay_protocol_sha256": base_protocol.get("sha256"),

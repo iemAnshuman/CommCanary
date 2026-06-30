@@ -26,6 +26,16 @@ SUPPORTED_OPS = {
     "point_to_point",
 }
 PROTOCOL_FINGERPRINT_EXCLUDE = {"sha256", "max_replay_events"}
+CANARY_HASH_FIELD_NAMES = {
+    "source_normalized_sha256",
+    "source_trace_sha256",
+    "execution_semantic_sha256",
+    "scheduler_execution_sha256",
+    "calibration_evaluation_sha256",
+    "artifact_provenance_sha256",
+    "canary_bytes",
+    "byte_compression_ratio",
+}
 FIDELITY_ERROR_FIELDS = (
     "max_gap_error_us",
     "max_skew_error_us",
@@ -119,6 +129,39 @@ def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
 
 
+def canary_scheduler_execution_sha256(canary: Mapping[str, Any]) -> str:
+    return canary_execution_sha256(canary)
+
+
+def canary_calibration_sha256(canary: Mapping[str, Any]) -> str:
+    stable = {
+        "format": canary.get("format"),
+        "events": [
+            _calibration_event_projection(event)
+            for event in canary.get("events", [])
+            if isinstance(event, Mapping)
+        ],
+    }
+    return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
+
+
+def canary_artifact_provenance_sha256(canary: Mapping[str, Any]) -> str:
+    stable = _strip_canary_hash_fields(canary)
+    return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
+
+
+def _strip_canary_hash_fields(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _strip_canary_hash_fields(child)
+            for key, child in value.items()
+            if key != "created_at" and key not in CANARY_HASH_FIELD_NAMES
+        }
+    if isinstance(value, list):
+        return [_strip_canary_hash_fields(child) for child in value]
+    return value
+
+
 def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
     projected: JsonDict = {}
     if "phase" in event:
@@ -145,6 +188,53 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
     if isinstance(samples, list):
         projected["timing_runs"] = _execution_timing_runs(samples)
     return projected
+
+
+def _calibration_event_projection(event: Mapping[str, Any]) -> JsonDict:
+    projected: JsonDict = {}
+    for key in ("phase", "op", "group"):
+        if key in event:
+            projected[key] = str(event.get(key))
+    if "bytes" in event:
+        projected["bytes"] = as_int(event.get("bytes"))
+    if "ranks" in event:
+        projected["ranks"] = normalize_ranks(event.get("ranks"))
+    if "concurrent_groups" in event:
+        projected["concurrent_groups"] = as_int(event.get("concurrent_groups"))
+    samples = event.get("timing_samples")
+    if isinstance(samples, list):
+        projected["observed_runs"] = _calibration_observed_runs(samples)
+    return projected
+
+
+def _calibration_observed_runs(samples: Sequence[Any]) -> List[JsonDict]:
+    runs: List[JsonDict] = []
+    for observed in _calibration_observed_items(samples):
+        if runs and runs[-1]["observed_exposed_us"] == observed:
+            runs[-1]["weight"] += 1
+        else:
+            runs.append({"observed_exposed_us": observed, "weight": 1})
+    return runs
+
+
+def _calibration_observed_items(samples: Sequence[Any]) -> Iterable[Optional[float]]:
+    for sample in samples:
+        if not isinstance(sample, Mapping):
+            continue
+        pattern = sample.get("timing_pattern")
+        if isinstance(pattern, list) and pattern:
+            emitted = list(_calibration_observed_items(pattern))
+            repeats = as_int(sample.get("pattern_repeats"), 1)
+            for _repeat in range(repeats):
+                yield from emitted
+        else:
+            observed: Optional[float]
+            if "observed_exposed_us" in sample:
+                observed = round(as_float(sample.get("observed_exposed_us")), 9)
+            else:
+                observed = None
+            for _ in range(as_int(sample.get("weight", 1))):
+                yield observed
 
 
 def _execution_timing_runs(samples: Sequence[Any]) -> List[JsonDict]:
@@ -623,10 +713,24 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             raise SchemaError("canary compiler.capture_uncertainty contradicts timing records")
     if "source_trace_sha256" in compiler:
         _validate_sha256(compiler.get("source_trace_sha256"), "canary compiler.source_trace_sha256")
+    if "source_normalized_sha256" in compiler:
+        _validate_sha256(compiler.get("source_normalized_sha256"), "canary compiler.source_normalized_sha256")
+        if compiler.get("source_trace_sha256") and compiler.get("source_normalized_sha256") != compiler.get("source_trace_sha256"):
+            raise SchemaError("canary compiler.source_normalized_sha256 must match source_trace_sha256")
     if "execution_semantic_sha256" in compiler:
         _validate_sha256(compiler.get("execution_semantic_sha256"), "canary compiler.execution_semantic_sha256")
         if compiler.get("execution_semantic_sha256") != canary_execution_sha256(canary):
             raise SchemaError("canary compiler.execution_semantic_sha256 does not match executable events")
+    if "scheduler_execution_sha256" in compiler:
+        _validate_sha256(compiler.get("scheduler_execution_sha256"), "canary compiler.scheduler_execution_sha256")
+        if compiler.get("scheduler_execution_sha256") != canary_scheduler_execution_sha256(canary):
+            raise SchemaError("canary compiler.scheduler_execution_sha256 does not match scheduler events")
+    if "calibration_evaluation_sha256" in compiler:
+        _validate_sha256(compiler.get("calibration_evaluation_sha256"), "canary compiler.calibration_evaluation_sha256")
+        if compiler.get("calibration_evaluation_sha256") != canary_calibration_sha256(canary):
+            raise SchemaError("canary compiler.calibration_evaluation_sha256 does not match calibration fields")
+    if "artifact_provenance_sha256" in compiler:
+        _validate_sha256(compiler.get("artifact_provenance_sha256"), "canary compiler.artifact_provenance_sha256")
     for integer_key in ("source_bytes", "canary_bytes", "timing_sample_limit"):
         if integer_key in compiler and as_int(compiler.get(integer_key)) < 0:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
@@ -730,6 +834,10 @@ def validate_report(report: Mapping[str, Any]) -> None:
     _validate_sha256(canary.get("sha256"), "canary.sha256")
     if "execution_semantic_sha256" in canary:
         _validate_sha256(canary.get("execution_semantic_sha256"), "canary.execution_semantic_sha256")
+    if "scheduler_execution_sha256" in canary:
+        _validate_sha256(canary.get("scheduler_execution_sha256"), "canary.scheduler_execution_sha256")
+    if "calibration_evaluation_sha256" in canary:
+        _validate_sha256(canary.get("calibration_evaluation_sha256"), "canary.calibration_evaluation_sha256")
     if "source_events" not in canary:
         raise SchemaError("report canary.source_events is required")
     source_events = as_int(canary.get("source_events"))
@@ -1475,7 +1583,13 @@ def _validate_bounded_interval_evidence(sample: Mapping[str, Any], label: str) -
         "source_start",
         "source_end",
         "weight",
+        "source_count",
+        "representative_source_index",
+        "source_segment_sha256",
+        "source_gap_sum_us",
         "gap_sum_us",
+        "representative_selection_method",
+        "error_vector",
         "max_gap_error_us",
         "max_skew_error_us",
         "max_arrival_offset_error_us",
@@ -1490,6 +1604,39 @@ def _validate_bounded_interval_evidence(sample: Mapping[str, Any], label: str) -
             raise SchemaError(f"{label} bounded interval missing {key!r}")
     if "observed_exposed_us" in sample and "max_observed_exposed_error_us" not in sample:
         raise SchemaError(f"{label} bounded interval missing 'max_observed_exposed_error_us'")
+    if as_int(sample.get("source_count")) != as_int(sample.get("weight")):
+        raise SchemaError(f"{label} source_count must match weight")
+    representative_source_index = as_int(sample.get("representative_source_index"))
+    if not as_int(sample.get("source_start")) <= representative_source_index <= as_int(sample.get("source_end")):
+        raise SchemaError(f"{label} representative_source_index must be within source interval")
+    if abs(as_float(sample.get("source_gap_sum_us")) - as_float(sample.get("gap_sum_us"))) > 1e-6:
+        raise SchemaError(f"{label} source_gap_sum_us must match gap_sum_us")
+    _validate_sha256(sample.get("source_segment_sha256"), f"{label} source_segment_sha256")
+    method = sample.get("representative_selection_method")
+    if not isinstance(method, str) or not method:
+        raise SchemaError(f"{label} representative_selection_method must be a non-empty string")
+    error_vector = sample.get("error_vector")
+    if not isinstance(error_vector, Mapping):
+        raise SchemaError(f"{label} error_vector must be an object")
+    expected_error_fields = (
+        "max_gap_error_us",
+        "max_skew_error_us",
+        "max_arrival_offset_error_us",
+        "max_compute_before_error_us",
+        "max_overlap_error_us",
+        "max_pressure_error",
+        "max_observed_exposed_error_us",
+        "representative_gap_error_us",
+        "max_prefix_gap_error_us",
+    )
+    for field in expected_error_fields:
+        if field in sample:
+            if field not in error_vector:
+                raise SchemaError(f"{label} error_vector missing {field!r}")
+            if abs(as_float(error_vector.get(field)) - as_float(sample.get(field))) > 1e-6:
+                raise SchemaError(f"{label} error_vector.{field} must match {field}")
+        elif field in error_vector:
+            raise SchemaError(f"{label} error_vector contains absent field {field!r}")
 
 
 def _timing_record_logical_uncertain_weight(sample: Mapping[str, Any]) -> int:

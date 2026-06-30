@@ -19,7 +19,10 @@ from commcanary.schema import (
     SchemaError,
     TRACE_FORMAT,
     as_int,
+    canary_artifact_provenance_sha256,
+    canary_calibration_sha256,
     canary_execution_sha256,
+    canary_scheduler_execution_sha256,
     load_json,
     validate_canary,
     validate_comparison,
@@ -27,6 +30,13 @@ from commcanary.schema import (
     validate_trace,
     write_json,
 )
+
+
+def refresh_canary_hashes(canary):
+    canary["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(canary)
+    canary["compiler"]["scheduler_execution_sha256"] = canary_scheduler_execution_sha256(canary)
+    canary["compiler"]["calibration_evaluation_sha256"] = canary_calibration_sha256(canary)
+    canary["compiler"]["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
 
 
 def small_trace():
@@ -51,6 +61,45 @@ def small_trace():
         "workload": {"name": "unit"},
         "events": events,
     }
+
+
+def adversarial_ranking_trace():
+    tail_indices = {10, 30, 50, 70, 90}
+    events = []
+    for index in range(100):
+        tail = index in tail_indices
+        events.append(
+            {
+                "id": f"event-{index}",
+                "phase": "decode",
+                "op": "all_reduce",
+                "bytes": 1024,
+                "ranks": [0, 1],
+                "group": "tp",
+                "gap_us": 500.0 if (index - 1) in tail_indices else 1.0,
+                "rank_arrival_us": {"0": 0.0, "1": 500.0 if tail else 0.0},
+                "compute_overlap_us": 10000.0 if tail else 0.0,
+                "compute_pressure": 1.0 if tail else 0.5,
+            }
+        )
+    return {"format": TRACE_FORMAT, "workload": {"name": "ranking-inversion"}, "events": events}
+
+
+def adversarial_ranking_configs():
+    return [
+        {
+            "name": "isolated-fast-no-overlap",
+            "latency_floor_us": 7.0,
+            "overlap_efficiency": 0.0,
+            "seed": 1,
+        },
+        {
+            "name": "workload-overlap-friendly",
+            "latency_floor_us": 8.0,
+            "overlap_efficiency": 1.0,
+            "seed": 1,
+        },
+    ]
 
 
 class CommCanaryTests(unittest.TestCase):
@@ -233,6 +282,8 @@ class CommCanaryTests(unittest.TestCase):
                 for field in fidelity_fields:
                     if field in record:
                         record[field] = 0.0
+                    if isinstance(record.get("error_vector"), dict) and field in record["error_vector"]:
+                        record["error_vector"][field] = 0.0
                 if isinstance(record.get("timing_pattern"), list):
                     zero_record_errors(record["timing_pattern"])
 
@@ -247,6 +298,38 @@ class CommCanaryTests(unittest.TestCase):
             any(check["name"] == "fidelity" and check["status"] == "fail" for check in verification["checks"])
         )
 
+    def test_source_commitments_are_independently_verified(self):
+        trace = adversarial_ranking_trace()
+        canary = compile_trace(trace, timing_sample_limit=2)
+        interval = next(
+            sample
+            for sample in canary["events"][0]["timing_samples"]
+            if sample.get("approximation") == "bounded_interval"
+        )
+        self.assertIn("source_count", interval)
+        self.assertIn("source_segment_sha256", interval)
+        self.assertIn("source_gap_sum_us", interval)
+        self.assertIn("representative_selection_method", interval)
+        self.assertIn("error_vector", interval)
+        self.assertEqual(verify_canary_fidelity(trace, canary)["status"], "source_verified")
+
+        tampered = copy.deepcopy(canary)
+        interval = next(
+            sample
+            for sample in tampered["events"][0]["timing_samples"]
+            if sample.get("approximation") == "bounded_interval"
+        )
+        interval["source_segment_sha256"] = "0" * 64
+        validate_canary(tampered)
+        verification = verify_canary_fidelity(trace, tampered)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(
+                check["name"] == "source_commitments" and check["status"] == "fail"
+                for check in verification["checks"]
+            )
+        )
+
     def test_behavior_verification_compares_source_and_canary_replay(self):
         trace = small_trace()
         canary = compile_trace(trace)
@@ -256,7 +339,7 @@ class CommCanaryTests(unittest.TestCase):
 
         changed = copy.deepcopy(canary)
         changed["events"][0]["bytes"] *= 64
-        changed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed)
+        refresh_canary_hashes(changed)
         validate_canary(changed)
         verification = verify_canary_behavior(trace, changed)
         self.assertEqual(verification["status"], "failed")
@@ -1587,7 +1670,7 @@ class CommCanaryTests(unittest.TestCase):
         candidate_canary["events"][0]["source"]["digest"] = "0" * 64
         candidate_canary["events"][0]["arrival_skew_us"] = 999.0
         candidate_canary["events"][0]["compute_pressure"] = 1.25
-        candidate_canary["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(candidate_canary)
+        refresh_canary_hashes(candidate_canary)
 
         self.assertEqual(
             baseline_canary["compiler"]["execution_semantic_sha256"],
@@ -1621,7 +1704,7 @@ class CommCanaryTests(unittest.TestCase):
         baseline_canary = compile_trace(small_trace())
         without_rank_count = copy.deepcopy(baseline_canary)
         without_rank_count["events"][0].pop("rank_count")
-        without_rank_count["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(without_rank_count)
+        refresh_canary_hashes(without_rank_count)
         self.assertEqual(
             baseline_canary["compiler"]["execution_semantic_sha256"],
             without_rank_count["compiler"]["execution_semantic_sha256"],
@@ -1635,7 +1718,7 @@ class CommCanaryTests(unittest.TestCase):
 
         changed_phase = copy.deepcopy(baseline_canary)
         changed_phase["events"][0]["phase"] = "prefill"
-        changed_phase["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_phase)
+        refresh_canary_hashes(changed_phase)
         self.assertNotEqual(
             baseline_canary["compiler"]["execution_semantic_sha256"],
             changed_phase["compiler"]["execution_semantic_sha256"],
@@ -1657,7 +1740,7 @@ class CommCanaryTests(unittest.TestCase):
             sample["arrival_offsets_us"] = [str(offset) for offset in sample["arrival_offsets_us"]]
             sample["compute_overlap_us"] = str(sample["compute_overlap_us"])
             sample["compute_pressure"] = str(sample["compute_pressure"])
-        changed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed)
+        refresh_canary_hashes(changed)
 
         self.assertEqual(
             canary["compiler"]["execution_semantic_sha256"],
@@ -1677,7 +1760,7 @@ class CommCanaryTests(unittest.TestCase):
         changed_observed["events"][0]["observed_exposed_us"] = 999.0
         for sample in changed_observed["events"][0]["timing_samples"]:
             sample["observed_exposed_us"] = 999.0
-        changed_observed["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_observed)
+        refresh_canary_hashes(changed_observed)
         self.assertEqual(
             observed_canary["compiler"]["execution_semantic_sha256"],
             changed_observed["compiler"]["execution_semantic_sha256"],
@@ -1709,7 +1792,7 @@ class CommCanaryTests(unittest.TestCase):
         changed_before = copy.deepcopy(canary)
         changed_before["events"][0]["compute_before_us"] = 1_000_000.0
         changed_before["events"][0]["timing_samples"][0]["compute_before_us"] = 1_000_000.0
-        changed_before["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(changed_before)
+        refresh_canary_hashes(changed_before)
         self.assertEqual(
             canary["compiler"]["execution_semantic_sha256"],
             changed_before["compiler"]["execution_semantic_sha256"],
@@ -1752,7 +1835,7 @@ class CommCanaryTests(unittest.TestCase):
         patterned["events"][0]["timing_samples"] = [pattern_parent]
         patterned["events"][0]["source"]["sampled_timing_records"] = 2
         patterned["compiler"]["recursive_timing_records"] = 2
-        patterned["compiler"]["execution_semantic_sha256"] = canary_execution_sha256(patterned)
+        refresh_canary_hashes(patterned)
         self.assertEqual(
             flat["compiler"]["execution_semantic_sha256"],
             patterned["compiler"]["execution_semantic_sha256"],
