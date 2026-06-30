@@ -98,6 +98,8 @@ def _build_parser() -> argparse.ArgumentParser:
     behavior_parser.add_argument("--relative-tolerance-pct", type=float, default=10.0)
     behavior_parser.add_argument("--absolute-tolerance-us", type=float, default=1.0)
     behavior_parser.add_argument("--hidden-tolerance-points", type=float, default=5.0)
+    behavior_parser.add_argument("--tail-recall-threshold", type=float, default=0.80)
+    behavior_parser.add_argument("--ranking-tie-tolerance-us", type=float, default=0.001)
     behavior_parser.set_defaults(func=_cmd_verify_behavior)
 
     report_verify_parser = sub.add_parser("verify-report", help="recompute a report from a canary and backend settings")
@@ -232,9 +234,15 @@ def _cmd_verify_behavior(args: Any) -> int:
         relative_tolerance_pct=args.relative_tolerance_pct,
         absolute_tolerance_us=args.absolute_tolerance_us,
         hidden_tolerance_points=args.hidden_tolerance_points,
+        tail_recall_threshold=args.tail_recall_threshold,
+        ranking_tie_tolerance_us=args.ranking_tie_tolerance_us,
     )
     write_json(args.output, verification)
     print(f"behavior verification: {verification['status']}")
+    print(f"- representation fidelity: {verification['representation_fidelity_status']}")
+    print(f"- source verified: {verification['source_verified_status']}")
+    print(f"- behavioral fidelity: {verification['behavioral_fidelity_status']}")
+    print(f"- configuration ranking: {verification['configuration_ranking_status']}")
     for row in verification["configurations"]:
         print(f"- {row['name']}: {row['status']}")
     print(f"- ranking: {verification['ranking']['status']}")

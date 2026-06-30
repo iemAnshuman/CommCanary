@@ -351,6 +351,41 @@ class CommCanaryTests(unittest.TestCase):
             )
         )
 
+    def test_behavior_verification_distinguishes_statuses_and_ranking_inversion(self):
+        trace = adversarial_ranking_trace()
+        lossy = compile_trace(trace, timing_sample_limit=2)
+        verification = verify_canary_behavior(
+            trace,
+            lossy,
+            configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        self.assertEqual(verification["representation_fidelity_status"], "bounded_approximate")
+        self.assertEqual(verification["source_verified_status"], "source_verified")
+        self.assertEqual(verification["behavioral_fidelity_status"], "pass")
+        self.assertEqual(verification["configuration_ranking_status"], "fail")
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(
+                pair["status"] == "fail" and pair["metric"] == "median_us"
+                for pair in verification["ranking"]["pairwise"]
+            )
+        )
+
+        lossless = compile_trace(trace, timing_sample_limit=32, require_lossless_timing=True)
+        verification = verify_canary_behavior(
+            trace,
+            lossless,
+            configurations=adversarial_ranking_configs(),
+            ranking_tie_tolerance_us=0.0,
+        )
+        self.assertEqual(verification["status"], "behaviorally_verified")
+        self.assertEqual(verification["configuration_ranking_status"], "pass")
+
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
         trace = small_trace()
         trace["events"] = [
