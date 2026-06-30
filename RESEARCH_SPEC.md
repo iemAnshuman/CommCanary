@@ -50,13 +50,20 @@ injected and naturally occurring regressions.
 - strict trace, canary, and report validation;
 - deterministic queue-aware replay simulation;
 - exact ordered periodic/run-length timing encoding;
-- bounded interval encoding with explicit fidelity errors and budgets;
+- bounded interval encoding with explicit fidelity errors, budgets, source
+  segment commitments, and representative-selection metadata;
 - exact total-gap preservation and prefix-gap error reporting;
 - joint preservation of skew, offsets, overlap, pressure, and observed latency;
 - optional measured `observed_exposed_us` signal and replay calibration;
 - fail-closed distributed shard merge and clock-uncertainty propagation;
 - phase/operation regression localisation;
-- canary and replay-protocol fingerprints.
+- behavior verification for p50/p95/p99/max/mean, queue waits, hidden
+  communication, phase/op behavior, tail-event recall, and pairwise
+  configuration rankings;
+- separate source-normalized, scheduler-execution, calibration-evaluation,
+  artifact/provenance, and replay-protocol fingerprints;
+- a synthetic ranking-inversion scaffold contrasting isolated collective
+  results, full workload replay, and verified/unverified canaries.
 
 ## Not implemented—and required before a strong systems-paper claim
 
@@ -65,8 +72,8 @@ injected and naturally occurring regressions.
   traces;
 - synthetic compute kernels calibrated to preserve interference;
 - dependency-graph and communicator reconstruction;
-- optimisation that directly preserves rankings across multiple target
-  configurations;
+- full optimisation that directly minimises canary size subject to ranking
+  preservation across multiple target configurations;
 - delta debugging or sequence minimisation against a real regression oracle;
 - privacy leakage analysis;
 - multi-engine, multi-model, multi-generation hardware evaluation.
@@ -80,7 +87,10 @@ compilation fails instead of silently violating the contract.
 
 When measured exposed latency is absent, “tail-aware” means structural tail
 preservation, not demonstrated p99 preservation. The report labels this mode
-`structural-proxy`.
+`structural-proxy`. `verify-behavior` is the gate for stronger behavioral
+claims: without a passing source verification, behavioral metric comparison,
+and pairwise ranking check, the artifact must be described as behaviorally
+unverified.
 
 ## Required baselines
 

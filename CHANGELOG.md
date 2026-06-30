@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Research fidelity
+
+- Strengthened `verify-behavior` so it separately reports representation fidelity, source verification, behavioral fidelity, and configuration-ranking status.
+- Added queue-wait distribution checks, phase/op behavior checks, tail-event recall, and pairwise backend ranking agreement across latency metrics.
+- Added source commitments to bounded timing intervals: source count, source segment SHA-256, source gap sum, representative-selection method, representative index, and a complete error vector.
+- Added separate source-normalized, scheduler-execution, calibration-evaluation, and artifact/provenance fingerprints.
+- Added an adversarial ranking-inversion scaffold and tests that label too-small behaviorally lossy canaries as unverified.
+
 ## 0.2.0
 
 ### Correctness

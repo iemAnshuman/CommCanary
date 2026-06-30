@@ -75,6 +75,52 @@ and percentage error. Without this signal, tail selection is a structural
 proxy based on skew, gaps, overlap, and change points; it is not claimed to
 preserve measured p99 latency.
 
+## Behavioral verification
+
+`verify-fidelity` answers whether a canary's representation-level claims can be
+recomputed from the source trace. `verify-behavior` answers a different
+question: whether the compressed artifact preserves simulator-visible workload
+behavior. It replays a lossless normalized source canary and the candidate
+canary across multiple backend configurations, then reports four separate
+statuses:
+
+- `representation_fidelity_status`: the compiler-attested timing mode, such as
+  `lossless_timing` or `bounded_approximate`;
+- `source_verified_status`: whether source-to-canary commitments recompute;
+- `behavioral_fidelity_status`: whether p50/p95/p99/max/mean, queue-wait
+  distributions, hidden communication, phase metrics, operation metrics, and
+  tail-event recall are within tolerance;
+- `configuration_ranking_status`: whether pairwise backend rankings are
+  preserved across latency metrics.
+
+```bash
+commcanary verify-behavior trace.json canary.json -o behavior.json \
+  --relative-tolerance-pct 10 \
+  --absolute-tolerance-us 1 \
+  --hidden-tolerance-points 5 \
+  --tail-recall-threshold 0.8 \
+  --ranking-tie-tolerance-us 0.001
+```
+
+A canary with rank-local compute uncertainty can still be replayed, but strong
+behavioral claims are downgraded to `behaviorally_unverified` rather than
+`behaviorally_verified`.
+
+## Ranking-inversion scaffold
+
+The repository includes a synthetic adversarial experiment that demonstrates why
+field-level compression is not enough. It constructs an isolated collective
+baseline and a full decode-like workload whose queue-reset gaps and high-overlap
+tail windows change configuration ranking. A canary that is too small is
+labelled unverified; a lossless compact canary preserves the workload ranking.
+
+```bash
+PYTHONPATH=src python examples/research_scaffolding.py
+```
+
+The script writes traces, canaries, and behavior-verification outputs under
+`out/research_scaffold/`.
+
 ## Trace timing semantics
 
 A trace must use one unambiguous ordering mode:
@@ -128,11 +174,12 @@ commcanary capture --output trace.json --workload-name llama70b -- \
 Reports contain:
 
 - median, p95, p99, maximum, and mean exposed latency;
-- arrival-skew and average-rank-wait statistics;
+- arrival-skew, queue-wait, and average-rank-wait statistics;
 - communication hidden by modeled overlap;
 - phase and operation breakdowns;
-- canary and replay-protocol fingerprints;
-- compiler fidelity metadata;
+- source-normalized, scheduler-execution, calibration-evaluation, artifact, and
+  replay-protocol fingerprints;
+- compiler fidelity metadata and source commitments for approximate intervals;
 - model calibration when observed latency is available.
 
 Report validation reconciles metrics and breakdowns with included samples. Even
