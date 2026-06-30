@@ -151,6 +151,18 @@ class CommCanaryTests(unittest.TestCase):
             any(check["name"] == "metrics" and check["status"] == "fail" for check in verification["checks"])
         )
 
+    def test_replay_ablations_are_report_verifiable_and_visible_in_samples(self):
+        canary = compile_trace(small_trace())
+        report = replay_canary(
+            canary,
+            include_samples=True,
+            ablations=["arrival_skew", "compute_overlap", "rare_tail_windows"],
+        )
+        self.assertEqual(report["backend"]["ablations"], ["arrival_skew", "compute_overlap", "rare_tail_windows"])
+        self.assertTrue(all(sample["arrival_skew_us"] == 0.0 for sample in report["samples"]))
+        self.assertTrue(all(sample["compute_overlap_us"] == 0.0 for sample in report["samples"]))
+        self.assertEqual(verify_report_against_canary(report, canary)["status"], "model_recomputed")
+
     def test_compare_detects_candidate_regression(self):
         canary = compile_trace(small_trace())
         baseline = replay_canary(canary, latency_floor_us=7.0, seed=3)

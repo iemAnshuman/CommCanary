@@ -33,6 +33,44 @@ DEFAULT_MAX_REPLAY_EVENTS = 1_000_000
 _MASK64 = (1 << 64) - 1
 
 
+SUPPORTED_ABLATIONS = {
+    "arrival_skew",
+    "compute_overlap",
+    "operation_ordering",
+    "rare_tail_windows",
+    "queue_reset_gaps",
+    "pressure",
+    "observed_exposed_us",
+}
+
+
+def _normalize_ablations(ablations: Optional[Iterable[str]]) -> frozenset[str]:
+    if ablations is None:
+        return frozenset()
+    if isinstance(ablations, str):
+        raw_items = [item.strip() for item in ablations.split(",") if item.strip()]
+    else:
+        raw_items = [str(item).strip() for item in ablations if str(item).strip()]
+    unknown = sorted(set(raw_items) - SUPPORTED_ABLATIONS)
+    if unknown:
+        raise SchemaError(f"unsupported replay ablation {unknown[0]!r}")
+    return frozenset(raw_items)
+
+
+def _operation_ordering_key(step: Mapping[str, Any]) -> Tuple[Any, ...]:
+    return (
+        str(step.get("phase", "unknown")),
+        str(step.get("op", "unknown")),
+        as_int(step.get("bytes"), 0),
+        str(step.get("group", "default")),
+        tuple(_sample_ranks(step)),
+        as_int(step.get("sender_rank"), -1) if "sender_rank" in step else -1,
+        as_int(step.get("receiver_rank"), -1) if "receiver_rank" in step else -1,
+        str(step.get("tag", "")),
+        str(step.get("channel", "")),
+    )
+
+
 def replay_canary(
     canary: Mapping[str, Any],
     *,
@@ -45,6 +83,7 @@ def replay_canary(
     seed: int = 7,
     include_samples: bool = False,
     max_replay_events: int = DEFAULT_MAX_REPLAY_EVENTS,
+    ablations: Optional[Iterable[str]] = None,
 ) -> JsonDict:
     """Replay a canary through a deterministic, queue-aware model.
 
@@ -70,8 +109,11 @@ def replay_canary(
     max_replay_events = as_int(max_replay_events)
     if max_replay_events < 1:
         raise SchemaError("max_replay_events must be at least 1")
+    ablation_set = _normalize_ablations(ablations)
 
     logical_steps = list(iter_canary_logical_events(canary.get("events", [])))
+    if "operation_ordering" in ablation_set:
+        logical_steps = sorted(logical_steps, key=_operation_ordering_key)
     logical_events = _logical_event_count(canary) * iterations
     if logical_events > max_replay_events:
         raise SchemaError(
@@ -96,6 +138,7 @@ def replay_canary(
                     bandwidth_gbps=bandwidth_gbps,
                     latency_floor_us=latency_floor_us,
                     compute_pressure=compute_pressure,
+                    ablations=ablation_set,
                 )
                 logical_clock_us += core["gap_us"]
                 if logical_clock_us > MAX_TIME_US:
@@ -137,6 +180,7 @@ def replay_canary(
         "quantile_method": QUANTILE_METHOD,
         "bandwidth_unit": "Gbit/s",
         "max_replay_events": max_replay_events,
+        "ablations": sorted(ablation_set),
     }
     protocol["sha256"] = replay_protocol_sha256(protocol)
 
@@ -164,6 +208,7 @@ def replay_canary(
             "seed": seed,
             "iterations": iterations,
             "bandwidth_unit": "Gbit/s",
+            "ablations": sorted(ablation_set),
         },
         "host": {"platform": platform.platform(), "python": platform.python_version()},
         "workload": canary.get("workload", {}),
@@ -199,6 +244,7 @@ def verify_report_against_canary(report: Mapping[str, Any], canary: Mapping[str,
         seed=as_int(protocol.get("seed")),
         include_samples="samples" in report,
         max_replay_events=as_int(protocol.get("max_replay_events"), DEFAULT_MAX_REPLAY_EVENTS),
+        ablations=protocol.get("ablations", []),
     )
     checks = [
         _report_verification_check(
@@ -239,8 +285,12 @@ def _simulate_step(
     bandwidth_gbps: float,
     latency_floor_us: float,
     compute_pressure: float,
+    ablations: Iterable[str] = (),
 ) -> JsonDict:
+    ablation_set = set(ablations)
     offsets = _sample_offsets(step, timing_sample)
+    if "arrival_skew" in ablation_set:
+        offsets = [0.0 for _ in offsets]
     skew_us = arrival_skew = (
         max(0.0, max(offsets) - min(offsets))
         if offsets
@@ -253,11 +303,13 @@ def _simulate_step(
     op = str(step.get("op", "unknown"))
     group = str(step.get("group", "default"))
     concurrent_groups = max(1, as_int(step.get("concurrent_groups"), 1))
+    timing_pressure = 0.55 if "pressure" in ablation_set else as_float(timing_sample.get("compute_pressure"), 0.5)
     pressure = min(
         1.5,
-        max(0.0, compute_pressure * as_float(timing_sample.get("compute_pressure"), 0.5) / 0.55),
+        max(0.0, compute_pressure * timing_pressure / 0.55),
     )
-    overlap_us = as_float(timing_sample.get("compute_overlap_us"), 0.0)
+    overlap_us = 0.0 if "compute_overlap" in ablation_set else as_float(timing_sample.get("compute_overlap_us"), 0.0)
+    gap_us = 0.0 if "queue_reset_gaps" in ablation_set else as_float(timing_sample.get("gap_us"), 0.0)
 
     collective_us = _collective_duration_us(
         op=op,
@@ -268,12 +320,13 @@ def _simulate_step(
         pressure=pressure,
         concurrent_groups=concurrent_groups,
     )
-    uniforms = _counter_uniforms(seed, iteration, _noise_identity(step, timing_sample))
+    uniforms = _counter_uniforms(seed, iteration, _noise_identity(step, timing_sample, offsets=offsets))
     collective_us += _tail_noise_us(
         uniforms,
         skew_us=skew_us,
         pressure=pressure,
         concurrent_groups=concurrent_groups,
+        disable_tail="rare_tail_windows" in ablation_set,
     )
     collective_us = max(0.5, collective_us)
 
@@ -286,7 +339,7 @@ def _simulate_step(
         "rank_count": rank_count,
         "group": group,
         "scheduler_resource": _scheduler_resource_label(group, ranks),
-        "gap_us": as_float(timing_sample.get("gap_us"), 0.0),
+        "gap_us": gap_us,
         "compute_before_us": as_float(timing_sample.get("compute_before_us"), 0.0),
         "arrival_skew_us": arrival_skew,
         "avg_rank_wait_us": wait_us,
@@ -294,7 +347,7 @@ def _simulate_step(
         "collective_us": collective_us,
         "concurrent_groups": concurrent_groups,
     }
-    if "observed_exposed_us" in timing_sample:
+    if "observed_exposed_us" in timing_sample and "observed_exposed_us" not in ablation_set:
         sample["observed_exposed_us"] = as_float(timing_sample.get("observed_exposed_us"))
     if timing_sample.get("compute_fields_uncertain") is True:
         sample["compute_fields_uncertain"] = True
@@ -338,6 +391,7 @@ def _tail_noise_us(
     skew_us: float,
     pressure: float,
     concurrent_groups: int,
+    disable_tail: bool = False,
 ) -> float:
     baseline_u, branch_u, tail_u = uniforms
     tail_probability = min(
@@ -345,7 +399,7 @@ def _tail_noise_us(
         0.015 + skew_us / 180.0 + pressure * 0.035 + max(0, concurrent_groups - 1) * 0.04,
     )
     baseline_jitter = -0.45 + baseline_u * 1.35
-    if branch_u > tail_probability:
+    if disable_tail or branch_u > tail_probability:
         return baseline_jitter
     mean = 3.5 + pressure * 8.0 + skew_us * 0.08
     tail = -math.log(max(1e-15, 1.0 - tail_u)) * mean
@@ -373,13 +427,21 @@ def _counter_uniforms(seed: int, iteration: int, identity: Mapping[str, Any]) ->
     return values[0], values[1], values[2]
 
 
-def _noise_identity(step: Mapping[str, Any], timing_sample: Mapping[str, Any]) -> JsonDict:
+def _noise_identity(
+    step: Mapping[str, Any],
+    timing_sample: Mapping[str, Any],
+    *,
+    offsets: Optional[Iterable[float]] = None,
+) -> JsonDict:
     return {
         "phase": str(step.get("phase", "unknown")),
         "op": str(step.get("op", "unknown")),
         "ranks": list(_sample_ranks(step)),
         "group": str(step.get("group", "default")),
-        "arrival_offsets_us": [round(value, 9) for value in _sample_offsets(step, timing_sample)],
+        "arrival_offsets_us": [
+            round(value, 9)
+            for value in (list(offsets) if offsets is not None else _sample_offsets(step, timing_sample))
+        ],
         "occurrence": as_int(step.get("execution_occurrence_base"), 0)
         + as_int(timing_sample.get("noise_occurrence"), 0),
     }

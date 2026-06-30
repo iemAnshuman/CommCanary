@@ -76,6 +76,16 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_parser.add_argument("--seed", type=int, default=7)
     replay_parser.add_argument("--include-samples", action="store_true")
     replay_parser.add_argument("--max-replay-events", type=int, default=1_000_000)
+    replay_parser.add_argument(
+        "--ablate",
+        action="append",
+        default=[],
+        help=(
+            "replay ablation to apply; repeat or comma-separate values: arrival_skew, "
+            "compute_overlap, operation_ordering, rare_tail_windows, queue_reset_gaps, "
+            "pressure, observed_exposed_us"
+        ),
+    )
     replay_parser.set_defaults(func=_cmd_replay)
 
     compare_parser = sub.add_parser("compare", help="compare baseline and candidate reports")
@@ -133,6 +143,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _split_ablations(values: List[str]) -> List[str]:
+    result: List[str] = []
+    for value in values or []:
+        result.extend(item.strip() for item in str(value).split(",") if item.strip())
+    return result
+
+
 def _cmd_compile(args: Any) -> int:
     trace = load_json(args.trace)
     canary = compile_trace(
@@ -187,6 +204,7 @@ def _cmd_replay(args: Any) -> int:
         seed=args.seed,
         include_samples=args.include_samples,
         max_replay_events=args.max_replay_events,
+        ablations=_split_ablations(args.ablate),
     )
     write_json(args.output, report)
     if args.html:
