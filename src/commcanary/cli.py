@@ -56,6 +56,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="emit only flat events instead of replay-equivalent multi-event sequence motifs",
     )
+    compile_parser.add_argument(
+        "--require-behavior-verification",
+        action="store_true",
+        help="fail compilation unless verify-behavior passes on the generated canary",
+    )
     compile_parser.set_defaults(func=_cmd_compile)
 
     replay_parser = sub.add_parser("replay", help="replay a canary and emit a report")
@@ -144,6 +149,7 @@ def _cmd_compile(args: Any) -> int:
         max_prefix_gap_error_us=args.max_prefix_gap_error_us,
         require_lossless_timing=args.lossless_timing,
         enable_sequence_motifs=not args.disable_sequence_motifs,
+        require_behavior_verification=args.require_behavior_verification,
     )
     write_json(args.output, canary)
     compiler = canary["compiler"]

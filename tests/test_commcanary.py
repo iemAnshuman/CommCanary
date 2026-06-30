@@ -386,6 +386,26 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(verification["status"], "behaviorally_verified")
         self.assertEqual(verification["configuration_ranking_status"], "pass")
 
+    def test_required_behavior_verification_rejects_ranking_losing_compile(self):
+        trace = adversarial_ranking_trace()
+        with self.assertRaises(SchemaError):
+            compile_trace(
+                trace,
+                timing_sample_limit=2,
+                require_behavior_verification=True,
+                behavior_configurations=adversarial_ranking_configs(),
+            )
+
+        faithful = compile_trace(
+            trace,
+            timing_sample_limit=32,
+            require_lossless_timing=True,
+            require_behavior_verification=True,
+            behavior_configurations=adversarial_ranking_configs(),
+        )
+        self.assertEqual(faithful["compiler"]["behavior_verification_status"], "behaviorally_verified")
+        self.assertEqual(faithful["compiler"]["configuration_ranking_status"], "pass")
+
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
         trace = small_trace()
         trace["events"] = [

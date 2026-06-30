@@ -105,6 +105,8 @@ def compile_trace(
     require_lossless_timing: bool = False,
     allow_empty: bool = False,
     enable_sequence_motifs: bool = True,
+    require_behavior_verification: bool = False,
+    behavior_configurations: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> JsonDict:
     """Compile a communication trace into a compact, fidelity-audited canary.
 
@@ -121,6 +123,8 @@ def compile_trace(
         raise SchemaError("allow_empty must be a boolean")
     if not isinstance(enable_sequence_motifs, bool):
         raise SchemaError("enable_sequence_motifs must be a boolean")
+    if not isinstance(require_behavior_verification, bool):
+        raise SchemaError("require_behavior_verification must be a boolean")
 
     parsed_max_events: Optional[int]
     if max_events is None:
@@ -277,6 +281,16 @@ def compile_trace(
     canary["compiler"]["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
     _update_size_metrics(canary)
     validate_canary(canary)
+    if require_behavior_verification:
+        behavior = verify_canary_behavior(trace, canary, configurations=behavior_configurations)
+        canary["compiler"]["behavior_verification_status"] = behavior["status"]
+        canary["compiler"]["configuration_ranking_status"] = behavior["configuration_ranking_status"]
+        canary["compiler"]["behavioral_fidelity_status"] = behavior["behavioral_fidelity_status"]
+        canary["compiler"]["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
+        _update_size_metrics(canary)
+        validate_canary(canary)
+        if behavior["status"] != "behaviorally_verified":
+            raise SchemaError("compiled canary failed required behavior verification")
     return canary
 
 
