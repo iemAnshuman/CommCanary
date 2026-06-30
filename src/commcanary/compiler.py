@@ -1228,11 +1228,44 @@ def _important_timing_indices(samples: List[JsonDict], sample_limit: int) -> Lis
         if "observed_exposed_us" in sample
     ]
     observed_p95 = percentile(observed, 95.0) if observed else None
+    skews = [as_float(sample.get("arrival_skew_us"), 0.0) for sample in samples]
+    overlaps = [as_float(sample.get("compute_overlap_us"), 0.0) for sample in samples]
+    pressures = [as_float(sample.get("compute_pressure"), 0.5) for sample in samples]
+    skew_p95 = percentile(skews, 95.0) if skews else 0.0
+    overlap_p95 = percentile(overlaps, 95.0) if overlaps else 0.0
+    pressure_p95 = percentile(pressures, 95.0) if pressures else 0.0
+
+    backlog = 0.0
+    previous_backlog = 0.0
+    for index, sample in enumerate(samples):
+        skew = skews[index]
+        overlap = overlaps[index]
+        pressure = pressures[index]
+        # This is a sensitivity proxy, not a physical backend model: high skew,
+        # pressure, and overlap are the windows most likely to change exposed
+        # latency or backend ranking under different replay configurations.
+        proxy_service_us = 8.0 + skew * 0.15 + pressure * 8.0
+        backlog = max(0.0, backlog + proxy_service_us - gaps[index])
+        if (previous_backlog == 0.0) != (backlog == 0.0):
+            scores[index] = max(scores.get(index, 0.0), 9e11 + abs(backlog - previous_backlog))
+        if skew_p95 > 0.0 and skew >= skew_p95:
+            scores[index] = max(scores.get(index, 0.0), 8e11 + skew)
+        if overlap_p95 > 0.0 and overlap >= overlap_p95:
+            scores[index] = max(scores.get(index, 0.0), 7e11 + overlap)
+        if pressure_p95 > 0.0 and pressure >= pressure_p95:
+            scores[index] = max(scores.get(index, 0.0), 6e11 + pressure)
+        if skew > 0.0 and overlap > 0.0:
+            scores[index] = max(scores.get(index, 0.0), 8.5e11 + skew + overlap)
+        previous_backlog = backlog
 
     for index in range(1, len(samples)):
         delta = _timing_delta(samples[index - 1], samples[index])
         if delta > 0.0:
             scores[index] = max(scores.get(index, 0.0), delta)
+        previous_high = skews[index - 1] >= skew_p95 or overlaps[index - 1] >= overlap_p95
+        current_high = skews[index] >= skew_p95 or overlaps[index] >= overlap_p95
+        if previous_high != current_high:
+            scores[index] = max(scores.get(index, 0.0), 5e11 + delta)
         if observed_p95 is not None:
             value = as_float(samples[index].get("observed_exposed_us"))
             if value >= observed_p95:
