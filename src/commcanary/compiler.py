@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from bisect import bisect_left
@@ -18,6 +19,8 @@ from .schema import (
     canary_calibration_sha256,
     canary_execution_sha256,
     canary_scheduler_execution_sha256,
+    iter_canary_logical_events,
+    iter_canary_stored_leaf_events,
     median,
     normalize_arrival_offsets,
     normalize_ranks,
@@ -101,6 +104,7 @@ def compile_trace(
     max_prefix_gap_error_us: Optional[float] = None,
     require_lossless_timing: bool = False,
     allow_empty: bool = False,
+    enable_sequence_motifs: bool = True,
 ) -> JsonDict:
     """Compile a communication trace into a compact, fidelity-audited canary.
 
@@ -115,6 +119,8 @@ def compile_trace(
         raise SchemaError("require_lossless_timing must be a boolean")
     if not isinstance(allow_empty, bool):
         raise SchemaError("allow_empty must be a boolean")
+    if not isinstance(enable_sequence_motifs, bool):
+        raise SchemaError("enable_sequence_motifs must be a boolean")
 
     parsed_max_events: Optional[int]
     if max_events is None:
@@ -177,26 +183,37 @@ def compile_trace(
             step["_signature"] = signature
             canary_events.append(step)
 
-    finalized = [_finalize_step(step) for step in canary_events]
+    flat_finalized = [_finalize_step(step) for step in canary_events]
+    finalized = _compress_sequence_motifs(flat_finalized) if enable_sequence_motifs else flat_finalized
     # Release the uncompressed timing streams before serialising the source
     # trace. This avoids holding two large canonical representations at once.
     canary_events.clear()
 
     source_count = len(ordered_events)
     compiled_count = len(finalized)
+    logical_events = list(iter_canary_logical_events(finalized))
+    stored_leaf_events = list(iter_canary_stored_leaf_events(finalized))
+    expanded_count = sum(as_int(event.get("repeat"), 1) for event in logical_events)
+    if expanded_count != source_count:
+        raise SchemaError("sequence motif compression changed the logical event count")
     event_ratio = round(source_count / compiled_count, 3) if compiled_count else 0.0
-    recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in finalized)
-    approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in finalized)
+    recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in logical_events)
+    approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in logical_events)
+    stored_recursive_records = sum(_recursive_timing_record_count(event.get("timing_samples")) for event in stored_leaf_events)
+    stored_approximate_records = sum(_approximate_record_count(event.get("timing_samples")) for event in stored_leaf_events)
     compute_uncertain_events = sum(
         _timing_records_uncertain_weight(event.get("timing_samples"))
-        for event in finalized
+        for event in logical_events
+    )
+    sequence_motif_count = sum(
+        1 for event in finalized if isinstance(event, Mapping) and event.get("program") == "sequence_motif"
     )
 
     source_gap_total = _round_us(sum(ordered_gaps))
     encoded_gap_total = _round_us(
         sum(
             _timing_records_gap_sum(event.get("timing_samples", []))
-            for event in finalized
+            for event in logical_events
         )
     )
     total_gap_error = _round_us(abs(source_gap_total - encoded_gap_total))
@@ -206,7 +223,7 @@ def compile_trace(
         )
 
     fidelity = _summarize_fidelity(
-        finalized,
+        logical_events,
         source_gap_total=source_gap_total,
         encoded_gap_total=encoded_gap_total,
         total_gap_error=total_gap_error,
@@ -227,16 +244,20 @@ def compile_trace(
         "workload": dict(trace.get("workload", {})),
         "system": dict(trace.get("system", {})),
         "compiler": {
-            "compression": "ordered exact patterns with fidelity-audited bounded intervals",
+            "compression": "ordered exact patterns, replay-equivalent sequence motifs, and fidelity-audited bounded intervals",
             "timing_sample_limit": timing_sample_limit,
             "timing_mode": timing_mode,
             "tail_signal": "observed_exposed_us" if has_observed_tail else "structural-proxy",
             "source_events": source_count,
             "canary_events": compiled_count,
+            "expanded_canary_events": len(logical_events),
+            "sequence_motif_count": sequence_motif_count,
             "compression_ratio": event_ratio,
             "event_compression_ratio": event_ratio,
             "recursive_timing_records": recursive_records,
             "approximate_timing_records": approximate_records,
+            "stored_recursive_timing_records": stored_recursive_records,
+            "stored_approximate_timing_records": stored_approximate_records,
             "source_bytes": source_bytes,
             "source_trace_sha256": source_sha,
             "source_normalized_sha256": source_sha,
@@ -548,7 +569,7 @@ def _verify_source_commitments(
     failures: List[JsonDict] = []
     checked_intervals = 0
     pointer = 0
-    for event_index, event in enumerate(canary.get("events", [])):
+    for event_index, event in enumerate(iter_canary_logical_events(canary.get("events", []))):
         if not isinstance(event, Mapping):
             continue
         repeat = as_int(event.get("repeat"), 1)
@@ -1153,6 +1174,93 @@ def _finalize_step(step: Dict[str, Any]) -> JsonDict:
     else:
         result.pop("compute_fields_uncertain", None)
     return result
+
+
+def _compress_sequence_motifs(events: List[JsonDict]) -> List[JsonDict]:
+    if len(events) < 4:
+        return events
+    keys = [_sequence_motif_key(event) for event in events]
+    output: List[JsonDict] = []
+    index = 0
+    motif_index = 0
+    max_sequence_length = min(16, len(events) // 2)
+    while index < len(events):
+        best: Optional[Tuple[int, int, int]] = None
+        max_here = min(max_sequence_length, (len(events) - index) // 2)
+        for sequence_length in range(2, max_here + 1):
+            sequence = keys[index : index + sequence_length]
+            repeats = 1
+            cursor = index + sequence_length
+            while cursor + sequence_length <= len(events) and keys[cursor : cursor + sequence_length] == sequence:
+                repeats += 1
+                cursor += sequence_length
+            if repeats < 2:
+                continue
+            saved_events = sequence_length * repeats - 1
+            if best is None or saved_events > best[0] or (saved_events == best[0] and sequence_length > best[1]):
+                best = (saved_events, sequence_length, repeats)
+        if best is None:
+            output.append(events[index])
+            index += 1
+            continue
+        _saved, sequence_length, repeats = best
+        output.append(
+            _sequence_motif_record(
+                events[index : index + sequence_length * repeats],
+                sequence_length,
+                repeats,
+                motif_index,
+            )
+        )
+        motif_index += 1
+        index += sequence_length * repeats
+    return output
+
+
+def _sequence_motif_key(event: Mapping[str, Any]) -> str:
+    template = _strip_sequence_source_fields(event)
+    return hashlib.sha256(_canonical_json_bytes(template)).hexdigest()
+
+
+def _strip_sequence_source_fields(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        stripped: JsonDict = {}
+        for key, child in value.items():
+            if key in {"source", "execution_occurrence_base", "execution_occurrence_stride"}:
+                continue
+            stripped[key] = _strip_sequence_source_fields(child)
+        return stripped
+    if isinstance(value, list):
+        return [_strip_sequence_source_fields(child) for child in value]
+    return value
+
+
+def _sequence_motif_record(events: Sequence[JsonDict], sequence_length: int, repeats: int, motif_index: int) -> JsonDict:
+    template = [copy.deepcopy(event) for event in events[:sequence_length]]
+    strides: Dict[Tuple[Any, ...], int] = {}
+    for child in template:
+        sig = _signature(child)
+        strides[sig] = strides.get(sig, 0) + 1
+    for child in template:
+        child["execution_occurrence_stride"] = strides[_signature(child)]
+    all_sources = [event.get("source", {}) for event in events if isinstance(event.get("source"), Mapping)]
+    first_source = all_sources[0] if all_sources else {}
+    last_source = all_sources[-1] if all_sources else {}
+    source_count = sum(as_int(source.get("count"), 1) for source in all_sources)
+    source_digest_inputs = [source.get("digest", [source.get("first_id"), source.get("last_id")]) for source in all_sources]
+    source_digest = hashlib.sha256(_canonical_json_bytes({"sources": source_digest_inputs})).hexdigest()
+    return {
+        "program": "sequence_motif",
+        "motif_id": f"sequence-{motif_index}",
+        "program_repeats": repeats,
+        "source": {
+            "count": source_count,
+            "first_id": first_source.get("first_id"),
+            "last_id": last_source.get("last_id"),
+            "digest": source_digest,
+        },
+        "events": template,
+    }
 
 
 def _signature(step: Mapping[str, Any]) -> Tuple[Any, ...]:

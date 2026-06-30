@@ -1870,6 +1870,7 @@ class CommCanaryTests(unittest.TestCase):
         patterned["events"][0]["timing_samples"] = [pattern_parent]
         patterned["events"][0]["source"]["sampled_timing_records"] = 2
         patterned["compiler"]["recursive_timing_records"] = 2
+        patterned["compiler"]["stored_recursive_timing_records"] = 2
         refresh_canary_hashes(patterned)
         self.assertEqual(
             flat["compiler"]["execution_semantic_sha256"],
@@ -2642,6 +2643,41 @@ class CommCanaryTests(unittest.TestCase):
             )
             with self.assertRaises(SchemaError):
                 merge_trace_shards(tmp, workload_name="mixed")
+
+    def test_sequence_motif_compression_preserves_scheduler_execution(self):
+        trace = {"format": TRACE_FORMAT, "workload": {"name": "abab"}, "events": []}
+        for index in range(8):
+            op = "all_reduce" if index % 2 == 0 else "all_gather"
+            trace["events"].append(
+                {
+                    "id": f"event-{index}",
+                    "phase": "decode",
+                    "op": op,
+                    "bytes": 1024 + (index % 2) * 512,
+                    "ranks": [0, 1],
+                    "group": "tp",
+                    "gap_us": 1.0,
+                    "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 2.0,
+                }
+            )
+        flat = compile_trace(trace, enable_sequence_motifs=False)
+        motif = compile_trace(trace)
+        self.assertEqual(motif["compiler"]["sequence_motif_count"], 1)
+        self.assertEqual(motif["compiler"]["canary_events"], 1)
+        self.assertLess(
+            motif["compiler"]["stored_recursive_timing_records"],
+            motif["compiler"]["recursive_timing_records"],
+        )
+        self.assertEqual(
+            flat["compiler"]["scheduler_execution_sha256"],
+            motif["compiler"]["scheduler_execution_sha256"],
+        )
+        self.assertEqual(
+            replay_canary(flat, include_samples=True)["samples"],
+            replay_canary(motif, include_samples=True)["samples"],
+        )
+        self.assertEqual(verify_canary_fidelity(trace, motif)["status"], "source_verified")
 
 
 

@@ -117,13 +117,87 @@ def replay_protocol_sha256(protocol: Mapping[str, Any]) -> str:
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
 
 
+def iter_canary_logical_events(events: Any) -> Iterable[JsonDict]:
+    """Yield the ordered simulator inputs encoded by a canary event list."""
+
+    if not isinstance(events, list):
+        raise SchemaError("canary events must be a list")
+    for index, event in enumerate(events):
+        if not isinstance(event, Mapping):
+            raise SchemaError(f"canary event {index} must be an object")
+        if event.get("program") == "sequence_motif":
+            yield from _expand_sequence_motif(event, f"canary event {index}")
+        else:
+            yield dict(event)
+
+
+def iter_canary_stored_leaf_events(events: Any) -> Iterable[Mapping[str, Any]]:
+    """Yield leaf event templates stored in the artifact without expanding repeats."""
+
+    if not isinstance(events, list):
+        raise SchemaError("canary events must be a list")
+    for index, event in enumerate(events):
+        if not isinstance(event, Mapping):
+            raise SchemaError(f"canary event {index} must be an object")
+        if event.get("program") == "sequence_motif":
+            children = _sequence_motif_children(event, f"canary event {index}")
+            for child in children:
+                yield child
+        else:
+            yield event
+
+
+def _expand_sequence_motif(event: Mapping[str, Any], label: str) -> Iterable[JsonDict]:
+    repeats = as_int(event.get("program_repeats"))
+    if repeats <= 0:
+        raise SchemaError(f"{label} program_repeats must be positive")
+    children = _sequence_motif_children(event, label)
+    for repeat_index in range(repeats):
+        for child_index, child in enumerate(children):
+            child_copy = dict(child)
+            stride = as_int(child_copy.pop("execution_occurrence_stride", 1))
+            if stride <= 0:
+                raise SchemaError(f"{label} child {child_index} execution_occurrence_stride must be positive")
+            base = as_int(child_copy.get("execution_occurrence_base"), 0)
+            child_copy["execution_occurrence_base"] = base + repeat_index * stride
+            yield child_copy
+
+
+def _sequence_motif_children(event: Mapping[str, Any], label: str) -> List[Mapping[str, Any]]:
+    motif_id = event.get("motif_id")
+    if motif_id is not None and (not isinstance(motif_id, str) or not motif_id):
+        raise SchemaError(f"{label} motif_id must be a non-empty string")
+    if event.get("program") != "sequence_motif":
+        raise SchemaError(f"{label} has unsupported program")
+    children = event.get("events")
+    if not isinstance(children, list) or len(children) < 2:
+        raise SchemaError(f"{label} sequence_motif requires at least two child events")
+    source = event.get("source")
+    if not isinstance(source, Mapping):
+        raise SchemaError(f"{label} sequence_motif requires a source object")
+    repeats = as_int(event.get("program_repeats"))
+    child_count = 0
+    for child_index, child in enumerate(children):
+        if not isinstance(child, Mapping):
+            raise SchemaError(f"{label} child {child_index} must be an object")
+        if child.get("program") is not None:
+            raise SchemaError(f"{label} child {child_index} must not be a nested program")
+        child_source = child.get("source")
+        if isinstance(child_source, Mapping):
+            child_count += as_int(child_source.get("count"), as_int(child.get("repeat"), 1))
+        else:
+            child_count += as_int(child.get("repeat"), 1)
+    if as_int(source.get("count")) != child_count * repeats:
+        raise SchemaError(f"{label} source.count must match expanded sequence length")
+    return children
+
+
 def canary_execution_sha256(canary: Mapping[str, Any]) -> str:
     stable = {
         "format": canary.get("format"),
         "events": [
             _execution_event_projection(event)
-            for event in canary.get("events", [])
-            if isinstance(event, Mapping)
+            for event in iter_canary_logical_events(canary.get("events", []))
         ],
     }
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
@@ -138,8 +212,7 @@ def canary_calibration_sha256(canary: Mapping[str, Any]) -> str:
         "format": canary.get("format"),
         "events": [
             _calibration_event_projection(event)
-            for event in canary.get("events", [])
-            if isinstance(event, Mapping)
+            for event in iter_canary_logical_events(canary.get("events", []))
         ],
     }
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
@@ -543,6 +616,11 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     if not isinstance(events, list):
         raise SchemaError("canary must contain an 'events' list")
 
+    logical_events = list(iter_canary_logical_events(events))
+    stored_leaf_events = list(iter_canary_stored_leaf_events(events))
+    actual_stored_recursive_records = sum(_event_recursive_timing_record_count(event) for event in stored_leaf_events)
+    actual_stored_approximate_records = sum(_event_approximate_record_count(event) for event in stored_leaf_events)
+
     total_repeat = 0
     all_leaf_observed_flags: List[bool] = []
     actual_recursive_records = 0
@@ -550,7 +628,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     actual_encoded_gap_total = 0.0
     actual_compute_uncertain_events = 0
     actual_fidelity_maxima = {field: 0.0 for field in FIDELITY_ERROR_FIELDS}
-    for index, event in enumerate(events):
+    for index, event in enumerate(logical_events):
         if not isinstance(event, Mapping):
             raise SchemaError(f"canary event {index} must be an object")
         for key in ("op", "bytes", "ranks", "repeat"):
@@ -692,11 +770,17 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     if source_events != total_repeat:
         raise SchemaError("canary compiler.source_events must match event repeats")
     if "canary_events" in compiler and as_int(compiler.get("canary_events")) != len(events):
-        raise SchemaError("canary compiler.canary_events must match events")
+        raise SchemaError("canary compiler.canary_events must match stored events")
+    if "expanded_canary_events" in compiler and as_int(compiler.get("expanded_canary_events")) != len(logical_events):
+        raise SchemaError("canary compiler.expanded_canary_events must match expanded events")
     if "recursive_timing_records" in compiler and as_int(compiler.get("recursive_timing_records")) != actual_recursive_records:
-        raise SchemaError("canary compiler.recursive_timing_records must match timing records")
+        raise SchemaError("canary compiler.recursive_timing_records must match logical timing records")
     if "approximate_timing_records" in compiler and as_int(compiler.get("approximate_timing_records")) != actual_approximate_records:
-        raise SchemaError("canary compiler.approximate_timing_records must match timing records")
+        raise SchemaError("canary compiler.approximate_timing_records must match logical timing records")
+    if "stored_recursive_timing_records" in compiler and as_int(compiler.get("stored_recursive_timing_records")) != actual_stored_recursive_records:
+        raise SchemaError("canary compiler.stored_recursive_timing_records must match stored timing records")
+    if "stored_approximate_timing_records" in compiler and as_int(compiler.get("stored_approximate_timing_records")) != actual_stored_approximate_records:
+        raise SchemaError("canary compiler.stored_approximate_timing_records must match stored timing records")
     capture_uncertainty = compiler.get("capture_uncertainty")
     if actual_compute_uncertain_events:
         if not isinstance(capture_uncertainty, Mapping):
@@ -731,7 +815,15 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             raise SchemaError("canary compiler.calibration_evaluation_sha256 does not match calibration fields")
     if "artifact_provenance_sha256" in compiler:
         _validate_sha256(compiler.get("artifact_provenance_sha256"), "canary compiler.artifact_provenance_sha256")
-    for integer_key in ("source_bytes", "canary_bytes", "timing_sample_limit"):
+    for integer_key in (
+        "source_bytes",
+        "canary_bytes",
+        "timing_sample_limit",
+        "expanded_canary_events",
+        "sequence_motif_count",
+        "stored_recursive_timing_records",
+        "stored_approximate_timing_records",
+    ):
         if integer_key in compiler and as_int(compiler.get(integer_key)) < 0:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
 
@@ -1477,6 +1569,39 @@ def _reject_json_constant(value: str) -> None:
 def _require_optional_mapping(data: Mapping[str, Any], key: str, label: str) -> None:
     if key in data and not isinstance(data.get(key), Mapping):
         raise SchemaError(f"{label} {key} must be an object")
+
+
+def _event_recursive_timing_record_count(event: Mapping[str, Any]) -> int:
+    samples = event.get("timing_samples")
+    if not isinstance(samples, list):
+        return 0
+    total = 0
+    for sample in samples:
+        if isinstance(sample, Mapping):
+            total += 1
+            pattern = sample.get("timing_pattern")
+            if isinstance(pattern, list):
+                for child in pattern:
+                    if isinstance(child, Mapping):
+                        total += 1
+    return total
+
+
+def _event_approximate_record_count(event: Mapping[str, Any]) -> int:
+    samples = event.get("timing_samples")
+    if not isinstance(samples, list):
+        return 0
+    total = 0
+    for sample in samples:
+        if isinstance(sample, Mapping):
+            total += int(sample.get("approximation") == "bounded_interval")
+            pattern = sample.get("timing_pattern")
+            if isinstance(pattern, list):
+                total += sum(
+                    int(isinstance(child, Mapping) and child.get("approximation") == "bounded_interval")
+                    for child in pattern
+                )
+    return total
 
 
 def _validate_op(value: Any, label: str, *, custom: bool) -> None:

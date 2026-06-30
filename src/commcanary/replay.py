@@ -19,6 +19,7 @@ from .schema import (
     canary_execution_sha256,
     canary_scheduler_execution_sha256,
     canonical_json_bytes,
+    iter_canary_logical_events,
     percentile_from_sorted,
     replay_protocol_sha256,
     summarize_latencies,
@@ -70,6 +71,7 @@ def replay_canary(
     if max_replay_events < 1:
         raise SchemaError("max_replay_events must be at least 1")
 
+    logical_steps = list(iter_canary_logical_events(canary.get("events", [])))
     logical_events = _logical_event_count(canary) * iterations
     if logical_events > max_replay_events:
         raise SchemaError(
@@ -81,7 +83,7 @@ def replay_canary(
     for iteration in range(iterations):
         logical_clock_us = 0.0
         group_available_us: Dict[str, float] = {}
-        for step in canary.get("events", []):
+        for step in logical_steps:
             if not isinstance(step, Mapping):
                 continue
             for timing_sample in _iter_timing_samples(step):
@@ -517,12 +519,12 @@ def _record_gap_sum(sample: Mapping[str, Any]) -> float:
 
 def _logical_event_count(canary: Mapping[str, Any]) -> int:
     total = 0
-    for step in canary.get("events", []):
+    for step in iter_canary_logical_events(canary.get("events", [])):
         if not isinstance(step, Mapping):
             continue
         samples = step.get("timing_samples")
         if isinstance(samples, list) and samples:
-            total += sum(as_int(sample.get("weight"), 1) for sample in samples if isinstance(sample, Mapping))
+            total += sum(as_int(sample.get("weight", 1)) for sample in samples if isinstance(sample, Mapping))
         else:
             total += as_int(step.get("repeat"), 1)
     return total
