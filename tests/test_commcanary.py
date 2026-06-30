@@ -2711,6 +2711,39 @@ class CommCanaryTests(unittest.TestCase):
         )
         self.assertEqual(verify_canary_fidelity(trace, motif)["status"], "source_verified")
 
+    def test_point_to_point_identity_affects_scheduler_hash_and_resource(self):
+        base = {
+            "id": "msg",
+            "phase": "decode",
+            "op": "point_to_point",
+            "bytes": 4096,
+            "ranks": [0, 1],
+            "group": "pp",
+            "gap_us": 1.0,
+            "rank_arrival_us": {"0": 0.0, "1": 0.0},
+            "sender_rank": 0,
+            "receiver_rank": 1,
+            "tag": "kv",
+            "channel": "pipe",
+            "message_sequence": 7,
+        }
+        trace_a = {"format": TRACE_FORMAT, "workload": {"name": "p2p-a"}, "events": [base]}
+        trace_b = {
+            "format": TRACE_FORMAT,
+            "workload": {"name": "p2p-b"},
+            "events": [{**base, "sender_rank": 1, "receiver_rank": 0}],
+        }
+        canary_a = compile_trace(trace_a)
+        canary_b = compile_trace(trace_b)
+        self.assertNotEqual(
+            canary_a["compiler"]["scheduler_execution_sha256"],
+            canary_b["compiler"]["scheduler_execution_sha256"],
+        )
+        sample = replay_canary(canary_a, include_samples=True)["samples"][0]
+        self.assertIn("p2p:pp:0->1", sample["scheduler_resource"])
+        self.assertIn("channel=pipe", sample["scheduler_resource"])
+        self.assertIn("tag=kv", sample["scheduler_resource"])
+
 
 
 if __name__ == "__main__":

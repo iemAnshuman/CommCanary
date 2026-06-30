@@ -1136,6 +1136,12 @@ def _event_to_step(
         "_all_timing_samples": [timing_sample],
         "_sample_limit": sample_limit,
     }
+    for integer_key in ("sender_rank", "receiver_rank", "message_sequence"):
+        if integer_key in event:
+            step[integer_key] = as_int(event.get(integer_key))
+    for text_key in ("tag", "channel"):
+        if text_key in event:
+            step[text_key] = str(event.get(text_key))
     if event.get("custom_op") is True:
         step["custom_op"] = True
     return step
@@ -1284,6 +1290,11 @@ def _signature(step: Mapping[str, Any]) -> Tuple[Any, ...]:
         step.get("bytes"),
         tuple(step.get("ranks", [])),
         step.get("group"),
+        step.get("sender_rank"),
+        step.get("receiver_rank"),
+        step.get("tag"),
+        step.get("channel"),
+        step.get("message_sequence"),
         as_int(step.get("concurrent_groups"), 1),
         step.get("custom_op") is True,
     )

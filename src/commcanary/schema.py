@@ -249,6 +249,12 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["ranks"] = ranks
     if "group" in event:
         projected["group"] = str(event.get("group"))
+    for key in ("sender_rank", "receiver_rank", "message_sequence"):
+        if key in event:
+            projected[key] = as_int(event.get(key))
+    for key in ("tag", "channel"):
+        if key in event:
+            projected[key] = str(event.get(key))
     if "concurrent_groups" in event:
         projected["concurrent_groups"] = as_int(event.get("concurrent_groups"))
     if "execution_occurrence_base" in event:
@@ -272,6 +278,12 @@ def _calibration_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["bytes"] = as_int(event.get("bytes"))
     if "ranks" in event:
         projected["ranks"] = normalize_ranks(event.get("ranks"))
+    for key in ("sender_rank", "receiver_rank", "message_sequence"):
+        if key in event:
+            projected[key] = as_int(event.get(key))
+    for key in ("tag", "channel"):
+        if key in event:
+            projected[key] = str(event.get(key))
     if "concurrent_groups" in event:
         projected["concurrent_groups"] = as_int(event.get("concurrent_groups"))
     samples = event.get("timing_samples")
@@ -602,6 +614,7 @@ def validate_trace(trace: Mapping[str, Any], *, allow_partial_arrivals: bool = F
                     raise SchemaError(f"trace event {index} {numeric_key} exceeds maximum supported duration")
         if "concurrent_groups" in event and as_int(event.get("concurrent_groups")) <= 0:
             raise SchemaError(f"trace event {index} concurrent_groups must be positive")
+        _validate_point_to_point_metadata(event, ranks, f"trace event {index}")
 
 
 def validate_canary(canary: Mapping[str, Any]) -> None:
@@ -683,6 +696,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
                 raise SchemaError(f"canary event {index} arrival_skew_us must be non-negative")
             if len(ranks) == 1 and as_float(event.get("arrival_skew_us"), 0.0) > 0.001:
                 raise SchemaError(f"canary event {index} one-rank skew must be zero")
+        _validate_point_to_point_metadata(event, ranks, f"canary event {index}")
 
         samples = event.get("timing_samples")
         if not isinstance(samples, list) or not samples:
@@ -1602,6 +1616,30 @@ def _event_approximate_record_count(event: Mapping[str, Any]) -> int:
                     for child in pattern
                 )
     return total
+
+
+def _validate_point_to_point_metadata(event: Mapping[str, Any], ranks: List[int], label: str) -> None:
+    op = str(event.get("op", ""))
+    sender_present = "sender_rank" in event
+    receiver_present = "receiver_rank" in event
+    if op == "point_to_point":
+        if not sender_present or not receiver_present:
+            raise SchemaError(f"{label} point_to_point requires sender_rank and receiver_rank")
+    if sender_present:
+        sender = as_int(event.get("sender_rank"))
+        if sender not in ranks:
+            raise SchemaError(f"{label} sender_rank must be one of ranks")
+    if receiver_present:
+        receiver = as_int(event.get("receiver_rank"))
+        if receiver not in ranks:
+            raise SchemaError(f"{label} receiver_rank must be one of ranks")
+    if sender_present and receiver_present and as_int(event.get("sender_rank")) == as_int(event.get("receiver_rank")):
+        raise SchemaError(f"{label} sender_rank and receiver_rank must differ")
+    if "message_sequence" in event and as_int(event.get("message_sequence")) < 0:
+        raise SchemaError(f"{label} message_sequence must be non-negative")
+    for key in ("tag", "channel"):
+        if key in event and (not isinstance(event.get(key), str) or not event.get(key)):
+            raise SchemaError(f"{label} {key} must be a non-empty string")
 
 
 def _validate_op(value: Any, label: str, *, custom: bool) -> None:

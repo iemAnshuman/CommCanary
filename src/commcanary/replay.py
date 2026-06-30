@@ -338,7 +338,7 @@ def _simulate_step(
         "bytes": bytes_,
         "rank_count": rank_count,
         "group": group,
-        "scheduler_resource": _scheduler_resource_label(group, ranks),
+        "scheduler_resource": _scheduler_resource_label(step, group, ranks),
         "gap_us": gap_us,
         "compute_before_us": as_float(timing_sample.get("compute_before_us"), 0.0),
         "arrival_skew_us": arrival_skew,
@@ -433,7 +433,7 @@ def _noise_identity(
     *,
     offsets: Optional[Iterable[float]] = None,
 ) -> JsonDict:
-    return {
+    identity: JsonDict = {
         "phase": str(step.get("phase", "unknown")),
         "op": str(step.get("op", "unknown")),
         "ranks": list(_sample_ranks(step)),
@@ -445,6 +445,13 @@ def _noise_identity(
         "occurrence": as_int(step.get("execution_occurrence_base"), 0)
         + as_int(timing_sample.get("noise_occurrence"), 0),
     }
+    for key in ("sender_rank", "receiver_rank", "message_sequence"):
+        if key in step:
+            identity[key] = as_int(step.get(key))
+    for key in ("tag", "channel"):
+        if key in step:
+            identity[key] = str(step.get(key))
+    return identity
 
 
 def _stable_identity_hash(identity: Mapping[str, Any]) -> int:
@@ -471,7 +478,15 @@ def _sample_ranks(step: Mapping[str, Any]) -> Tuple[int, ...]:
     return tuple(as_int(rank) for rank in raw)
 
 
-def _scheduler_resource_label(group: str, ranks: Tuple[int, ...]) -> str:
+def _scheduler_resource_label(step: Mapping[str, Any], group: str, ranks: Tuple[int, ...]) -> str:
+    if step.get("op") == "point_to_point" and "sender_rank" in step and "receiver_rank" in step:
+        channel = str(step.get("channel", "default"))
+        tag = str(step.get("tag", "default"))
+        sequence = str(step.get("message_sequence", "unknown"))
+        return (
+            f"p2p:{group}:{as_int(step.get('sender_rank'))}->{as_int(step.get('receiver_rank'))}"
+            f":channel={channel}:tag={tag}:seq={sequence}"
+        )
     if group and group != "default":
         return group
     if ranks:

@@ -87,6 +87,11 @@ class TraceRecorder:
         compute_pressure: float = 0.5,
         concurrent_groups: int = 1,
         collective_id: Optional[str] = None,
+        sender_rank: Optional[int] = None,
+        receiver_rank: Optional[int] = None,
+        tag: Optional[str] = None,
+        channel: Optional[str] = None,
+        message_sequence: Optional[int] = None,
         observed_exposed_us: Optional[float] = None,
         metadata: Optional[Mapping[str, Any]] = None,
     ) -> None:
@@ -112,6 +117,22 @@ class TraceRecorder:
             parsed_observed = as_float(observed_exposed_us)
             if parsed_observed < 0.0:
                 raise SchemaError("observed_exposed_us must be non-negative")
+
+        parsed_sender = as_int(sender_rank) if sender_rank is not None else None
+        parsed_receiver = as_int(receiver_rank) if receiver_rank is not None else None
+        if parsed_sender is not None and parsed_sender not in parsed_ranks:
+            raise SchemaError("sender_rank must be one of ranks")
+        if parsed_receiver is not None and parsed_receiver not in parsed_ranks:
+            raise SchemaError("receiver_rank must be one of ranks")
+        if parsed_sender is not None and parsed_receiver is not None and parsed_sender == parsed_receiver:
+            raise SchemaError("sender_rank and receiver_rank must differ")
+        parsed_message_sequence = as_int(message_sequence) if message_sequence is not None else None
+        if parsed_message_sequence is not None and parsed_message_sequence < 0:
+            raise SchemaError("message_sequence must be non-negative")
+        parsed_tag = str(tag) if tag is not None else None
+        parsed_channel = str(channel) if channel is not None else None
+        if parsed_tag == "" or parsed_channel == "":
+            raise SchemaError("tag and channel must be non-empty when provided")
 
         parsed_arrivals: Optional[JsonDict] = None
         parsed_skew: Optional[float] = None
@@ -161,6 +182,16 @@ class TraceRecorder:
                 if not collective_text:
                     raise SchemaError("collective_id must not be empty")
                 event["collective_id"] = collective_text
+            if parsed_sender is not None:
+                event["sender_rank"] = parsed_sender
+            if parsed_receiver is not None:
+                event["receiver_rank"] = parsed_receiver
+            if parsed_tag is not None:
+                event["tag"] = parsed_tag
+            if parsed_channel is not None:
+                event["channel"] = parsed_channel
+            if parsed_message_sequence is not None:
+                event["message_sequence"] = parsed_message_sequence
             if parsed_arrivals is not None:
                 event["rank_arrival_us"] = parsed_arrivals
                 if set(parsed_arrivals) != {str(rank) for rank in parsed_ranks}:
@@ -484,6 +515,13 @@ def _coalesce_events(events: List[JsonDict]) -> JsonDict:
     if point_to_point is not None:
         coalesced["sender_rank"] = point_to_point["sender_rank"]
         coalesced["receiver_rank"] = point_to_point["receiver_rank"]
+        coalesced["tag"] = str(point_to_point.get("tag", "default"))
+        coalesced["channel"] = str(point_to_point.get("channel", coalesced.get("group", "default")))
+        coalesced["message_sequence"] = as_int(
+            point_to_point.get("message_sequence", coalesced.get("collective_seq", 0))
+        )
+        coalesced["send_observation"] = point_to_point.get("send_observation", {})
+        coalesced["recv_observation"] = point_to_point.get("recv_observation", {})
 
     raw_map_events = [event for event in events if isinstance(event.get("rank_arrival_us"), Mapping)]
     if raw_map_events:
@@ -553,6 +591,9 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
         "ranks": tuple(ranks),
         "concurrent_groups": as_int(first.get("concurrent_groups"), 1),
     }
+    for optional_key in ("tag", "channel", "message_sequence"):
+        if optional_key in first:
+            expected[optional_key] = first.get(optional_key)
     ops = {str(first.get("op"))}
     for event in events[1:]:
         actual = {
@@ -564,6 +605,9 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
             "ranks": tuple(normalize_ranks(event.get("ranks"))),
             "concurrent_groups": as_int(event.get("concurrent_groups"), 1),
         }
+        for optional_key in ("tag", "channel", "message_sequence"):
+            if optional_key in expected or optional_key in event:
+                actual[optional_key] = event.get(optional_key)
         if actual != expected:
             raise SchemaError("conflicting records share the same collective identity")
         ops.add(str(event.get("op")))
@@ -581,8 +625,30 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
             if event.get("op") == "recv"
         ]
         if len(senders) == 1 and len(receivers) == 1 and senders[0] != receivers[0]:
-            return "point_to_point", {"sender_rank": senders[0], "receiver_rank": receivers[0]}
+            send_event = next(event for event in events if event.get("op") == "send")
+            recv_event = next(event for event in events if event.get("op") == "recv")
+            return "point_to_point", {
+                "sender_rank": senders[0],
+                "receiver_rank": receivers[0],
+                "tag": first.get("tag", "default"),
+                "channel": first.get("channel", first.get("group", "default")),
+                "message_sequence": first.get("message_sequence", first.get("collective_seq", 0)),
+                "send_observation": _p2p_observation(send_event),
+                "recv_observation": _p2p_observation(recv_event),
+            }
     raise SchemaError("conflicting records share the same collective identity")
+
+
+def _p2p_observation(event: Mapping[str, Any]) -> JsonDict:
+    observed: JsonDict = {
+        "rank": as_int(event.get("_shard_rank", event.get("recorder_rank", "unknown"))),
+        "start_us": round(as_float(event.get("_aligned_start_us", event.get("start_us", 0.0))), 9),
+    }
+    if "rank_arrival_us" in event:
+        observed["rank_arrival_us"] = copy.deepcopy(event.get("rank_arrival_us"))
+    if "observed_exposed_us" in event:
+        observed["observed_exposed_us"] = round(as_float(event.get("observed_exposed_us")), 9)
+    return observed
 
 
 def _recorder_ranks(events: List[JsonDict], expected_ranks: Set[str]) -> Set[str]:
