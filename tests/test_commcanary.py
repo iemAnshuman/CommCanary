@@ -11,7 +11,7 @@ from pathlib import Path
 
 from commcanary.compare import compare_reports
 from commcanary.cli import main as cli_main
-from commcanary.compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
+from commcanary.compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior, verify_canary_fidelity
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.html_report import render_compare_html, render_report_html
 from commcanary.replay import replay_canary, verify_report_against_canary
@@ -431,6 +431,69 @@ class CommCanaryTests(unittest.TestCase):
         )
         self.assertEqual(faithful["compiler"]["behavior_verification_status"], "behaviorally_verified")
         self.assertEqual(faithful["compiler"]["configuration_ranking_status"], "pass")
+
+    def test_behavior_search_finds_smallest_verified_candidate(self):
+        trace = adversarial_ranking_trace()
+        canary = synthesize_behavioral_canary(
+            trace,
+            min_timing_sample_limit=2,
+            max_timing_sample_limit=32,
+            behavior_configurations=adversarial_ranking_configs(),
+            ranking_tie_tolerance_us=0.0,
+        )
+        search = canary["compiler"]["behavior_search"]
+        self.assertEqual(canary["compiler"]["behavior_verification_status"], "behaviorally_verified")
+        self.assertEqual(search["ranking_status"], "pass")
+        self.assertGreater(search["accepted_candidates"], 0)
+        self.assertGreaterEqual(search["selected_timing_sample_limit"], 2)
+        self.assertLessEqual(search["selected_timing_sample_limit"], 32)
+        selected_rows = [
+            row
+            for row in search["candidates"]
+            if row["status"] == "behaviorally_verified"
+            and row["canary_bytes"] == search["selected_canary_bytes_without_search_metadata"]
+        ]
+        self.assertTrue(selected_rows)
+        self.assertEqual(
+            verify_canary_behavior(
+                trace,
+                canary,
+                configurations=adversarial_ranking_configs(),
+                ranking_tie_tolerance_us=0.0,
+            )["status"],
+            "behaviorally_verified",
+        )
+
+    def test_behavior_search_fails_when_budget_cannot_preserve_ranking(self):
+        with self.assertRaises(SchemaError):
+            synthesize_behavioral_canary(
+                adversarial_ranking_trace(),
+                min_timing_sample_limit=2,
+                max_timing_sample_limit=2,
+                behavior_configurations=adversarial_ranking_configs(),
+                ranking_tie_tolerance_us=0.0,
+            )
+
+    def test_compile_behavior_search_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = os.path.join(tmp, "trace.json")
+            canary_path = os.path.join(tmp, "canary.json")
+            write_json(trace_path, small_trace())
+            exit_code = cli_main(
+                [
+                    "compile",
+                    trace_path,
+                    "--output",
+                    canary_path,
+                    "--behavior-search",
+                    "--timing-sample-limit",
+                    "4",
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            canary = load_json(canary_path)
+            self.assertIn("behavior_search", canary["compiler"])
+            self.assertEqual(canary["compiler"]["behavior_verification_status"], "behaviorally_verified")
 
     def test_max_events_sorts_before_truncating_and_rejects_negative(self):
         trace = small_trace()

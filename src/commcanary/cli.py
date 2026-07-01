@@ -10,7 +10,7 @@ from typing import Any, List, Optional
 
 from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
-from .compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
+from .compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior, verify_canary_fidelity
 from .html_report import write_compare_html, write_report_html
 from .replay import replay_canary, verify_report_against_canary
 from .schema import CommCanaryError, load_json, validate_report, write_json
@@ -60,6 +60,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--require-behavior-verification",
         action="store_true",
         help="fail compilation unless verify-behavior passes on the generated canary",
+    )
+    compile_parser.add_argument(
+        "--behavior-search",
+        action="store_true",
+        help=(
+            "search timing sample limits up to --timing-sample-limit and choose the smallest "
+            "behaviorally verified canary"
+        ),
+    )
+    compile_parser.add_argument(
+        "--behavior-search-min-sample-limit",
+        type=int,
+        default=2,
+        help="lowest timing sample limit to try in --behavior-search mode",
     )
     compile_parser.set_defaults(func=_cmd_compile)
 
@@ -152,22 +166,33 @@ def _split_ablations(values: List[str]) -> List[str]:
 
 def _cmd_compile(args: Any) -> int:
     trace = load_json(args.trace)
-    canary = compile_trace(
-        trace,
-        max_events=args.max_events,
-        timing_sample_limit=args.timing_sample_limit,
-        max_gap_error_us=args.max_gap_error_us,
-        max_skew_error_us=args.max_skew_error_us,
-        max_arrival_offset_error_us=args.max_arrival_offset_error_us,
-        max_compute_before_error_us=args.max_compute_before_error_us,
-        max_overlap_error_us=args.max_overlap_error_us,
-        max_pressure_error=args.max_pressure_error,
-        max_observed_exposed_error_us=args.max_observed_exposed_error_us,
-        max_prefix_gap_error_us=args.max_prefix_gap_error_us,
-        require_lossless_timing=args.lossless_timing,
-        enable_sequence_motifs=not args.disable_sequence_motifs,
-        require_behavior_verification=args.require_behavior_verification,
-    )
+    common_kwargs = {
+        "max_events": args.max_events,
+        "max_gap_error_us": args.max_gap_error_us,
+        "max_skew_error_us": args.max_skew_error_us,
+        "max_arrival_offset_error_us": args.max_arrival_offset_error_us,
+        "max_compute_before_error_us": args.max_compute_before_error_us,
+        "max_overlap_error_us": args.max_overlap_error_us,
+        "max_pressure_error": args.max_pressure_error,
+        "max_observed_exposed_error_us": args.max_observed_exposed_error_us,
+        "max_prefix_gap_error_us": args.max_prefix_gap_error_us,
+        "require_lossless_timing": args.lossless_timing,
+        "enable_sequence_motifs": not args.disable_sequence_motifs,
+    }
+    if args.behavior_search:
+        canary = synthesize_behavioral_canary(
+            trace,
+            min_timing_sample_limit=args.behavior_search_min_sample_limit,
+            max_timing_sample_limit=args.timing_sample_limit,
+            **common_kwargs,
+        )
+    else:
+        canary = compile_trace(
+            trace,
+            timing_sample_limit=args.timing_sample_limit,
+            require_behavior_verification=args.require_behavior_verification,
+            **common_kwargs,
+        )
     write_json(args.output, canary)
     compiler = canary["compiler"]
     fidelity = compiler.get("fidelity", {})

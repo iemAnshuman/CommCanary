@@ -106,6 +106,8 @@ def compile_trace(
     allow_empty: bool = False,
     enable_sequence_motifs: bool = True,
     require_behavior_verification: bool = False,
+    behavior_search: bool = False,
+    behavior_search_min_sample_limit: int = 2,
     behavior_configurations: Optional[Sequence[Mapping[str, Any]]] = None,
 ) -> JsonDict:
     """Compile a communication trace into a compact, fidelity-audited canary.
@@ -115,6 +117,26 @@ def compile_trace(
     explicit approximation errors. Optional budgets make compilation fail
     closed rather than silently exceeding an acceptable error.
     """
+
+    if behavior_search:
+        return synthesize_behavioral_canary(
+            trace,
+            max_events=max_events,
+            min_timing_sample_limit=behavior_search_min_sample_limit,
+            max_timing_sample_limit=timing_sample_limit,
+            max_gap_error_us=max_gap_error_us,
+            max_skew_error_us=max_skew_error_us,
+            max_arrival_offset_error_us=max_arrival_offset_error_us,
+            max_compute_before_error_us=max_compute_before_error_us,
+            max_overlap_error_us=max_overlap_error_us,
+            max_pressure_error=max_pressure_error,
+            max_observed_exposed_error_us=max_observed_exposed_error_us,
+            max_prefix_gap_error_us=max_prefix_gap_error_us,
+            require_lossless_timing=require_lossless_timing,
+            allow_empty=allow_empty,
+            enable_sequence_motifs=enable_sequence_motifs,
+            behavior_configurations=behavior_configurations,
+        )
 
     validate_trace(trace)
     if not isinstance(require_lossless_timing, bool):
@@ -292,6 +314,174 @@ def compile_trace(
         if behavior["status"] != "behaviorally_verified":
             raise SchemaError("compiled canary failed required behavior verification")
     return canary
+
+
+def synthesize_behavioral_canary(
+    trace: Mapping[str, Any],
+    *,
+    max_events: Optional[int] = None,
+    min_timing_sample_limit: int = 2,
+    max_timing_sample_limit: int = DEFAULT_TIMING_SAMPLE_LIMIT,
+    max_gap_error_us: Optional[float] = None,
+    max_skew_error_us: Optional[float] = None,
+    max_arrival_offset_error_us: Optional[float] = None,
+    max_compute_before_error_us: Optional[float] = None,
+    max_overlap_error_us: Optional[float] = None,
+    max_pressure_error: Optional[float] = None,
+    max_observed_exposed_error_us: Optional[float] = None,
+    max_prefix_gap_error_us: Optional[float] = None,
+    require_lossless_timing: bool = False,
+    allow_empty: bool = False,
+    enable_sequence_motifs: bool = True,
+    behavior_configurations: Optional[Sequence[Mapping[str, Any]]] = None,
+    relative_tolerance_pct: float = 10.0,
+    absolute_tolerance_us: float = 1.0,
+    hidden_tolerance_points: float = 5.0,
+    tail_recall_threshold: float = 0.80,
+    ranking_tie_tolerance_us: float = 0.001,
+) -> JsonDict:
+    """Search for the smallest behaviorally and ranking-verified canary.
+
+    This is deliberately verification-driven rather than field-budget-driven:
+    every candidate in the requested timing-sample range is compiled, replayed
+    against the lossless source canary, and rejected unless source fidelity,
+    behavioral fidelity, and pairwise configuration ranking all pass. The
+    chosen artifact minimises serialized canary bytes, then stored event count,
+    then timing sample limit. It is a research-mode compiler path; it trades
+    speed for a fail-closed behavioral claim.
+    """
+
+    validate_trace(trace)
+    if not isinstance(require_lossless_timing, bool):
+        raise SchemaError("require_lossless_timing must be a boolean")
+    if not isinstance(allow_empty, bool):
+        raise SchemaError("allow_empty must be a boolean")
+    if not isinstance(enable_sequence_motifs, bool):
+        raise SchemaError("enable_sequence_motifs must be a boolean")
+    min_limit = as_int(min_timing_sample_limit)
+    max_limit = as_int(max_timing_sample_limit)
+    if min_limit < 2:
+        raise SchemaError("min_timing_sample_limit must be at least 2")
+    if max_limit < min_limit:
+        raise SchemaError("max_timing_sample_limit must be at least min_timing_sample_limit")
+
+    rows: List[JsonDict] = []
+    best: Optional[Tuple[Tuple[int, int, int], JsonDict, JsonDict]] = None
+    for limit in range(min_limit, max_limit + 1):
+        try:
+            candidate = compile_trace(
+                trace,
+                max_events=max_events,
+                timing_sample_limit=limit,
+                max_gap_error_us=max_gap_error_us,
+                max_skew_error_us=max_skew_error_us,
+                max_arrival_offset_error_us=max_arrival_offset_error_us,
+                max_compute_before_error_us=max_compute_before_error_us,
+                max_overlap_error_us=max_overlap_error_us,
+                max_pressure_error=max_pressure_error,
+                max_observed_exposed_error_us=max_observed_exposed_error_us,
+                max_prefix_gap_error_us=max_prefix_gap_error_us,
+                require_lossless_timing=require_lossless_timing,
+                allow_empty=allow_empty,
+                enable_sequence_motifs=enable_sequence_motifs,
+                require_behavior_verification=False,
+                behavior_search=False,
+            )
+        except SchemaError as exc:
+            rows.append(
+                {
+                    "timing_sample_limit": limit,
+                    "status": "compile_failed",
+                    "reason": str(exc),
+                }
+            )
+            continue
+
+        try:
+            verification = verify_canary_behavior(
+                trace,
+                candidate,
+                configurations=behavior_configurations,
+                relative_tolerance_pct=relative_tolerance_pct,
+                absolute_tolerance_us=absolute_tolerance_us,
+                hidden_tolerance_points=hidden_tolerance_points,
+                tail_recall_threshold=tail_recall_threshold,
+                ranking_tie_tolerance_us=ranking_tie_tolerance_us,
+            )
+            status = str(verification.get("status"))
+            row = _behavior_search_row(limit, candidate, verification)
+        except SchemaError as exc:
+            verification = {
+                "status": "failed",
+                "source_verified_status": "failed",
+                "behavioral_fidelity_status": "failed",
+                "configuration_ranking_status": "failed",
+            }
+            status = "failed"
+            row = _behavior_search_row(limit, candidate, verification)
+            row["status"] = "verification_failed"
+            row["reason"] = str(exc)
+        rows.append(row)
+
+        if status != "behaviorally_verified":
+            continue
+        key = (
+            as_int(candidate.get("compiler", {}).get("canary_bytes")),
+            as_int(candidate.get("compiler", {}).get("canary_events")),
+            limit,
+        )
+        if best is None or key < best[0]:
+            best = (key, candidate, verification)
+
+    if best is None:
+        raise SchemaError("no behaviorally verified canary found in the requested timing sample limit range")
+
+    _key, selected, verification = best
+    selected = copy.deepcopy(selected)
+    compiler = selected["compiler"]
+    accepted = [row for row in rows if row.get("status") == "behaviorally_verified"]
+    compiler["behavior_verification_status"] = verification["status"]
+    compiler["configuration_ranking_status"] = verification["configuration_ranking_status"]
+    compiler["behavioral_fidelity_status"] = verification["behavioral_fidelity_status"]
+    compiler["behavior_search"] = {
+        "mode": "exhaustive_timing_sample_limit_search",
+        "objective": "minimize serialized canary bytes subject to source, behavioral, and ranking verification",
+        "selection_metric": "canary_bytes_then_stored_events_then_timing_sample_limit",
+        "min_timing_sample_limit": min_limit,
+        "max_timing_sample_limit": max_limit,
+        "candidate_count": len(rows),
+        "accepted_candidates": len(accepted),
+        "selected_timing_sample_limit": as_int(compiler.get("timing_sample_limit")),
+        "selected_canary_bytes_without_search_metadata": as_int(compiler.get("canary_bytes")),
+        "selected_canary_events": as_int(compiler.get("canary_events")),
+        "ranking_status": verification["configuration_ranking_status"],
+        "behavioral_status": verification["behavioral_fidelity_status"],
+        "source_verified_status": verification["source_verified_status"],
+        "candidates": rows,
+    }
+    _refresh_canary_hashes_and_size(selected)
+    validate_canary(selected)
+    return selected
+
+
+def _behavior_search_row(
+    timing_sample_limit: int,
+    candidate: Mapping[str, Any],
+    verification: Mapping[str, Any],
+) -> JsonDict:
+    compiler = candidate.get("compiler", {})
+    return {
+        "timing_sample_limit": timing_sample_limit,
+        "status": str(verification.get("status")),
+        "source_verified_status": str(verification.get("source_verified_status", "unknown")),
+        "behavioral_fidelity_status": str(verification.get("behavioral_fidelity_status", "unknown")),
+        "configuration_ranking_status": str(verification.get("configuration_ranking_status", "unknown")),
+        "canary_bytes": as_int(compiler.get("canary_bytes"), 0),
+        "canary_events": as_int(compiler.get("canary_events"), 0),
+        "sequence_motif_count": as_int(compiler.get("sequence_motif_count"), 0),
+        "approximate_timing_records": as_int(compiler.get("approximate_timing_records"), 0),
+        "recursive_timing_records": as_int(compiler.get("recursive_timing_records"), 0),
+    }
 
 
 def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) -> JsonDict:
@@ -1934,6 +2124,15 @@ def _source_segment_sha256(samples: Sequence[Mapping[str, Any]]) -> str:
             }
         )
     return hashlib.sha256(_canonical_json_bytes({"samples": normalized})).hexdigest()
+
+
+def _refresh_canary_hashes_and_size(canary: JsonDict) -> None:
+    compiler = canary["compiler"]
+    compiler["execution_semantic_sha256"] = canary_execution_sha256(canary)
+    compiler["scheduler_execution_sha256"] = canary_scheduler_execution_sha256(canary)
+    compiler["calibration_evaluation_sha256"] = canary_calibration_sha256(canary)
+    compiler["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
+    _update_size_metrics(canary)
 
 
 def _canonical_json_bytes(data: Mapping[str, Any]) -> bytes:
