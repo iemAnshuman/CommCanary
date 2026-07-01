@@ -9,6 +9,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from commcanary.baselines import (
+    frequency_representative_baseline_trace,
+    isolated_collective_baseline_trace,
+    random_sampling_baseline_trace,
+)
 from commcanary.compare import compare_reports
 from commcanary.cli import main as cli_main
 from commcanary.compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior, verify_canary_fidelity
@@ -2843,6 +2848,58 @@ class CommCanaryTests(unittest.TestCase):
         self.assertIn("channel=pipe", sample["scheduler_resource"])
         self.assertIn("tag=kv", sample["scheduler_resource"])
 
+    def test_research_baseline_traces_are_valid_and_not_source_verified_against_original(self):
+        trace = adversarial_ranking_trace()
+        random_baseline = random_sampling_baseline_trace(trace, sample_count=8, seed=5)
+        frequency_baseline = frequency_representative_baseline_trace(trace)
+        isolated_baseline = isolated_collective_baseline_trace(trace)
+
+        validate_trace(random_baseline)
+        validate_trace(frequency_baseline)
+        validate_trace(isolated_baseline)
+        self.assertEqual(len(random_baseline["events"]), len(trace["events"]))
+        self.assertEqual(len(frequency_baseline["events"]), len(trace["events"]))
+        self.assertLess(len(isolated_baseline["events"]), len(trace["events"]))
+
+        random_canary = compile_trace(random_baseline, timing_sample_limit=16)
+        frequency_canary = compile_trace(frequency_baseline, timing_sample_limit=16)
+        random_verification = verify_canary_behavior(
+            trace,
+            random_canary,
+            configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        frequency_verification = verify_canary_behavior(
+            trace,
+            frequency_canary,
+            configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        self.assertEqual(random_verification["source_verified_status"], "failed")
+        self.assertEqual(frequency_verification["source_verified_status"], "failed")
+        self.assertNotEqual(random_verification["status"], "behaviorally_verified")
+        self.assertNotEqual(frequency_verification["status"], "behaviorally_verified")
+
+    def test_baseline_cli_generates_frequency_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = os.path.join(tmp, "trace.json")
+            output_path = os.path.join(tmp, "frequency.json")
+            write_json(trace_path, small_trace())
+            self.assertEqual(
+                cli_main(["baseline", trace_path, "--method", "frequency", "--output", output_path]),
+                0,
+            )
+            generated = load_json(output_path)
+            validate_trace(generated)
+            self.assertEqual(generated["workload"]["baseline_method"], "frequency_representative")
 
 
 if __name__ == "__main__":

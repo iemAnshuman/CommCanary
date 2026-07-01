@@ -8,6 +8,11 @@ import tempfile
 import uuid
 from typing import Any, List, Optional
 
+from .baselines import (
+    frequency_representative_baseline_trace,
+    isolated_collective_baseline_trace,
+    random_sampling_baseline_trace,
+)
 from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
 from .compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior, verify_canary_fidelity
@@ -136,6 +141,24 @@ def _build_parser() -> argparse.ArgumentParser:
     behavior_parser.add_argument("--ranking-tie-tolerance-us", type=float, default=0.001)
     behavior_parser.set_defaults(func=_cmd_verify_behavior)
 
+    baseline_parser = sub.add_parser("baseline", help="generate research baseline traces for comparison experiments")
+    baseline_parser.add_argument("trace")
+    baseline_parser.add_argument("--output", "-o", required=True)
+    baseline_parser.add_argument(
+        "--method",
+        choices=("isolated", "random", "frequency"),
+        required=True,
+        help="baseline generator: isolated collective, random sampling, or frequency representative",
+    )
+    baseline_parser.add_argument("--sample-count", type=int, default=8)
+    baseline_parser.add_argument("--seed", type=int, default=0)
+    baseline_parser.add_argument(
+        "--partial",
+        action="store_true",
+        help="for random sampling, emit only selected events instead of tiling to the source event count",
+    )
+    baseline_parser.set_defaults(func=_cmd_baseline)
+
     report_verify_parser = sub.add_parser("verify-report", help="recompute a report from a canary and backend settings")
     report_verify_parser.add_argument("report")
     report_verify_parser.add_argument("canary")
@@ -213,6 +236,26 @@ def _cmd_compile(args: Any) -> int:
             f"pressure<={fidelity.get('max_pressure_error', 0.0)}, "
             f"prefix-gap<={fidelity.get('max_prefix_gap_error_us', 0.0)} us"
         )
+    return 0
+
+
+def _cmd_baseline(args: Any) -> int:
+    trace = load_json(args.trace)
+    if args.method == "isolated":
+        baseline = isolated_collective_baseline_trace(trace)
+    elif args.method == "random":
+        baseline = random_sampling_baseline_trace(
+            trace,
+            sample_count=args.sample_count,
+            seed=args.seed,
+            preserve_source_event_count=not args.partial,
+        )
+    elif args.method == "frequency":
+        baseline = frequency_representative_baseline_trace(trace)
+    else:  # pragma: no cover - argparse constrains this.
+        raise CommCanaryError(f"unknown baseline method {args.method!r}")
+    write_json(args.output, baseline)
+    print(f"wrote {args.method} baseline trace with {len(baseline['events'])} events: {args.output}")
     return 0
 
 
