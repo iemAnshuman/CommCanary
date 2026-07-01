@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List
 
-from commcanary.compiler import compile_trace, verify_canary_behavior
+from commcanary.compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior
 from commcanary.replay import replay_canary
 from commcanary.schema import TRACE_FORMAT, write_json
 
@@ -97,11 +97,19 @@ def main() -> None:
     full = compile_trace(workload_trace, timing_sample_limit=128, require_lossless_timing=True)
     too_small = compile_trace(workload_trace, timing_sample_limit=2)
     exact_small = compile_trace(workload_trace, timing_sample_limit=32, require_lossless_timing=True)
+    behavior_search = synthesize_behavioral_canary(
+        workload_trace,
+        min_timing_sample_limit=2,
+        max_timing_sample_limit=32,
+        behavior_configurations=RANKING_CONFIGS,
+        ranking_tie_tolerance_us=0.0,
+    )
 
     write_json(str(out / "isolated.canary.json"), isolated)
     write_json(str(out / "full_upper_bound.canary.json"), full)
     write_json(str(out / "too_small.canary.json"), too_small)
     write_json(str(out / "verified_small.canary.json"), exact_small)
+    write_json(str(out / "behavior_search.canary.json"), behavior_search)
 
     lossy_verification = verify_canary_behavior(
         workload_trace,
@@ -119,13 +127,27 @@ def main() -> None:
         configurations=RANKING_CONFIGS,
         ranking_tie_tolerance_us=0.0,
     )
+    behavior_search_verification = verify_canary_behavior(
+        workload_trace,
+        behavior_search,
+        configurations=RANKING_CONFIGS,
+        ranking_tie_tolerance_us=0.0,
+    )
     write_json(str(out / "too_small.behavior.json"), lossy_verification)
     write_json(str(out / "verified_small.behavior.json"), exact_verification)
+    write_json(str(out / "behavior_search.behavior.json"), behavior_search_verification)
 
     print("isolated ranking:", " > ".join(rank_order(isolated)))
     print("full workload ranking:", " > ".join(rank_order(full)))
     print("too-small canary status:", lossy_verification["status"], lossy_verification["configuration_ranking_status"])
     print("verified canary status:", exact_verification["status"], exact_verification["configuration_ranking_status"])
+    print(
+        "behavior-search canary:",
+        behavior_search["compiler"]["behavior_search"]["selected_timing_sample_limit"],
+        "samples,",
+        behavior_search_verification["status"],
+        behavior_search_verification["configuration_ranking_status"],
+    )
     print(out)
 
 

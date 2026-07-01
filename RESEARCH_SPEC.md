@@ -66,6 +66,9 @@ injected and naturally occurring regressions.
   programs, with flat/motif scheduler-hash equivalence;
 - fail-closed behavior-gated compilation for canaries that must pass source,
   behavioral, and ranking verification;
+- behavior-search compilation that exhaustively searches a declared global
+  timing-sample budget range and selects the smallest source-, behavioral-, and
+  ranking-verified canary in that range;
 - simulator ablation controls for skew, overlap, ordering, rare tails, queue
   reset gaps, pressure, and observed exposed latency;
 - principled point-to-point identity fields for send/recv pairs;
@@ -79,9 +82,10 @@ injected and naturally occurring regressions.
   traces;
 - synthetic compute kernels calibrated to preserve interference;
 - dependency-graph and communicator reconstruction;
-- full optimisation that directly minimises canary size subject to ranking
-  preservation across multiple target configurations; current behavior-gated
-  compilation can reject bad canaries but does not search the Pareto frontier;
+- full per-window/per-motif optimisation that directly minimises canary size
+  subject to ranking preservation across multiple target configurations;
+  current behavior-search optimises only the global timing sample limit and
+  does not search the Pareto frontier;
 - delta debugging or sequence minimisation against a real regression oracle;
 - privacy leakage analysis;
 - multi-engine, multi-model, multi-generation hardware evaluation.
@@ -96,10 +100,15 @@ compilation fails instead of silently violating the contract.
 When measured exposed latency is absent, “tail-aware” means structural tail
 preservation, not demonstrated p99 preservation. The report labels this mode
 `structural-proxy`. `verify-behavior` is the gate for stronger behavioral
-claims: without a passing source verification, behavioral metric comparison,
-and pairwise ranking check, the artifact must be described as behaviorally
-unverified. `compile --require-behavior-verification` applies that same gate at
-artifact-generation time, but it is not yet a ranking-aware minimizer.
+claims: without a passing source verification, full-source coverage, behavioral
+metric comparison, and pairwise ranking check, the artifact must be described as
+behaviorally unverified. `verify-behavior` compares against the full normalized
+source trace by default; prefix-only or subset canaries are labelled
+`partial_source_verified` and cannot receive a strong behavioral claim.
+`compile --require-behavior-verification` applies that same gate at
+artifact-generation time. `compile --behavior-search` goes further by searching
+the declared timing sample limit range and selecting the smallest passing
+candidate it finds.
 
 ## Required baselines
 

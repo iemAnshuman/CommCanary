@@ -63,6 +63,23 @@ verification under the verifier's backend set.
 commcanary compile trace.json -o canary.json --require-behavior-verification
 ```
 
+For research minimization, use behavior-search mode. It compiles every timing
+sample limit in the requested range, runs behavior verification for each
+candidate, rejects failures, and selects the smallest serialized passing
+artifact:
+
+```bash
+commcanary compile trace.json -o canary.json \
+  --behavior-search \
+  --behavior-search-min-sample-limit 2 \
+  --timing-sample-limit 128
+```
+
+The selected canary records every candidate's verification status, acceptance
+status, and the selected timing sample limit. It is still not a full
+per-window/Pareto optimizer, but it gives a fail-closed behavioral minimization
+path for the current compiler.
+
 The compiler reports both event compression and serialized-byte compression.
 A smaller event count is not described as compression when the artifact is
 actually larger.
@@ -108,6 +125,8 @@ statuses:
 - `representation_fidelity_status`: the compiler-attested timing mode, such as
   `lossless_timing` or `bounded_approximate`;
 - `source_verified_status`: whether source-to-canary commitments recompute;
+- `source_coverage_status`: whether the candidate covers the full normalized
+  source trace or only a prefix/subset;
 - `behavioral_fidelity_status`: whether p50/p95/p99/max/mean, queue-wait
   distributions, hidden communication, phase metrics, operation metrics, and
   tail-event recall are within tolerance;
@@ -125,6 +144,9 @@ commcanary verify-behavior trace.json canary.json -o behavior.json \
 
 `compile --require-behavior-verification` uses this verifier as a fail-closed
 compiler gate. This is meant for research claims, not for fastest iteration.
+`verify-behavior` compares against the full normalized source trace by default.
+Canaries generated from a prefix or subset of the trace are labelled
+`partial_source_verified` and cannot receive a strong behavioral claim.
 
 A canary with rank-local compute uncertainty can still be replayed, but strong
 behavioral claims are downgraded to `behaviorally_unverified` rather than
@@ -163,7 +185,9 @@ The repository includes a synthetic adversarial experiment that demonstrates why
 field-level compression is not enough. It constructs an isolated collective
 baseline and a full decode-like workload whose queue-reset gaps and high-overlap
 tail windows change configuration ranking. A canary that is too small is
-labelled unverified; a lossless compact canary preserves the workload ranking.
+labelled unverified; behavior-search finds the smallest verified timing budget
+in the declared range, and a lossless compact canary preserves the workload
+ranking.
 
 ```bash
 PYTHONPATH=src python examples/research_scaffolding.py
