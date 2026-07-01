@@ -398,6 +398,20 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(verification["status"], "behaviorally_verified")
         self.assertEqual(verification["configuration_ranking_status"], "pass")
 
+    def test_behavior_verification_replays_full_source_not_candidate_prefix(self):
+        trace = small_trace()
+        prefix_canary = compile_trace(trace, max_events=1, require_lossless_timing=True)
+        verification = verify_canary_behavior(trace, prefix_canary)
+        self.assertEqual(verification["source_coverage_status"], "partial_source")
+        self.assertEqual(verification["source_verified_status"], "partial_source_verified")
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(
+                check["metric"] == "count" and check["status"] == "fail"
+                for check in verification["configurations"][0]["checks"]
+            )
+        )
+
     def test_required_behavior_verification_rejects_ranking_losing_compile(self):
         trace = adversarial_ranking_trace()
         with self.assertRaises(SchemaError):

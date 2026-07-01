@@ -412,13 +412,14 @@ def verify_canary_behavior(
 
     trace_events = trace.get("events", [])
     trace_event_count = len(trace_events) if isinstance(trace_events, list) else 0
-    max_events = source_events if source_events < trace_event_count else None
+    source_coverage_status = "full_source" if source_events == trace_event_count else "partial_source"
+    if source_verified_status == "source_verified" and source_coverage_status != "full_source":
+        source_verified_status = "partial_source_verified"
     full_canary = compile_trace(
         trace,
-        max_events=max_events,
-        timing_sample_limit=max(2, source_events),
+        timing_sample_limit=max(2, trace_event_count),
         require_lossless_timing=True,
-        allow_empty=source_events == 0,
+        allow_empty=trace_event_count == 0,
     )
     config_rows: List[JsonDict] = []
     for raw_config in configurations or _DEFAULT_BEHAVIORAL_CONFIGS:
@@ -429,6 +430,9 @@ def verify_canary_behavior(
         canary_report = replay_canary(canary, backend_label=name, include_samples=True, **replay_args)
 
         metric_checks = [
+            _behavior_count_check(source_report["metrics"], canary_report["metrics"]),
+        ]
+        metric_checks.extend(
             _behavior_metric_check(
                 metric,
                 source_report["metrics"],
@@ -438,7 +442,7 @@ def verify_canary_behavior(
                 hidden_tolerance_points=hidden_tolerance_points,
             )
             for metric in _BEHAVIORAL_LATENCY_METRICS
-        ]
+        )
         metric_checks.append(
             _behavior_metric_check(
                 "communication_hidden_pct",
@@ -523,7 +527,8 @@ def verify_canary_behavior(
     uncertainty = _behavior_capture_uncertainty(canary)
 
     passed = (
-        source_verified_status == "source_verified"
+        source_coverage_status == "full_source"
+        and source_verified_status == "source_verified"
         and behavioral_fidelity_status == "pass"
         and configuration_ranking_status == "pass"
         and uncertainty["status"] == "certain"
@@ -531,7 +536,8 @@ def verify_canary_behavior(
     if passed:
         status = "behaviorally_verified"
     elif (
-        source_verified_status == "source_verified"
+        source_coverage_status == "full_source"
+        and source_verified_status == "source_verified"
         and behavioral_fidelity_status == "pass"
         and configuration_ranking_status == "pass"
         and uncertainty["status"] != "certain"
@@ -545,6 +551,7 @@ def verify_canary_behavior(
         "status": status,
         "representation_fidelity_status": representation_fidelity_status,
         "source_verified_status": source_verified_status,
+        "source_coverage_status": source_coverage_status,
         "behavioral_fidelity_status": behavioral_fidelity_status,
         "configuration_ranking_status": configuration_ranking_status,
         "source_events": source_events,
@@ -789,6 +796,21 @@ def _behavioral_replay_args(config: Mapping[str, Any]) -> JsonDict:
         "max_replay_events",
     }
     return {key: config[key] for key in allowed if key in config}
+
+
+def _behavior_count_check(source_metrics: Mapping[str, Any], canary_metrics: Mapping[str, Any]) -> JsonDict:
+    source_count = as_int(source_metrics.get("count"))
+    canary_count = as_int(canary_metrics.get("count"))
+    return {
+        "metric": "count",
+        "status": "pass" if source_count == canary_count else "fail",
+        "source": source_count,
+        "canary": canary_count,
+        "absolute_delta": canary_count - source_count,
+        "relative_delta_pct": (
+            None if source_count == 0 else round((canary_count - source_count) / source_count * 100.0, 2)
+        ),
+    }
 
 
 def _behavior_metric_check(
