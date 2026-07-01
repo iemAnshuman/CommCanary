@@ -151,6 +151,28 @@ class CommCanaryTests(unittest.TestCase):
             any(check["name"] == "metrics" and check["status"] == "fail" for check in verification["checks"])
         )
 
+    def test_report_verification_rejects_forged_identity_and_summary_metadata(self):
+        canary = compile_trace(small_trace())
+        report = replay_canary(canary, seed=3)
+
+        forged_canary = copy.deepcopy(report)
+        forged_canary["canary"]["scheduler_execution_sha256"] = "0" * 64
+        validate_report(forged_canary)
+        verification = verify_report_against_canary(forged_canary, canary)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(check["name"] == "canary" and check["status"] == "fail" for check in verification["checks"])
+        )
+
+        forged_summary = copy.deepcopy(report)
+        forged_summary["canary_summary"]["source_events"] += 1
+        validate_report(forged_summary)
+        verification = verify_report_against_canary(forged_summary, canary)
+        self.assertEqual(verification["status"], "failed")
+        self.assertTrue(
+            any(check["name"] == "canary_summary" and check["status"] == "fail" for check in verification["checks"])
+        )
+
     def test_replay_ablations_are_report_verifiable_and_visible_in_samples(self):
         canary = compile_trace(small_trace())
         report = replay_canary(

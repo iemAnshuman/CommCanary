@@ -247,10 +247,23 @@ def verify_report_against_canary(report: Mapping[str, Any], canary: Mapping[str,
         ablations=protocol.get("ablations", []),
     )
     checks = [
+        _report_verification_check("canary", recomputed.get("canary"), report.get("canary")),
         _report_verification_check(
-            "canary.sha256",
-            recomputed.get("canary", {}).get("sha256"),
-            report.get("canary", {}).get("sha256"),
+            "simulation_model",
+            recomputed.get("simulation_model"),
+            report.get("simulation_model"),
+        ),
+        _report_verification_check(
+            "replay_protocol",
+            recomputed.get("replay_protocol"),
+            report.get("replay_protocol"),
+        ),
+        _report_verification_check("backend", recomputed.get("backend"), report.get("backend")),
+        _report_verification_check("workload", recomputed.get("workload"), report.get("workload")),
+        _report_verification_check(
+            "canary_summary",
+            recomputed.get("canary_summary"),
+            report.get("canary_summary"),
         ),
         _report_verification_check("metrics", recomputed.get("metrics"), report.get("metrics")),
         _report_verification_check("by_phase", recomputed.get("by_phase"), report.get("by_phase")),
