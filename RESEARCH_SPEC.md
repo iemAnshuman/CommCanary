@@ -69,6 +69,10 @@ injected and naturally occurring regressions.
 - behavior-search compilation that exhaustively searches a declared global
   timing-sample budget range and selects the smallest source-, behavioral-, and
   ranking-verified canary in that range;
+- model-recomputed report verification that rejects forged canary identity,
+  replay protocol, backend, workload, or canary-summary metadata;
+- research baseline generators for isolated collectives, random sampling, and
+  frequency representatives;
 - simulator ablation controls for skew, overlap, ordering, rare tails, queue
   reset gaps, pressure, and observed exposed latency;
 - principled point-to-point identity fields for send/recv pairs;
@@ -77,7 +81,7 @@ injected and naturally occurring regressions.
 
 ## Not implemented—and required before a strong systems-paper claim
 
-- physical CUDA/NCCL execution of the generated canary;
+- physical CUDA/NCCL execution of the generated canary and physical baseline scripts;
 - importers for Chakra, PyTorch profiler, Nsight Systems, or serving-engine
   traces;
 - synthetic compute kernels calibrated to preserve interference;
@@ -118,6 +122,10 @@ candidate it finds.
 4. a manually configured communication benchmark;
 5. full trace replay as an accuracy upper bound;
 6. CommCanary with each preservation mechanism ablated.
+
+This repository now includes simulator-side baseline trace generators for items
+1-3, but the physical `nccl-tests` baseline still needs real hardware execution
+and comparable measurement methodology.
 
 ## Most decisive first experiment
 

@@ -183,11 +183,11 @@ same execution.
 
 The repository includes a synthetic adversarial experiment that demonstrates why
 field-level compression is not enough. It constructs an isolated collective
-baseline and a full decode-like workload whose queue-reset gaps and high-overlap
-tail windows change configuration ranking. A canary that is too small is
-labelled unverified; behavior-search finds the smallest verified timing budget
-in the declared range, and a lossless compact canary preserves the workload
-ranking.
+baseline, random-sampling and frequency-representative controls, and a full
+decode-like workload whose queue-reset gaps and high-overlap tail windows change
+configuration ranking. A canary that is too small is labelled unverified;
+behavior-search finds the smallest verified timing budget in the declared range,
+and a lossless compact canary preserves the workload ranking.
 
 ```bash
 PYTHONPATH=src python examples/research_scaffolding.py
@@ -195,6 +195,26 @@ PYTHONPATH=src python examples/research_scaffolding.py
 
 The script writes traces, canaries, and behavior-verification outputs under
 `out/research_scaffold/`.
+
+## Research baselines
+
+Baseline traces are generated explicitly so they can be compiled, replayed, and
+verified under the same simulator contract as CommCanary artifacts:
+
+```bash
+commcanary baseline trace.json -o out/isolated.trace.json --method isolated
+commcanary baseline trace.json -o out/random.trace.json --method random --sample-count 16 --seed 7
+commcanary baseline trace.json -o out/frequency.trace.json --method frequency
+```
+
+`isolated` removes workload order, skew, queue-reset gaps, and overlap, matching
+the spirit of an isolated collective microbenchmark. `random` samples source
+events and tiles them to the original event count by default for count-fair
+behavioral comparison. `frequency` preserves operation frequency and order but
+replaces each signature by a representative, removing within-signature tails.
+These baselines are intentionally not source-verified against the original
+trace; `verify-behavior` should label them unverified unless they actually pass
+the full source, behavioral, and ranking gates.
 
 ## Trace timing semantics
 
@@ -260,8 +280,12 @@ Reports contain:
 
 Report validation reconciles metrics and breakdowns with included samples. Even
 without samples, breakdown counts, weighted means, maxima, names, and quantile
-ordering are checked. Comparison output localises the largest phase- and
-operation-level regressions in addition to applying global thresholds.
+ordering are checked. `verify-report` goes further: it replays the declared
+canary with the declared backend and protocol, then compares canary identity,
+replay protocol, backend settings, workload, canary-summary metadata, metrics,
+breakdowns, calibration, and samples when present. Comparison output localises
+the largest phase- and operation-level regressions in addition to applying
+global thresholds.
 
 ## Formats
 
