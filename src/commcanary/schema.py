@@ -833,6 +833,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
         "source_bytes",
         "canary_bytes",
         "timing_sample_limit",
+        "timing_group_count",
         "expanded_canary_events",
         "sequence_motif_count",
         "stored_recursive_timing_records",
@@ -840,6 +841,26 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     ):
         if integer_key in compiler and as_int(compiler.get(integer_key)) < 0:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
+    timing_limit_mode = compiler.get("timing_sample_limit_mode")
+    if timing_limit_mode is not None and timing_limit_mode not in {"uniform", "per_group"}:
+        raise SchemaError("canary compiler.timing_sample_limit_mode is invalid")
+    raw_group_limits = compiler.get("timing_sample_limits_by_group")
+    if raw_group_limits is not None:
+        if not isinstance(raw_group_limits, Mapping):
+            raise SchemaError("canary compiler.timing_sample_limits_by_group must be an object")
+        default_limit = as_int(compiler.get("timing_sample_limit"), 0)
+        group_count = as_int(compiler.get("timing_group_count"), 0)
+        for raw_group, raw_limit in raw_group_limits.items():
+            group_id = as_int(raw_group)
+            limit = as_int(raw_limit)
+            if group_id < 0:
+                raise SchemaError("canary compiler.timing_sample_limits_by_group keys must be non-negative")
+            if group_count and group_id >= group_count:
+                raise SchemaError("canary compiler.timing_sample_limits_by_group references an unknown group")
+            if limit < 2:
+                raise SchemaError("canary compiler.timing_sample_limits_by_group values must be at least 2")
+            if default_limit and limit > default_limit:
+                raise SchemaError("canary compiler.timing_sample_limits_by_group values must not exceed timing_sample_limit")
 
     fidelity = compiler.get("fidelity")
     if actual_approximate_records and fidelity is None:

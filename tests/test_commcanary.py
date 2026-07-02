@@ -107,6 +107,27 @@ def adversarial_ranking_configs():
     ]
 
 
+def two_group_refinement_trace():
+    trace = adversarial_ranking_trace()
+    events = list(trace["events"])
+    for index in range(80):
+        events.append(
+            {
+                "id": f"quiet-{index}",
+                "phase": "quiet",
+                "op": "all_reduce",
+                "bytes": 2048,
+                "ranks": [0, 1],
+                "group": "tp",
+                "gap_us": 1000.0 + (index % 17) * 3.0,
+                "rank_arrival_us": {"0": 0.0, "1": (index % 11) * 0.1},
+                "compute_overlap_us": 0.0,
+                "compute_pressure": 0.5,
+            }
+        )
+    return {"format": TRACE_FORMAT, "workload": {"name": "two-group-refinement"}, "events": events}
+
+
 class CommCanaryTests(unittest.TestCase):
     def test_compile_compresses_repeated_events(self):
         canary = compile_trace(small_trace())
@@ -2847,6 +2868,46 @@ class CommCanaryTests(unittest.TestCase):
         self.assertIn("p2p:pp:0->1", sample["scheduler_resource"])
         self.assertIn("channel=pipe", sample["scheduler_resource"])
         self.assertIn("tag=kv", sample["scheduler_resource"])
+
+    def test_behavior_search_refines_per_group_timing_budgets(self):
+        trace = two_group_refinement_trace()
+        canary = synthesize_behavioral_canary(
+            trace,
+            min_timing_sample_limit=2,
+            max_timing_sample_limit=20,
+            behavior_configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        search = canary["compiler"]["behavior_search"]
+        refinement = search["per_group_refinement"]
+        self.assertEqual(canary["compiler"]["timing_sample_limit_mode"], "per_group")
+        self.assertEqual(refinement["status"], "refined")
+        self.assertGreaterEqual(refinement["accepted_candidates"], 1)
+        self.assertIn("1", canary["compiler"]["timing_sample_limits_by_group"])
+
+        fidelity = verify_canary_fidelity(trace, canary)
+        behavior = verify_canary_behavior(
+            trace,
+            canary,
+            configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        self.assertEqual(fidelity["status"], "source_verified")
+        self.assertEqual(behavior["status"], "behaviorally_verified")
+
+    def test_compile_rejects_invalid_per_group_timing_budget(self):
+        with self.assertRaises(SchemaError):
+            compile_trace(small_trace(), timing_sample_limit=8, timing_sample_limits_by_group={99: 2})
+        with self.assertRaises(SchemaError):
+            compile_trace(small_trace(), timing_sample_limit=8, timing_sample_limits_by_group={0: 1})
 
     def test_research_baseline_traces_are_valid_and_not_source_verified_against_original(self):
         trace = adversarial_ranking_trace()

@@ -94,6 +94,7 @@ def compile_trace(
     *,
     max_events: Optional[int] = None,
     timing_sample_limit: int = DEFAULT_TIMING_SAMPLE_LIMIT,
+    timing_sample_limits_by_group: Optional[Mapping[Any, int]] = None,
     max_gap_error_us: Optional[float] = None,
     max_skew_error_us: Optional[float] = None,
     max_arrival_offset_error_us: Optional[float] = None,
@@ -159,6 +160,9 @@ def compile_trace(
     timing_sample_limit = as_int(timing_sample_limit)
     if timing_sample_limit < 2:
         raise SchemaError("timing_sample_limit must be at least 2")
+    timing_group_limits = _normalize_timing_group_limits(
+        timing_sample_limits_by_group, timing_sample_limit
+    )
 
     budgets = {
         "max_gap_error_us": _optional_non_negative(max_gap_error_us, "max_gap_error_us"),
@@ -206,10 +210,19 @@ def compile_trace(
         if canary_events and canary_events[-1].get("_signature") == signature:
             _append_sample(canary_events[-1], step)
         else:
+            group_index = len(canary_events)
+            step["_sample_limit"] = timing_group_limits.get(group_index, timing_sample_limit)
             step["_signature"] = signature
             canary_events.append(step)
 
     flat_finalized = [_finalize_step(step) for step in canary_events]
+    timing_group_count = len(flat_finalized)
+    invalid_group_ids = [group_id for group_id in timing_group_limits if group_id >= timing_group_count]
+    if invalid_group_ids:
+        raise SchemaError(
+            "timing_sample_limits_by_group references unknown timing groups: "
+            + ", ".join(str(group_id) for group_id in sorted(invalid_group_ids))
+        )
     finalized = _compress_sequence_motifs(flat_finalized) if enable_sequence_motifs else flat_finalized
     # Release the uncompressed timing streams before serialising the source
     # trace. This avoids holding two large canonical representations at once.
@@ -272,6 +285,17 @@ def compile_trace(
         "compiler": {
             "compression": "ordered exact patterns, replay-equivalent sequence motifs, and fidelity-audited bounded intervals",
             "timing_sample_limit": timing_sample_limit,
+            "timing_sample_limit_mode": "per_group" if timing_group_limits else "uniform",
+            "timing_group_count": timing_group_count,
+            **(
+                {
+                    "timing_sample_limits_by_group": {
+                        str(group_id): limit for group_id, limit in sorted(timing_group_limits.items())
+                    }
+                }
+                if timing_group_limits
+                else {}
+            ),
             "timing_mode": timing_mode,
             "tail_signal": "observed_exposed_us" if has_observed_tail else "structural-proxy",
             "source_events": source_count,
@@ -438,30 +462,230 @@ def synthesize_behavioral_canary(
 
     _key, selected, verification = best
     selected = copy.deepcopy(selected)
+    selected, verification, refinement = _refine_behavior_search_timing_groups(
+        trace,
+        selected,
+        verification,
+        min_timing_sample_limit=min_limit,
+        max_events=max_events,
+        max_gap_error_us=max_gap_error_us,
+        max_skew_error_us=max_skew_error_us,
+        max_arrival_offset_error_us=max_arrival_offset_error_us,
+        max_compute_before_error_us=max_compute_before_error_us,
+        max_overlap_error_us=max_overlap_error_us,
+        max_pressure_error=max_pressure_error,
+        max_observed_exposed_error_us=max_observed_exposed_error_us,
+        max_prefix_gap_error_us=max_prefix_gap_error_us,
+        require_lossless_timing=require_lossless_timing,
+        allow_empty=allow_empty,
+        enable_sequence_motifs=enable_sequence_motifs,
+        behavior_configurations=behavior_configurations,
+        relative_tolerance_pct=relative_tolerance_pct,
+        absolute_tolerance_us=absolute_tolerance_us,
+        hidden_tolerance_points=hidden_tolerance_points,
+        tail_recall_threshold=tail_recall_threshold,
+        ranking_tie_tolerance_us=ranking_tie_tolerance_us,
+    )
     compiler = selected["compiler"]
     accepted = [row for row in rows if row.get("status") == "behaviorally_verified"]
     compiler["behavior_verification_status"] = verification["status"]
     compiler["configuration_ranking_status"] = verification["configuration_ranking_status"]
     compiler["behavioral_fidelity_status"] = verification["behavioral_fidelity_status"]
     compiler["behavior_search"] = {
-        "mode": "exhaustive_timing_sample_limit_search",
+        "mode": "exhaustive_timing_sample_limit_search_with_per_group_refinement",
         "objective": "minimize serialized canary bytes subject to source, behavioral, and ranking verification",
-        "selection_metric": "canary_bytes_then_stored_events_then_timing_sample_limit",
+        "selection_metric": "canary_bytes_then_stored_timing_records_then_stored_events_then_timing_limits",
         "min_timing_sample_limit": min_limit,
         "max_timing_sample_limit": max_limit,
         "candidate_count": len(rows),
         "accepted_candidates": len(accepted),
         "selected_timing_sample_limit": as_int(compiler.get("timing_sample_limit")),
+        "selected_timing_sample_limit_mode": str(compiler.get("timing_sample_limit_mode", "uniform")),
+        "selected_timing_sample_limits_by_group": dict(compiler.get("timing_sample_limits_by_group", {})),
         "selected_canary_bytes_without_search_metadata": as_int(compiler.get("canary_bytes")),
         "selected_canary_events": as_int(compiler.get("canary_events")),
         "ranking_status": verification["configuration_ranking_status"],
         "behavioral_status": verification["behavioral_fidelity_status"],
         "source_verified_status": verification["source_verified_status"],
+        "per_group_refinement": refinement,
         "candidates": rows,
     }
     _refresh_canary_hashes_and_size(selected)
     validate_canary(selected)
     return selected
+
+
+def _refine_behavior_search_timing_groups(
+    trace: Mapping[str, Any],
+    selected: JsonDict,
+    verification: Mapping[str, Any],
+    *,
+    min_timing_sample_limit: int,
+    max_events: Optional[int],
+    max_gap_error_us: Optional[float],
+    max_skew_error_us: Optional[float],
+    max_arrival_offset_error_us: Optional[float],
+    max_compute_before_error_us: Optional[float],
+    max_overlap_error_us: Optional[float],
+    max_pressure_error: Optional[float],
+    max_observed_exposed_error_us: Optional[float],
+    max_prefix_gap_error_us: Optional[float],
+    require_lossless_timing: bool,
+    allow_empty: bool,
+    enable_sequence_motifs: bool,
+    behavior_configurations: Optional[Sequence[Mapping[str, Any]]],
+    relative_tolerance_pct: float,
+    absolute_tolerance_us: float,
+    hidden_tolerance_points: float,
+    tail_recall_threshold: float,
+    ranking_tie_tolerance_us: float,
+) -> Tuple[JsonDict, Mapping[str, Any], JsonDict]:
+    """Greedily lower timing budgets for individual signature groups.
+
+    The global budget search is a coarse approximation: quiet groups can often
+    be represented with fewer timing records than tail- or ranking-sensitive
+    groups. This refinement accepts a lower per-group budget only when the
+    resulting canary remains source-, behavior-, and ranking-verified and does
+    not worsen the selected size objective.
+    """
+
+    selected_limit = as_int(selected.get("compiler", {}).get("timing_sample_limit"))
+    min_limit = as_int(min_timing_sample_limit)
+    group_count = as_int(selected.get("compiler", {}).get("timing_group_count"), 0)
+    if group_count <= 0 or min_limit >= selected_limit:
+        return selected, verification, {
+            "mode": "greedy_per_group_timing_sample_limit_refinement",
+            "status": "skipped",
+            "reason": "no lower per-group limits are available",
+            "group_count": group_count,
+            "attempted_candidates": 0,
+            "accepted_candidates": 0,
+            "selected_limits_by_group": {},
+            "candidates": [],
+        }
+
+    current = copy.deepcopy(selected)
+    current_verification: Mapping[str, Any] = dict(verification)
+    current_limits: Dict[int, int] = _compiler_timing_group_limits(
+        current.get("compiler", {}), selected_limit
+    )
+    current_key = _behavior_search_size_key(current)
+    rows: List[JsonDict] = []
+    accepted_count = 0
+
+    for group_id in range(group_count):
+        current_group_limit = current_limits.get(group_id, selected_limit)
+        if current_group_limit <= min_limit:
+            continue
+        group_best: Optional[Tuple[Tuple[int, int, int, int], JsonDict, Mapping[str, Any], Dict[int, int]]] = None
+        for candidate_limit in range(min_limit, current_group_limit):
+            proposed_limits = dict(current_limits)
+            proposed_limits[group_id] = candidate_limit
+            try:
+                candidate = compile_trace(
+                    trace,
+                    max_events=max_events,
+                    timing_sample_limit=selected_limit,
+                    timing_sample_limits_by_group=proposed_limits,
+                    max_gap_error_us=max_gap_error_us,
+                    max_skew_error_us=max_skew_error_us,
+                    max_arrival_offset_error_us=max_arrival_offset_error_us,
+                    max_compute_before_error_us=max_compute_before_error_us,
+                    max_overlap_error_us=max_overlap_error_us,
+                    max_pressure_error=max_pressure_error,
+                    max_observed_exposed_error_us=max_observed_exposed_error_us,
+                    max_prefix_gap_error_us=max_prefix_gap_error_us,
+                    require_lossless_timing=require_lossless_timing,
+                    allow_empty=allow_empty,
+                    enable_sequence_motifs=enable_sequence_motifs,
+                    require_behavior_verification=False,
+                    behavior_search=False,
+                )
+                candidate_verification = verify_canary_behavior(
+                    trace,
+                    candidate,
+                    configurations=behavior_configurations,
+                    relative_tolerance_pct=relative_tolerance_pct,
+                    absolute_tolerance_us=absolute_tolerance_us,
+                    hidden_tolerance_points=hidden_tolerance_points,
+                    tail_recall_threshold=tail_recall_threshold,
+                    ranking_tie_tolerance_us=ranking_tie_tolerance_us,
+                )
+                row = _behavior_search_refinement_row(group_id, candidate_limit, candidate, candidate_verification)
+            except SchemaError as exc:
+                candidate_verification = {
+                    "status": "failed",
+                    "source_verified_status": "failed",
+                    "behavioral_fidelity_status": "failed",
+                    "configuration_ranking_status": "failed",
+                }
+                row = {
+                    "group_id": group_id,
+                    "timing_sample_limit": candidate_limit,
+                    "status": "failed",
+                    "source_verified_status": "failed",
+                    "behavioral_fidelity_status": "failed",
+                    "configuration_ranking_status": "failed",
+                    "reason": str(exc),
+                }
+                rows.append(row)
+                continue
+            rows.append(row)
+            if candidate_verification.get("status") != "behaviorally_verified":
+                continue
+            candidate_key = _behavior_search_size_key(candidate)
+            if candidate_key >= current_key:
+                continue
+            if group_best is None or candidate_key < group_best[0]:
+                group_best = (candidate_key, candidate, candidate_verification, proposed_limits)
+        if group_best is None:
+            continue
+        current_key, current, current_verification, current_limits = group_best
+        accepted_count += 1
+
+    return current, current_verification, {
+        "mode": "greedy_per_group_timing_sample_limit_refinement",
+        "status": "refined" if accepted_count else "no_smaller_verified_candidate",
+        "group_count": group_count,
+        "attempted_candidates": len(rows),
+        "accepted_candidates": accepted_count,
+        "selected_limits_by_group": {
+            str(group_id): limit for group_id, limit in sorted(current_limits.items())
+        },
+        "selected_size_key": list(current_key),
+        "candidates": rows,
+    }
+
+
+def _behavior_search_size_key(candidate: Mapping[str, Any]) -> Tuple[int, int, int, int]:
+    compiler = candidate.get("compiler", {})
+    group_limits = compiler.get("timing_sample_limits_by_group", {})
+    limit_sum = 0
+    if isinstance(group_limits, Mapping):
+        limit_sum = sum(as_int(value) for value in group_limits.values())
+    return (
+        as_int(compiler.get("canary_bytes"), 0),
+        as_int(compiler.get("stored_recursive_timing_records"), 0),
+        as_int(compiler.get("canary_events"), 0),
+        limit_sum,
+    )
+
+
+def _behavior_search_refinement_row(
+    group_id: int,
+    timing_sample_limit: int,
+    candidate: Mapping[str, Any],
+    verification: Mapping[str, Any],
+) -> JsonDict:
+    row = _behavior_search_row(timing_sample_limit, candidate, verification)
+    row["group_id"] = group_id
+    row["timing_sample_limit_mode"] = str(
+        candidate.get("compiler", {}).get("timing_sample_limit_mode", "uniform")
+    )
+    row["timing_sample_limits_by_group"] = dict(
+        candidate.get("compiler", {}).get("timing_sample_limits_by_group", {})
+    )
+    return row
 
 
 def _behavior_search_row(
@@ -493,10 +717,13 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
     trace_events = trace.get("events", [])
     trace_event_count = len(trace_events) if isinstance(trace_events, list) else 0
     max_events = source_events if source_events < trace_event_count else None
+    timing_sample_limit = as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT)
+    timing_group_limits = _compiler_timing_group_limits(compiler, timing_sample_limit)
     expected = compile_trace(
         trace,
         max_events=max_events,
-        timing_sample_limit=as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+        timing_sample_limit=timing_sample_limit,
+        timing_sample_limits_by_group=timing_group_limits,
         allow_empty=source_events == 0,
     )
     expected_compiler = expected.get("compiler", {})
@@ -504,7 +731,7 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
         trace,
         canary,
         max_events=max_events,
-        timing_sample_limit=as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+        timing_sample_limit=timing_sample_limit,
     )
     checks = [
         _verification_check(
@@ -550,7 +777,7 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
         "format": "commcanary.fidelity_verification.v1",
         "status": "source_verified" if passed else "failed",
         "source_events": source_events,
-        "timing_sample_limit": as_int(compiler.get("timing_sample_limit"), DEFAULT_TIMING_SAMPLE_LIMIT),
+        "timing_sample_limit": timing_sample_limit,
         "checks": checks,
     }
 
@@ -2083,6 +2310,42 @@ def _enforce_fidelity_budgets(fidelity: Mapping[str, Any], budgets: Mapping[str,
         actual = as_float(fidelity.get(field), 0.0)
         if actual > budget + _US_TOLERANCE:
             raise SchemaError(f"timing fidelity {field}={actual} us exceeds budget {budget} us")
+
+
+def _normalize_timing_group_limits(
+    raw_limits: Optional[Mapping[Any, int]],
+    default_limit: int,
+) -> Dict[int, int]:
+    if raw_limits is None:
+        return {}
+    if not isinstance(raw_limits, Mapping):
+        raise SchemaError("timing_sample_limits_by_group must be an object")
+    parsed_default = as_int(default_limit)
+    if parsed_default < 2:
+        raise SchemaError("timing_sample_limit must be at least 2")
+    result: Dict[int, int] = {}
+    for raw_group, raw_limit in raw_limits.items():
+        group_id = as_int(raw_group)
+        if group_id < 0:
+            raise SchemaError("timing_sample_limits_by_group keys must be non-negative")
+        limit = as_int(raw_limit)
+        if limit < 2:
+            raise SchemaError("timing_sample_limits_by_group values must be at least 2")
+        if limit > parsed_default:
+            raise SchemaError("timing_sample_limits_by_group values must not exceed timing_sample_limit")
+        if limit != parsed_default:
+            result[group_id] = limit
+    return result
+
+
+def _compiler_timing_group_limits(
+    compiler: Mapping[str, Any],
+    default_limit: int,
+) -> Dict[int, int]:
+    raw = compiler.get("timing_sample_limits_by_group")
+    if raw is None:
+        return {}
+    return _normalize_timing_group_limits(raw, default_limit)
 
 
 def _optional_non_negative(value: Optional[float], name: str) -> Optional[float]:
