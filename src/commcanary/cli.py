@@ -9,6 +9,7 @@ import uuid
 from typing import Any, List, Optional
 
 from .baselines import (
+    clustering_representative_baseline_trace,
     frequency_representative_baseline_trace,
     isolated_collective_baseline_trace,
     random_sampling_baseline_trace,
@@ -146,11 +147,15 @@ def _build_parser() -> argparse.ArgumentParser:
     baseline_parser.add_argument("--output", "-o", required=True)
     baseline_parser.add_argument(
         "--method",
-        choices=("isolated", "random", "frequency"),
+        choices=("isolated", "random", "frequency", "cluster"),
         required=True,
-        help="baseline generator: isolated collective, random sampling, or frequency representative",
+        help=(
+            "baseline generator: isolated collective, random sampling, "
+            "frequency representative, or clustering representative"
+        ),
     )
     baseline_parser.add_argument("--sample-count", type=int, default=8)
+    baseline_parser.add_argument("--cluster-count", type=int, default=8)
     baseline_parser.add_argument("--seed", type=int, default=0)
     baseline_parser.add_argument(
         "--partial",
@@ -252,6 +257,11 @@ def _cmd_baseline(args: Any) -> int:
         )
     elif args.method == "frequency":
         baseline = frequency_representative_baseline_trace(trace)
+    elif args.method == "cluster":
+        baseline = clustering_representative_baseline_trace(
+            trace,
+            cluster_count=args.cluster_count,
+        )
     else:  # pragma: no cover - argparse constrains this.
         raise CommCanaryError(f"unknown baseline method {args.method!r}")
     write_json(args.output, baseline)

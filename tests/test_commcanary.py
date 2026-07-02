@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from commcanary.baselines import (
+    clustering_representative_baseline_trace,
     frequency_representative_baseline_trace,
     isolated_collective_baseline_trace,
     random_sampling_baseline_trace,
@@ -2909,17 +2910,42 @@ class CommCanaryTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             compile_trace(small_trace(), timing_sample_limit=8, timing_sample_limits_by_group={0: 1})
 
+    def test_clustering_baseline_trace_is_valid_negative_control(self):
+        trace = adversarial_ranking_trace()
+        baseline = clustering_representative_baseline_trace(trace, cluster_count=4)
+        validate_trace(baseline)
+        self.assertEqual(len(baseline["events"]), len(trace["events"]))
+        self.assertEqual(baseline["workload"]["baseline_method"], "clustering_representative")
+        self.assertIn("cluster_count", baseline["events"][0]["metadata"])
+
+        canary = compile_trace(baseline, timing_sample_limit=16)
+        verification = verify_canary_behavior(
+            trace,
+            canary,
+            configurations=adversarial_ranking_configs(),
+            relative_tolerance_pct=1000.0,
+            absolute_tolerance_us=1000.0,
+            hidden_tolerance_points=100.0,
+            tail_recall_threshold=0.0,
+            ranking_tie_tolerance_us=0.0,
+        )
+        self.assertEqual(verification["source_verified_status"], "failed")
+        self.assertNotEqual(verification["status"], "behaviorally_verified")
+
     def test_research_baseline_traces_are_valid_and_not_source_verified_against_original(self):
         trace = adversarial_ranking_trace()
         random_baseline = random_sampling_baseline_trace(trace, sample_count=8, seed=5)
         frequency_baseline = frequency_representative_baseline_trace(trace)
+        cluster_baseline = clustering_representative_baseline_trace(trace, cluster_count=4)
         isolated_baseline = isolated_collective_baseline_trace(trace)
 
         validate_trace(random_baseline)
         validate_trace(frequency_baseline)
+        validate_trace(cluster_baseline)
         validate_trace(isolated_baseline)
         self.assertEqual(len(random_baseline["events"]), len(trace["events"]))
         self.assertEqual(len(frequency_baseline["events"]), len(trace["events"]))
+        self.assertEqual(len(cluster_baseline["events"]), len(trace["events"]))
         self.assertLess(len(isolated_baseline["events"]), len(trace["events"]))
 
         random_canary = compile_trace(random_baseline, timing_sample_limit=16)
@@ -2961,6 +2987,30 @@ class CommCanaryTests(unittest.TestCase):
             generated = load_json(output_path)
             validate_trace(generated)
             self.assertEqual(generated["workload"]["baseline_method"], "frequency_representative")
+
+    def test_baseline_cli_generates_cluster_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = os.path.join(tmp, "trace.json")
+            output_path = os.path.join(tmp, "cluster.json")
+            write_json(trace_path, adversarial_ranking_trace())
+            self.assertEqual(
+                cli_main(
+                    [
+                        "baseline",
+                        trace_path,
+                        "--method",
+                        "cluster",
+                        "--cluster-count",
+                        "4",
+                        "--output",
+                        output_path,
+                    ]
+                ),
+                0,
+            )
+            generated = load_json(output_path)
+            validate_trace(generated)
+            self.assertEqual(generated["workload"]["baseline_method"], "clustering_representative")
 
 
 if __name__ == "__main__":

@@ -152,6 +152,53 @@ def frequency_representative_baseline_trace(trace: Mapping[str, Any]) -> JsonDic
     return _baseline_trace(trace, "frequency_representative", baseline_events)
 
 
+def clustering_representative_baseline_trace(
+    trace: Mapping[str, Any],
+    *,
+    cluster_count: int = 8,
+) -> JsonDict:
+    """Build a deterministic clustering/medoid baseline trace.
+
+    This is a stronger negative control than the frequency representative:
+    every operation signature may keep multiple timing medoids. It preserves
+    event count, operation order, and operation signatures, but intentionally
+    discards exact burst/tail correlations and source commitments.
+    """
+
+    validate_trace(trace)
+    events = list(trace.get("events", []))
+    if not events:
+        raise SchemaError("cannot build a clustering baseline from an empty trace")
+    parsed_cluster_count = as_int(cluster_count)
+    if parsed_cluster_count <= 0:
+        raise SchemaError("cluster_count must be positive")
+
+    groups: Dict[Tuple[Any, ...], List[Tuple[int, Mapping[str, Any]]]] = defaultdict(list)
+    for index, event in enumerate(events):
+        groups[_operation_signature(event, include_phase=True)].append((index, event))
+    representatives = {
+        key: _cluster_representatives([event for _index, event in grouped], parsed_cluster_count)
+        for key, grouped in groups.items()
+    }
+
+    baseline_events: List[JsonDict] = []
+    for index, event in enumerate(events):
+        key = _operation_signature(event, include_phase=True)
+        reps = representatives[key]
+        representative, representative_index = _nearest_representative(event, reps)
+        record = _shape_event(representative, f"cluster-representative-{index:06d}")
+        record["gap_us"] = _source_gap_us(representative)
+        record.pop("start_us", None)
+        record["metadata"] = {
+            "commcanary_baseline": "clustering_representative",
+            "cluster_count": len(reps),
+            "representative_index": representative_index,
+            "source_signature_size": len(groups[key]),
+        }
+        baseline_events.append(record)
+    return _baseline_trace(trace, "clustering_representative", baseline_events)
+
+
 def _baseline_trace(trace: Mapping[str, Any], method: str, events: Sequence[JsonDict]) -> JsonDict:
     workload = dict(trace.get("workload", {}))
     notes = str(workload.get("notes", ""))
@@ -215,6 +262,58 @@ def _representative_event(events: Sequence[Mapping[str, Any]]) -> Mapping[str, A
         return value, index
 
     return min(enumerate(events), key=distance)[1]
+
+
+def _cluster_representatives(
+    events: Sequence[Mapping[str, Any]],
+    cluster_count: int,
+) -> List[Mapping[str, Any]]:
+    if len(events) <= cluster_count:
+        return list(events)
+    features = [_features(event) for event in events]
+    order = sorted(range(len(events)), key=lambda index: features[index])
+    representatives: List[Mapping[str, Any]] = []
+    for cluster_index in range(cluster_count):
+        start = int(cluster_index * len(order) / cluster_count)
+        end = int((cluster_index + 1) * len(order) / cluster_count)
+        bucket_indices = order[start:end] or [order[min(start, len(order) - 1)]]
+        bucket_events = [events[index] for index in bucket_indices]
+        representatives.append(_representative_event(bucket_events))
+    # De-duplicate identical medoids while preserving order; repeated medoids
+    # add no behavioral information and make the baseline look stronger than
+    # it is.
+    unique: List[Mapping[str, Any]] = []
+    seen = set()
+    for representative in representatives:
+        key = tuple(_features(representative))
+        if key not in seen:
+            seen.add(key)
+            unique.append(representative)
+    return unique or [events[0]]
+
+
+def _nearest_representative(
+    event: Mapping[str, Any],
+    representatives: Sequence[Mapping[str, Any]],
+) -> Tuple[Mapping[str, Any], int]:
+    if not representatives:
+        raise SchemaError("clustering baseline has no representatives")
+    all_features = [_features(event), *(_features(representative) for representative in representatives)]
+    scales = _feature_scales(all_features)
+    event_features = all_features[0]
+    best_index = min(
+        range(len(representatives)),
+        key=lambda index: (_feature_distance(event_features, _features(representatives[index]), scales), index),
+    )
+    return representatives[best_index], best_index
+
+
+def _feature_scales(features: Sequence[Tuple[float, ...]]) -> Tuple[float, ...]:
+    return tuple(max(1.0, max(abs(row[index]) for row in features)) for index in range(len(features[0])))
+
+
+def _feature_distance(left: Tuple[float, ...], right: Tuple[float, ...], scales: Tuple[float, ...]) -> float:
+    return sum(abs(left[index] - right[index]) / scales[index] for index in range(len(scales)))
 
 
 def _features(event: Mapping[str, Any]) -> Tuple[float, float, float, float, float]:
