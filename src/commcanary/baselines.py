@@ -263,7 +263,7 @@ def stratified_sampling_baseline_trace(
 
 
 def _baseline_trace(trace: Mapping[str, Any], method: str, events: Sequence[JsonDict]) -> JsonDict:
-    workload = dict(trace.get("workload", {}))
+    workload = copy.deepcopy(dict(trace.get("workload", {})))
     notes = str(workload.get("notes", ""))
     suffix = f"CommCanary research baseline: {method}. Not source-verified against the original trace."
     workload["notes"] = f"{notes} {suffix}".strip()
@@ -271,8 +271,8 @@ def _baseline_trace(trace: Mapping[str, Any], method: str, events: Sequence[Json
     return {
         "format": TRACE_FORMAT,
         "workload": workload,
-        "system": dict(trace.get("system", {})),
-        "events": list(events),
+        "system": copy.deepcopy(dict(trace.get("system", {}))),
+        "events": copy.deepcopy(list(events)),
     }
 
 

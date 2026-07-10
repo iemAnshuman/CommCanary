@@ -161,7 +161,7 @@ def ddmin_ranking_reduction(
                 break
             granularity = min(len(current), granularity * 2)
 
-    workload = dict(trace.get("workload", {}))
+    workload = copy.deepcopy(dict(trace.get("workload", {})))
     notes = str(workload.get("notes", ""))
     suffix = (
         "CommCanary research reduction: ddmin_ranking. Decision-preserving "
@@ -186,7 +186,7 @@ def ddmin_ranking_reduction(
     reduced_trace: JsonDict = {
         "format": TRACE_FORMAT,
         "workload": workload,
-        "system": dict(trace.get("system", {})),
+        "system": copy.deepcopy(dict(trace.get("system", {}))),
         "events": [copy.deepcopy(event) for event in current],
     }
     validate_trace(reduced_trace)

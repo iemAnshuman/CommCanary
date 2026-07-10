@@ -12,6 +12,8 @@ TRACE_FORMAT = "commcanary.trace.v1"
 CANARY_FORMAT = "commcanary.canary.v2"
 REPORT_FORMAT = "commcanary.report.v2"
 COMPARE_FORMAT = "commcanary.compare.v2"
+CANARY_INTEGRITY_PROFILE = "commcanary.canary-integrity.v1"
+ARTIFACT_PROVENANCE_ALGORITHM = "commcanary.artifact-provenance.v2"
 MAX_RANK_COUNT = 65536
 MAX_ABS_INTEGER = 2**63 - 1
 MAX_TIME_US = 1_000_000_000_000.0
@@ -219,7 +221,30 @@ def canary_calibration_sha256(canary: Mapping[str, Any]) -> str:
 
 
 def canary_artifact_provenance_sha256(canary: Mapping[str, Any]) -> str:
-    stable = _strip_canary_hash_fields(canary)
+    compiler = canary.get("compiler", {})
+    if (
+        isinstance(compiler, Mapping)
+        and compiler.get("integrity_profile") == CANARY_INTEGRITY_PROFILE
+        and compiler.get("artifact_provenance_algorithm") == ARTIFACT_PROVENANCE_ALGORITHM
+    ):
+        stable = {
+            key: value
+            for key, value in canary.items()
+            if key != "created_at"
+        }
+        stable_compiler = {
+            key: value
+            for key, value in compiler.items()
+            if key
+            not in {
+                "artifact_provenance_sha256",
+                "canary_bytes",
+                "byte_compression_ratio",
+            }
+        }
+        stable["compiler"] = stable_compiler
+    else:
+        stable = _strip_canary_hash_fields(canary)
     return hashlib.sha256(canonical_json_bytes(stable)).hexdigest()
 
 
@@ -617,7 +642,9 @@ def validate_trace(trace: Mapping[str, Any], *, allow_partial_arrivals: bool = F
         _validate_point_to_point_metadata(event, ranks, f"trace event {index}")
 
 
-def validate_canary(canary: Mapping[str, Any]) -> None:
+def validate_canary(
+    canary: Mapping[str, Any], *, allow_legacy_unverified: bool = False
+) -> None:
     require_format(canary, CANARY_FORMAT, "canary")
     _require_optional_mapping(canary, "workload", "canary")
     _require_optional_mapping(canary, "system", "canary")
@@ -625,6 +652,15 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
     compiler = canary.get("compiler")
     if not isinstance(compiler, Mapping):
         raise SchemaError("canary must contain a compiler object")
+    integrity_profile = compiler.get("integrity_profile")
+    profiled_integrity = integrity_profile == CANARY_INTEGRITY_PROFILE
+    if not profiled_integrity:
+        if integrity_profile is not None:
+            raise SchemaError(f"unsupported canary integrity profile {integrity_profile!r}")
+        if not allow_legacy_unverified:
+            raise SchemaError("canary is missing the required integrity profile")
+    elif compiler.get("artifact_provenance_algorithm") != ARTIFACT_PROVENANCE_ALGORITHM:
+        raise SchemaError("canary compiler.artifact_provenance_algorithm is unsupported")
     events = canary.get("events")
     if not isinstance(events, list):
         raise SchemaError("canary must contain an 'events' list")
@@ -666,6 +702,8 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             raise SchemaError(f"canary event {index} source.count is required")
         if as_int(source.get("count")) != repeat:
             raise SchemaError(f"canary event {index} source.count must match repeat")
+        if profiled_integrity and "digest" not in source:
+            raise SchemaError(f"canary event {index} source.digest is required")
         if "digest" in source:
             _validate_sha256(source.get("digest"), f"canary event {index} source.digest")
         if "sampled_timing_records" in source and as_int(source.get("sampled_timing_records")) <= 0:
@@ -809,26 +847,41 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
             raise SchemaError("canary compiler.capture_uncertainty must be an object")
         if as_int(capture_uncertainty.get("compute_fields_uncertain_events"), 0) != 0:
             raise SchemaError("canary compiler.capture_uncertainty contradicts timing records")
-    if "source_trace_sha256" in compiler:
-        _validate_sha256(compiler.get("source_trace_sha256"), "canary compiler.source_trace_sha256")
-    if "source_normalized_sha256" in compiler:
-        _validate_sha256(compiler.get("source_normalized_sha256"), "canary compiler.source_normalized_sha256")
-        if compiler.get("source_trace_sha256") and compiler.get("source_normalized_sha256") != compiler.get("source_trace_sha256"):
-            raise SchemaError("canary compiler.source_normalized_sha256 must match source_trace_sha256")
-    if "execution_semantic_sha256" in compiler:
-        _validate_sha256(compiler.get("execution_semantic_sha256"), "canary compiler.execution_semantic_sha256")
-        if compiler.get("execution_semantic_sha256") != canary_execution_sha256(canary):
-            raise SchemaError("canary compiler.execution_semantic_sha256 does not match executable events")
-    if "scheduler_execution_sha256" in compiler:
-        _validate_sha256(compiler.get("scheduler_execution_sha256"), "canary compiler.scheduler_execution_sha256")
-        if compiler.get("scheduler_execution_sha256") != canary_scheduler_execution_sha256(canary):
-            raise SchemaError("canary compiler.scheduler_execution_sha256 does not match scheduler events")
-    if "calibration_evaluation_sha256" in compiler:
-        _validate_sha256(compiler.get("calibration_evaluation_sha256"), "canary compiler.calibration_evaluation_sha256")
-        if compiler.get("calibration_evaluation_sha256") != canary_calibration_sha256(canary):
-            raise SchemaError("canary compiler.calibration_evaluation_sha256 does not match calibration fields")
-    if "artifact_provenance_sha256" in compiler:
-        _validate_sha256(compiler.get("artifact_provenance_sha256"), "canary compiler.artifact_provenance_sha256")
+    required_hashes = (
+        "source_trace_sha256",
+        "source_normalized_sha256",
+        "execution_semantic_sha256",
+        "scheduler_execution_sha256",
+        "calibration_evaluation_sha256",
+        "artifact_provenance_sha256",
+    )
+    for hash_key in required_hashes:
+        if profiled_integrity and hash_key not in compiler:
+            raise SchemaError(f"canary compiler.{hash_key} is required")
+        if hash_key in compiler:
+            _validate_sha256(compiler.get(hash_key), f"canary compiler.{hash_key}")
+    if (
+        "source_normalized_sha256" in compiler
+        and "source_trace_sha256" in compiler
+        and compiler.get("source_normalized_sha256") != compiler.get("source_trace_sha256")
+    ):
+        raise SchemaError("canary compiler.source_normalized_sha256 must match source_trace_sha256")
+    if "execution_semantic_sha256" in compiler and compiler.get(
+        "execution_semantic_sha256"
+    ) != canary_execution_sha256(canary):
+        raise SchemaError("canary compiler.execution_semantic_sha256 does not match executable events")
+    if "scheduler_execution_sha256" in compiler and compiler.get(
+        "scheduler_execution_sha256"
+    ) != canary_scheduler_execution_sha256(canary):
+        raise SchemaError("canary compiler.scheduler_execution_sha256 does not match scheduler events")
+    if "calibration_evaluation_sha256" in compiler and compiler.get(
+        "calibration_evaluation_sha256"
+    ) != canary_calibration_sha256(canary):
+        raise SchemaError("canary compiler.calibration_evaluation_sha256 does not match calibration fields")
+    if "artifact_provenance_sha256" in compiler and compiler.get(
+        "artifact_provenance_sha256"
+    ) != canary_artifact_provenance_sha256(canary):
+        raise SchemaError("canary compiler.artifact_provenance_sha256 does not match artifact fields")
     for integer_key in (
         "source_bytes",
         "canary_bytes",

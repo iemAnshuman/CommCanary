@@ -356,6 +356,7 @@ class CommCanaryTests(unittest.TestCase):
         for field in fidelity_fields:
             if field in tampered["compiler"]["fidelity"]:
                 tampered["compiler"]["fidelity"][field] = 0.0
+        refresh_canary_hashes(tampered)
         validate_canary(tampered)
         verification = verify_canary_fidelity(trace, tampered)
         self.assertEqual(verification["status"], "failed")
@@ -385,6 +386,7 @@ class CommCanaryTests(unittest.TestCase):
             if sample.get("approximation") == "bounded_interval"
         )
         interval["source_segment_sha256"] = "0" * 64
+        refresh_canary_hashes(tampered)
         validate_canary(tampered)
         verification = verify_canary_fidelity(trace, tampered)
         self.assertEqual(verification["status"], "failed")

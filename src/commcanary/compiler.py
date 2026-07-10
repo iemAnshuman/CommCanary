@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from .schema import (
+    ARTIFACT_PROVENANCE_ALGORITHM,
     CANARY_FORMAT,
+    CANARY_INTEGRITY_PROFILE,
     TRACE_FORMAT,
     JsonDict,
     SchemaError,
@@ -280,9 +282,11 @@ def compile_trace(
         "format": CANARY_FORMAT,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source_format": trace.get("format", TRACE_FORMAT),
-        "workload": dict(trace.get("workload", {})),
-        "system": dict(trace.get("system", {})),
+        "workload": copy.deepcopy(dict(trace.get("workload", {}))),
+        "system": copy.deepcopy(dict(trace.get("system", {}))),
         "compiler": {
+            "integrity_profile": CANARY_INTEGRITY_PROFILE,
+            "artifact_provenance_algorithm": ARTIFACT_PROVENANCE_ALGORITHM,
             "compression": "ordered exact patterns, replay-equivalent sequence motifs, and fidelity-audited bounded intervals",
             "timing_sample_limit": timing_sample_limit,
             "timing_sample_limit_mode": "per_group" if timing_group_limits else "uniform",
@@ -734,6 +738,8 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
         timing_sample_limit=timing_sample_limit,
     )
     checks = [
+        _verification_check("workload", expected.get("workload"), canary.get("workload")),
+        _verification_check("system", expected.get("system"), canary.get("system")),
         _verification_check(
             "source_trace_sha256",
             expected_compiler.get("source_trace_sha256"),
@@ -758,6 +764,11 @@ def verify_canary_fidelity(trace: Mapping[str, Any], canary: Mapping[str, Any]) 
             "calibration_evaluation_sha256",
             expected_compiler.get("calibration_evaluation_sha256"),
             compiler.get("calibration_evaluation_sha256"),
+        ),
+        _verification_check(
+            "artifact_provenance_sha256",
+            canary_artifact_provenance_sha256(canary),
+            compiler.get("artifact_provenance_sha256"),
         ),
         _verification_check("fidelity", expected_compiler.get("fidelity"), compiler.get("fidelity")),
         _verification_check(
@@ -1462,8 +1473,8 @@ def _verification_check(name: str, expected: Any, actual: Any) -> JsonDict:
     return {
         "name": name,
         "status": "pass" if expected == actual else "fail",
-        "expected": expected,
-        "actual": actual,
+        "expected": copy.deepcopy(expected),
+        "actual": copy.deepcopy(actual),
     }
 
 
@@ -1534,7 +1545,7 @@ def _event_to_step(
     compute_before_us = as_float(event.get("compute_before_us"), 0.0)
     compute_pressure = as_float(event.get("compute_pressure"), 0.5)
     observed_exposed = event.get("observed_exposed_us")
-    source_id = event.get("id", source_index)
+    source_id = copy.deepcopy(event.get("id", source_index))
 
     timing_sample: JsonDict = {
         "gap_us": _round_us(gap_us),
@@ -1570,7 +1581,11 @@ def _event_to_step(
         "compute_pressure": round(compute_pressure, 6),
         "concurrent_groups": as_int(event.get("concurrent_groups"), 1),
         "timing_samples": [timing_sample],
-        "source": {"count": 1, "first_id": source_id, "last_id": source_id},
+        "source": {
+            "count": 1,
+            "first_id": copy.deepcopy(source_id),
+            "last_id": copy.deepcopy(source_id),
+        },
         "_source_hasher": hasher,
         "_all_timing_samples": [timing_sample],
         "_sample_limit": sample_limit,
@@ -1591,7 +1606,7 @@ def _append_sample(target: Dict[str, Any], sample: Mapping[str, Any]) -> None:
     source = target["source"]
     sample_source = sample["source"]
     source["count"] = as_int(source.get("count"), 1) + 1
-    source["last_id"] = sample_source.get("last_id")
+    source["last_id"] = copy.deepcopy(sample_source.get("last_id"))
     _update_source_digest(target["_source_hasher"], sample_source.get("last_id"))
     timing_sample = dict(sample["timing_samples"][0])
     timing_sample["source_index"] = current_repeat

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional
 
@@ -165,8 +166,14 @@ def compare_reports(
         },
         "compatibility": compatibility,
         "uncertainty": uncertainty,
-        "baseline": {"backend": baseline.get("backend", {}), "metrics": base_metrics},
-        "candidate": {"backend": candidate.get("backend", {}), "metrics": cand_metrics},
+        "baseline": {
+            "backend": copy.deepcopy(baseline.get("backend", {})),
+            "metrics": copy.deepcopy(base_metrics),
+        },
+        "candidate": {
+            "backend": copy.deepcopy(candidate.get("backend", {})),
+            "metrics": copy.deepcopy(cand_metrics),
+        },
         "delta": {
             "median_pct": _round_optional(median_delta),
             "median_relative_status": _delta_status(base_median, cand_median),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import math
 import platform
@@ -211,8 +212,8 @@ def replay_canary(
             "ablations": sorted(ablation_set),
         },
         "host": {"platform": platform.platform(), "python": platform.python_version()},
-        "workload": canary.get("workload", {}),
-        "canary_summary": compiler,
+        "workload": copy.deepcopy(canary.get("workload", {})),
+        "canary_summary": copy.deepcopy(compiler),
         "metrics": accumulator.metrics(),
         "by_phase": accumulator.breakdown("phase"),
         "by_op": accumulator.breakdown("op"),
@@ -283,8 +284,8 @@ def verify_report_against_canary(report: Mapping[str, Any], canary: Mapping[str,
 def _report_verification_check(name: str, expected: Any, actual: Any) -> JsonDict:
     check: JsonDict = {"name": name, "status": "pass" if expected == actual else "fail"}
     if check["status"] == "fail":
-        check["expected"] = expected
-        check["actual"] = actual
+        check["expected"] = copy.deepcopy(expected)
+        check["actual"] = copy.deepcopy(actual)
     return check
 
 
