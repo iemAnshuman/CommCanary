@@ -9,7 +9,7 @@ import json
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 JsonDict = Dict[str, Any]
 

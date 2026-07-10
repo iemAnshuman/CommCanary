@@ -34,7 +34,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
-        return args.func(args)
+        return int(args.func(args))
     except CommCanaryError as exc:
         print(f"commcanary: {exc}", file=sys.stderr)
         return 2

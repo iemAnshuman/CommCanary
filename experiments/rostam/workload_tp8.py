@@ -16,7 +16,6 @@ import json
 import math
 import os
 import statistics
-import sys
 from contextlib import nullcontext
 from typing import Iterable, List
 

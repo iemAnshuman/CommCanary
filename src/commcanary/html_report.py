@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 from pathlib import Path
-from typing import Any, Iterable, List, Mapping
+from typing import Any, Iterable, List, Mapping, Tuple
 
 from .schema import SchemaError, as_float, validate_comparison, validate_report
 
@@ -296,7 +296,7 @@ def _regression_table(rows: Iterable[Mapping[str, Any]]) -> str:
     )
 
 
-def _comparison_table(rows: Iterable[tuple]) -> str:
+def _comparison_table(rows: Iterable[Tuple[Any, Any, Any]]) -> str:
     body = []
     for label, baseline, candidate in rows:
         body.append(

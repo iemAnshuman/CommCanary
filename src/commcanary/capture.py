@@ -556,8 +556,9 @@ def _clock_offset_us(system: Mapping[str, Any]) -> Optional[float]:
 def _reset_auto_recorder_after_fork() -> None:
     global _AUTO_RECORDER_LOCK
     _AUTO_RECORDER_LOCK = threading.Lock()
-    if hasattr(_AUTO_RECORDER, "reset_after_fork"):
-        _AUTO_RECORDER.reset_after_fork()
+    auto_recorder = _AUTO_RECORDER
+    if auto_recorder is not None and hasattr(auto_recorder, "reset_after_fork"):
+        auto_recorder.reset_after_fork()
     for recorder in list(_RECORDERS):
         if recorder is not _AUTO_RECORDER:
             recorder._reset_after_fork_in_child()

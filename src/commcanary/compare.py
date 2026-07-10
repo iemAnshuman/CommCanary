@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, List, Mapping, Optional
 
 from .schema import (
     COMPARE_FORMAT,
@@ -148,7 +148,7 @@ def compare_reports(
     if not reasons:
         reasons.append("candidate is within configured thresholds")
 
-    comparison = {
+    comparison: JsonDict = {
         "format": COMPARE_FORMAT,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "verdict": verdict,
