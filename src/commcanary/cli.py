@@ -13,11 +13,19 @@ from .baselines import (
     frequency_representative_baseline_trace,
     isolated_collective_baseline_trace,
     random_sampling_baseline_trace,
+    stratified_sampling_baseline_trace,
 )
 from .capture import TraceRecorder, merge_trace_shards
 from .compare import compare_reports
 from .compiler import compile_trace, synthesize_behavioral_canary, verify_canary_behavior, verify_canary_fidelity
 from .html_report import write_compare_html, write_report_html
+from .interop import (
+    canary_to_param_comms_trace,
+    kineto_trace_to_commcanary_trace,
+    load_kineto_trace,
+    write_param_comms_trace,
+)
+from .reduce import ddmin_ranking_reduction
 from .replay import replay_canary, verify_report_against_canary
 from .schema import CommCanaryError, load_json, validate_report, write_json
 
@@ -147,15 +155,17 @@ def _build_parser() -> argparse.ArgumentParser:
     baseline_parser.add_argument("--output", "-o", required=True)
     baseline_parser.add_argument(
         "--method",
-        choices=("isolated", "random", "frequency", "cluster"),
+        choices=("isolated", "random", "frequency", "cluster", "stratified"),
         required=True,
         help=(
             "baseline generator: isolated collective, random sampling, "
-            "frequency representative, or clustering representative"
+            "frequency representative, clustering representative, or "
+            "stratified sampling"
         ),
     )
     baseline_parser.add_argument("--sample-count", type=int, default=8)
     baseline_parser.add_argument("--cluster-count", type=int, default=8)
+    baseline_parser.add_argument("--strata-per-group", type=int, default=4)
     baseline_parser.add_argument("--seed", type=int, default=0)
     baseline_parser.add_argument(
         "--partial",
@@ -163,6 +173,71 @@ def _build_parser() -> argparse.ArgumentParser:
         help="for random sampling, emit only selected events instead of tiling to the source event count",
     )
     baseline_parser.set_defaults(func=_cmd_baseline)
+
+    reduce_parser = sub.add_parser(
+        "reduce",
+        help="ddmin-style decision-preserving event reduction (research baseline)",
+    )
+    reduce_parser.add_argument("trace")
+    reduce_parser.add_argument("--output", "-o", required=True)
+    reduce_parser.add_argument("--ranking-tie-tolerance-us", type=float, default=0.001)
+    reduce_parser.add_argument("--max-oracle-calls", type=int, default=256)
+    reduce_parser.add_argument(
+        "--timing-sample-limit",
+        type=int,
+        default=None,
+        help="compile oracle candidates with this timing sample limit instead of lossless timing",
+    )
+    reduce_parser.set_defaults(func=_cmd_reduce)
+
+    import_parser = sub.add_parser(
+        "import-kineto",
+        help="import record_param_comms collectives from a PyTorch Kineto profiler trace",
+    )
+    import_parser.add_argument("kineto_trace")
+    import_parser.add_argument("--output", "-o", required=True)
+    import_parser.add_argument("--workload-name", default="kineto-import")
+    import_parser.add_argument("--phase", default=None)
+    import_parser.add_argument(
+        "--process-group",
+        default=None,
+        help="import only events from this Process Group Name",
+    )
+    import_parser.set_defaults(func=_cmd_import_kineto)
+
+    export_parser = sub.add_parser(
+        "export-param",
+        help="export a canary as a PARAM comms-replay basic JSON trace",
+    )
+    export_parser.add_argument("canary")
+    export_parser.add_argument("--output", "-o", required=True)
+    export_parser.add_argument("--dtype", default="float32")
+    export_parser.add_argument(
+        "--skip-unsupported",
+        action="store_true",
+        help="drop events without a PARAM equivalent instead of failing",
+    )
+    export_parser.add_argument(
+        "--compute-fill-us-per-gemm",
+        type=float,
+        default=None,
+        help=(
+            "export inter-collective gaps as PARAM gemm compute entries, one "
+            "per this many microseconds (calibrate per device); replay the "
+            "result WITHOUT --use-timestamp"
+        ),
+    )
+    export_parser.add_argument("--compute-fill-gemm-dim", type=int, default=1024)
+    export_parser.add_argument(
+        "--overlap-structure",
+        action="store_true",
+        help=(
+            "emit collectives as async-issue plus explicit wait entries placed "
+            "after the next gap's gemm entries, reconstructing compute/"
+            "communication overlap; requires --compute-fill-us-per-gemm"
+        ),
+    )
+    export_parser.set_defaults(func=_cmd_export_param)
 
     report_verify_parser = sub.add_parser("verify-report", help="recompute a report from a canary and backend settings")
     report_verify_parser.add_argument("report")
@@ -262,10 +337,76 @@ def _cmd_baseline(args: Any) -> int:
             trace,
             cluster_count=args.cluster_count,
         )
+    elif args.method == "stratified":
+        baseline = stratified_sampling_baseline_trace(
+            trace,
+            strata_per_group=args.strata_per_group,
+            seed=args.seed,
+        )
     else:  # pragma: no cover - argparse constrains this.
         raise CommCanaryError(f"unknown baseline method {args.method!r}")
     write_json(args.output, baseline)
     print(f"wrote {args.method} baseline trace with {len(baseline['events'])} events: {args.output}")
+    return 0
+
+
+def _cmd_reduce(args: Any) -> int:
+    trace = load_json(args.trace)
+    reduced = ddmin_ranking_reduction(
+        trace,
+        ranking_tie_tolerance_us=args.ranking_tie_tolerance_us,
+        timing_sample_limit=args.timing_sample_limit,
+        max_oracle_calls=args.max_oracle_calls,
+    )
+    write_json(args.output, reduced)
+    reduction = reduced["workload"]["reduction"]
+    print(
+        "ddmin reduced {original} -> {reduced} events in {calls} oracle calls: {output}".format(
+            original=reduction["original_events"],
+            reduced=reduction["reduced_events"],
+            calls=reduction["oracle_calls"],
+            output=args.output,
+        )
+    )
+    if reduction["budget_exhausted"]:
+        print("warning: oracle call budget exhausted; result may not be 1-minimal", file=sys.stderr)
+    return 0
+
+
+def _cmd_import_kineto(args: Any) -> int:
+    kineto = load_kineto_trace(args.kineto_trace)
+    trace = kineto_trace_to_commcanary_trace(
+        kineto,
+        workload_name=args.workload_name,
+        phase=args.phase,
+        process_group=args.process_group,
+    )
+    write_json(args.output, trace)
+    workload = trace["workload"]
+    print(
+        "imported {events} collective events "
+        "(skipped {control} control, {empty} empty): {output}".format(
+            events=workload["imported_events"],
+            control=workload["skipped_control_events"],
+            empty=workload["skipped_empty_events"],
+            output=args.output,
+        )
+    )
+    return 0
+
+
+def _cmd_export_param(args: Any) -> int:
+    canary = load_json(args.canary)
+    entries = canary_to_param_comms_trace(
+        canary,
+        dtype=args.dtype,
+        skip_unsupported=args.skip_unsupported,
+        compute_fill_us_per_gemm=args.compute_fill_us_per_gemm,
+        compute_fill_gemm_dim=args.compute_fill_gemm_dim,
+        overlap_structure=args.overlap_structure,
+    )
+    write_param_comms_trace(args.output, entries)
+    print(f"exported {len(entries)} PARAM comms-replay entries: {args.output}")
     return 0
 
 

@@ -422,7 +422,7 @@ def as_int(value: Any, default: int = 0) -> int:
             digits = stripped[1:]
         else:
             digits = stripped
-        if digits and digits.isdigit():
+        if digits and digits.isascii() and digits.isdigit():
             if len(digits) > 19:
                 raise SchemaError(f"integer value is too large: {value!r}")
             try:
@@ -882,8 +882,7 @@ def validate_canary(canary: Mapping[str, Any]) -> None:
         for key, expected in actual_fidelity_maxima.items():
             if key not in fidelity:
                 raise SchemaError(f"canary compiler.fidelity.{key} is required")
-            tolerance = 1e-6 if key == "max_pressure_error" else 1e-6
-            if abs(as_float(fidelity.get(key)) - expected) > tolerance:
+            if abs(as_float(fidelity.get(key)) - expected) > 1e-6:
                 raise SchemaError(f"canary compiler.fidelity.{key} does not match timing records")
         if "encoded_gap_total_us" in fidelity:
             if abs(as_float(fidelity.get("encoded_gap_total_us")) - actual_encoded_gap_total) > 1e-6:
@@ -1729,10 +1728,12 @@ def _validate_timing_record(sample: Mapping[str, Any], ranks: List[int], label: 
         raise SchemaError(f"{label} approximation is unsupported")
     if approximation == "bounded_interval":
         _validate_bounded_interval_evidence(sample, label)
-    if "weight" in sample and "source_start" in sample and "source_end" in sample:
+    if "source_start" in sample and "source_end" in sample:
         expected_weight = as_int(sample.get("source_end")) - as_int(sample.get("source_start")) + 1
-        if as_int(sample.get("weight")) != expected_weight:
+        if as_int(sample.get("weight", 1)) != expected_weight:
             raise SchemaError(f"{label} weight must match source interval length")
+    elif as_int(sample.get("weight", 1)) != 1:
+        raise SchemaError(f"{label} weight above one requires source_start and source_end")
     if "compute_fields_uncertain" in sample and not isinstance(sample.get("compute_fields_uncertain"), bool):
         raise SchemaError(f"{label} compute_fields_uncertain must be a boolean")
     if "uncertain_weight" in sample:
@@ -1909,6 +1910,8 @@ def _validate_intervals(intervals: List[tuple], label: str) -> None:
     for start, end in intervals:
         if start <= previous_end:
             raise SchemaError(f"{label} source intervals must be ordered and non-overlapping")
+        if start != previous_end + 1:
+            raise SchemaError(f"{label} source intervals must be contiguous")
         previous_end = end
 
 

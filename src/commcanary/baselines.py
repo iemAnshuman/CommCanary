@@ -199,6 +199,69 @@ def clustering_representative_baseline_trace(
     return _baseline_trace(trace, "clustering_representative", baseline_events)
 
 
+def stratified_sampling_baseline_trace(
+    trace: Mapping[str, Any],
+    *,
+    strata_per_group: int = 4,
+    seed: int = 0,
+) -> JsonDict:
+    """Build a stratified sampling baseline trace.
+
+    RESEARCH_SPEC.md names simple stratified sampling as a kill-condition
+    control: if this baseline matches CommCanary's verified canaries, the
+    verified minimization is not adding value. Events are grouped by operation
+    signature, every group is cut into deterministic timing strata, and one
+    seeded random member is drawn per stratum. Each source event is then
+    replaced by its stratum's sampled member, preserving event count and
+    operation order while discarding exact burst/tail correlations and source
+    commitments.
+    """
+
+    validate_trace(trace)
+    events = list(trace.get("events", []))
+    if not events:
+        raise SchemaError("cannot build a stratified baseline from an empty trace")
+    parsed_strata = as_int(strata_per_group)
+    if parsed_strata <= 0:
+        raise SchemaError("strata_per_group must be positive")
+    parsed_seed = as_int(seed)
+    rng = random.Random(parsed_seed)
+
+    groups: Dict[Tuple[Any, ...], List[Tuple[int, Mapping[str, Any]]]] = defaultdict(list)
+    for index, event in enumerate(events):
+        groups[_operation_signature(event, include_phase=True)].append((index, event))
+
+    sample_by_source_index: Dict[int, Tuple[Mapping[str, Any], int]] = {}
+    for grouped in groups.values():
+        group_events = [event for _index, event in grouped]
+        features = [_features(event) for event in group_events]
+        order = sorted(range(len(group_events)), key=lambda local: features[local])
+        strata = min(parsed_strata, len(group_events))
+        for stratum_index in range(strata):
+            start = int(stratum_index * len(order) / strata)
+            end = int((stratum_index + 1) * len(order) / strata)
+            bucket = order[start:end] or [order[min(start, len(order) - 1)]]
+            chosen_local = rng.choice(bucket)
+            for local_index in bucket:
+                source_index = grouped[local_index][0]
+                sample_by_source_index[source_index] = (group_events[chosen_local], stratum_index)
+
+    baseline_events: List[JsonDict] = []
+    for index in range(len(events)):
+        representative, stratum_index = sample_by_source_index[index]
+        record = _shape_event(representative, f"stratified-sample-{index:06d}")
+        record["gap_us"] = _source_gap_us(representative)
+        record.pop("start_us", None)
+        record["metadata"] = {
+            "commcanary_baseline": "stratified_sampling",
+            "strata_per_group": parsed_strata,
+            "stratum_index": stratum_index,
+            "seed": parsed_seed,
+        }
+        baseline_events.append(record)
+    return _baseline_trace(trace, "stratified_sampling", baseline_events)
+
+
 def _baseline_trace(trace: Mapping[str, Any], method: str, events: Sequence[JsonDict]) -> JsonDict:
     workload = dict(trace.get("workload", {}))
     notes = str(workload.get("notes", ""))

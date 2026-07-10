@@ -72,18 +72,30 @@ injected and naturally occurring regressions.
 - model-recomputed report verification that rejects forged canary identity,
   replay protocol, backend, workload, or canary-summary metadata;
 - research baseline generators for isolated collectives, random sampling,
-  frequency representatives, and clustering representatives;
+  frequency representatives, clustering representatives, and stratified
+  sampling (the declared kill-condition control);
+- a ddmin-style decision-preserving reducer whose oracle preserves pairwise
+  configuration rankings only, as the generic property-preserving reduction
+  baseline (it demonstrably degenerates to single-event subsets on the
+  synthetic scaffold, motivating the stricter behavioral gate);
 - simulator ablation controls for skew, overlap, ordering, rare tails, queue
   reset gaps, pressure, and observed exposed latency;
 - principled point-to-point identity fields for send/recv pairs;
 - a synthetic ranking-inversion scaffold contrasting isolated collective
-  results, full workload replay, and verified/unverified canaries.
+  results, full workload replay, and verified/unverified canaries;
+- a single-rank observational importer for PyTorch Kineto profiler traces
+  (`record_param_comms` collective metadata; no invented skew or overlap);
+- a PARAM comms-replay "basic" trace exporter that expands a canary's full
+  event program for physical NCCL execution via facebookresearch/param.
 
 ## Not implemented—and required before a strong systems-paper claim
 
-- physical CUDA/NCCL execution of the generated canary and physical baseline scripts;
-- importers for Chakra, PyTorch profiler, Nsight Systems, or serving-engine
-  traces;
+- broader physical CUDA/NCCL evidence beyond the first Rostam decomposition:
+  a 4x A100-PCIE single-node result now exists via `experiments/rostam/`,
+  while multi-node, NVLink-class, and multi-hardware evaluations remain open;
+- importers for Chakra ET, Nsight Systems, or serving-engine traces, and
+  multi-rank merged import for PyTorch profiler traces (the current Kineto
+  importer is single-rank and observational);
 - synthetic compute kernels calibrated to preserve interference;
 - dependency-graph and communicator reconstruction;
 - full per-window/per-motif optimisation that directly minimises canary size
@@ -126,9 +138,11 @@ not a proof of global optimality.
 6. CommCanary with each preservation mechanism ablated.
 
 This repository now includes simulator-side baseline trace generators for items
-1-3, including a clustering representative negative control, but the physical
-`nccl-tests` baseline still needs real hardware execution and comparable
-measurement methodology.
+1-3, including clustering-representative and stratified-sampling negative
+controls (the latter is the declared kill-condition comparison), plus a
+ddmin-style decision-preserving reducer as a generic minimisation baseline.
+The physical `nccl-tests` baseline still needs real hardware execution and
+comparable measurement methodology.
 
 ## Most decisive first experiment
 

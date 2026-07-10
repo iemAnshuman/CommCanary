@@ -1,16 +1,55 @@
 # CommCanary
 
-CommCanary distils a distributed-LLM communication trace into a small,
-model-free regression canary. It preserves details that isolated collective
-microbenchmarks usually erase: operation order, rank-arrival skew,
-compute/communication overlap, queueing, rare timing discontinuities, and—when
-captured—observed exposed communication latency.
+[![CI](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml/badge.svg)](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/commcanary)](https://pypi.org/project/commcanary/)
+[![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-The current replay engine is a **deterministic simulator**, not a physical NCCL
-executor. It is useful for validating trace compression, testing regression
-logic, and designing experiments. Claims about real hardware still require an
-executable GPU replay backend and cross-system evaluation; see
-[`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
+**Distill a distributed-LLM communication trace into a small, model-free
+regression canary — and prove the distillation didn't change the answer.**
+
+Isolated collective microbenchmarks are known to mislead: `nccl-tests` can
+report healthy numbers while the real workload ships a 20% regression
+([NVIDIA/nccl#513](https://github.com/NVIDIA/nccl/issues/513)), because they
+erase everything contextual — operation order, rank-arrival skew,
+compute/communication overlap, queueing, and rare tail windows. Full
+reference-workload runs preserve all of that but need model code, data, and a
+cluster. CommCanary occupies the space between: a minutes-scale artifact
+distilled from *your* workload's trace, carrying no weights and no prompts,
+replayable against a candidate config before rollout.
+
+What makes it different:
+
+- **Decision-preserving reduction.** Minimization is gated on a fail-closed
+  verifier: a canary is only emitted if it provably preserves the source
+  workload's regression verdicts, pairwise configuration rankings, and tail
+  behavior. The gate matters — a generic ddmin reducer with a ranking-only
+  oracle happily collapses our adversarial 100-event trace to a **single
+  event** (`commcanary reduce`, included as a baseline).
+- **Auditable lossy compression.** Every approximation carries per-field
+  max-error bounds and a SHA-256 commitment to the exact source segment it
+  summarizes, so a third party holding the trace can recompute every claim.
+- **Tamper-evident artifacts.** Report validation re-runs the scheduler model
+  over embedded samples; `verify-report` recomputes bit-identically. Edited
+  numbers fail validation.
+- **Ecosystem-native.** PyTorch Kineto profiler traces in
+  (`import-kineto`), PARAM comms-replay traces out (`export-param`) for
+  physical NCCL execution.
+
+```
+capture / import-kineto        compile                replay              compare
+  workload trace  ────────▶  canary artifact  ────▶  report(s)  ────▶  pass / warn / fail
+      (v1)          verified minimization     deterministic sim      CI exit code
+                    + sha256 commitments            │
+                                              export-param ────▶ physical NCCL replay
+```
+
+The bundled replay engine is a **deterministic simulator**, not a physical
+NCCL executor — useful for validating trace compression, testing regression
+logic, and designing experiments. Physical execution goes through the PARAM
+export; claims about real hardware require that path plus cross-system
+evaluation. The research contract, including what is deliberately *not*
+claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
 
 ## Quick start
 
@@ -209,6 +248,7 @@ commcanary baseline trace.json -o out/isolated.trace.json --method isolated
 commcanary baseline trace.json -o out/random.trace.json --method random --sample-count 16 --seed 7
 commcanary baseline trace.json -o out/frequency.trace.json --method frequency
 commcanary baseline trace.json -o out/cluster.trace.json --method cluster --cluster-count 8
+commcanary baseline trace.json -o out/stratified.trace.json --method stratified --strata-per-group 4 --seed 7
 ```
 
 `isolated` removes workload order, skew, queue-reset gaps, and overlap, matching
@@ -219,9 +259,73 @@ replaces each signature by one representative, removing within-signature tails.
 `cluster` is a stronger negative control: it preserves event count, operation
 order, operation signatures, and several deterministic timing medoids per
 signature, while still discarding exact burst/tail correlations and source
-commitments. These baselines are intentionally not source-verified against the
-original trace; `verify-behavior` should label them unverified unless they
-actually pass the full source, behavioral, and ranking gates.
+commitments. `stratified` is the kill-condition control named in
+`RESEARCH_SPEC.md`: events are grouped by operation signature, each group is
+cut into deterministic timing strata, and one seeded random member is drawn
+per stratum; every event is replaced by its stratum's sample. These baselines
+are intentionally not source-verified against the original trace;
+`verify-behavior` should label them unverified unless they actually pass the
+full source, behavioral, and ranking gates.
+
+## Decision-preserving reduction baseline
+
+`commcanary reduce` is a ddmin-style generic reducer for comparing against
+behavior-search compilation. Its oracle preserves only the decision: a
+candidate event subset is accepted when compiling and replaying it across the
+configuration set reproduces the full trace's pairwise latency-metric
+rankings. It deliberately does not enforce behavioral fidelity, so it shows
+what decision-only reduction gives up: on the synthetic ranking-inversion
+scaffold it happily collapses 100 events to a single event while keeping the
+ranking, which is precisely why the fail-closed behavioral verifier gates on
+tail recall, queue waits, hidden communication, and distribution agreement in
+addition to rankings.
+
+```bash
+commcanary reduce trace.json -o out/reduced.trace.json \
+  --ranking-tie-tolerance-us 0.001 \
+  --max-oracle-calls 256
+```
+
+The reduced trace records the oracle-call ledger under
+`workload.reduction` and is labelled not source-verified.
+
+## Ecosystem interop: Kineto import and PARAM export
+
+CommCanary can ingest real collective metadata from a PyTorch profiler
+(Kineto) trace and can emit a compiled canary as a PARAM comms-replay
+"basic" trace, giving the minimized artifact a physical NCCL execution path
+via `facebookresearch/param`:
+
+```bash
+commcanary import-kineto profiler_trace.json -o imported.trace.json \
+  --workload-name llama70b-serve --phase decode
+commcanary compile imported.trace.json -o imported.canary.json
+commcanary export-param imported.canary.json -o param_comms_trace.json --dtype float32
+```
+
+The Kineto import reads `record_param_comms` events (torch >= 2.2): collective
+name, dtype, element counts, process-group name and ranks, and single-rank
+timestamps rebased to the trace start (the raw monotonic-clock values are
+preserved via `workload.kineto_trace_start_us` and
+`system.kineto_base_time_ns`). It is an observational single-rank import — it
+does not invent cross-rank arrival skew, compute overlap, or measured exposed
+latency, and the imported workload notes say so. Truncated rank lists from
+non-uniform process groups are only reconstructed from an explicit global
+rank start/stride; otherwise the import fails closed rather than fabricate
+group membership. Collectives without a CommCanary op mapping (for example
+`reduce`, `gather`) are imported as `custom_op` events rather than dropped or
+mislabelled.
+
+The PARAM export expands the canary's full event program (motifs, patterns,
+and run-length weights included) into one entry per logical occurrence with
+element counts, process-group ids, and cumulative `startTime_ns` timestamps,
+so `--use-timestamp` replay reproduces inter-op gaps. Sharded collectives use
+PARAM's size conventions (`all_gather` gathers `world_size` shards of
+`in_msg_size`; `reduce_scatter` scatters into `out_msg_size` shards). Every
+point-to-point transfer exports as a matched send/recv entry pair carrying
+`src_rank`/`dst_rank`, because PARAM executes each side only on its own rank.
+Ops with no PARAM equivalent — including `send`/`recv` events without peer
+ranks — fail closed unless `--skip-unsupported` is passed.
 
 ## Trace timing semantics
 
@@ -311,9 +415,12 @@ PYTHONPATH=src python3 -m pytest -q
 
 ## Important limitations
 
-The repository does not yet provide physical CUDA/NCCL replay, automatic
-Chakra/Nsight ingestion, dependency-aware compute-kernel synthesis,
-full per-window/per-motif Pareto minimisation, physical ranking evidence, or
-evidence across real serving engines and GPU generations. “Model-free” means
-the artifact omits weights and application code; it does not by itself prove
-privacy or absence of trace leakage.
+Physical NCCL replay evidence now exists through the PARAM export path and
+the overlap-aware reference replayer in [`experiments/rostam/`](experiments/rostam/).
+That evidence is deliberately narrow: one workload, one `cuda-A100` node,
+PCIe, and 4 GPUs. The repository still does not provide multi-node,
+NVLink-class, multi-model, or multi-generation-hardware evaluation; Chakra ET
+or Nsight ingestion, dependency-aware compute-kernel synthesis, and full
+per-window/per-motif Pareto minimisation also remain open. “Model-free”
+means the artifact omits weights and application code; it does not by itself
+prove privacy or absence of trace leakage.

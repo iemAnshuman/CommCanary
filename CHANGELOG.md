@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Added `--overlap-structure` to `export-param`: collectives are emitted for asynchronous issue with explicit `wait` entries placed after the next gap's gemm entries, reconstructing compute/communication concurrency; issue entries carry an `issue` marker so parsers separate issue lines from completion-bearing wait lines.
+- Added compute-fill mode to `export-param` (`--compute-fill-us-per-gemm`, `--compute-fill-gemm-dim`): inter-collective gaps export as PARAM `{"compute": "gemm"}` entries instead of idle timestamps, so physical replay reproduces compute/communication interference. Replay compute-filled traces without `--use-timestamp`.
+
+## 0.3.0 - 2026-07-03
+
 ### Research fidelity
 
 - Strengthened `verify-behavior` so it separately reports representation fidelity, source verification, behavioral fidelity, and configuration-ranking status.
@@ -15,6 +20,16 @@
 - Added greedy per-group behavior-search refinement so quiet signature groups can use lower timing budgets while ranking-sensitive groups retain detail.
 - Strengthened `verify-report` so forged canary identity, replay protocol, backend, workload, or canary-summary metadata fails model recomputation.
 - Added research baseline trace generators for isolated-collective, random-sampling, frequency-representative, and clustering-representative controls, plus a `commcanary baseline` CLI.
+- Added a stratified sampling baseline generator (`baseline --method stratified`), the kill-condition control named by RESEARCH_SPEC.md.
+- Added a ddmin-style decision-preserving reducer (`commcanary reduce`) that minimizes a trace under a pairwise configuration-ranking oracle, as a generic property-preserving reduction baseline for behavior-search comparisons.
+- Closed a canary validator gap: every timing sample now needs a weight that matches its declared source interval (single-index records are weight one), and sample intervals must tile the repeat range contiguously, so occurrences can no longer be silently double-counted or dropped.
+- Rejected non-ASCII digit strings in integer parsing.
+- `examples/make_synthetic_trace.py` now writes `llama70b_tp8_trace_long.json` instead of silently overwriting the small checked-in fixture.
+
+### Ecosystem interop
+
+- Added `commcanary import-kineto`: single-rank observational import of `record_param_comms` collective metadata (op, dtype, element counts, process-group ranks, timestamps) from PyTorch profiler traces (torch >= 2.2); timestamps are rebased to the trace start, truncated non-uniform rank lists fail closed instead of fabricating membership, unmapped collectives become `custom_op` events, control ops are skipped and counted, and no cross-rank skew or overlap is invented.
+- Added `commcanary export-param`: expands a canary's full event program (motifs, patterns, run-length weights) into a PARAM comms-replay "basic" JSON trace with element counts, PARAM's asymmetric size conventions for `all_gather`/`reduce_scatter`, process-group ids, matched send/recv entry pairs (with `src_rank`/`dst_rank`) per point-to-point transfer, and cumulative `startTime_ns` timestamps for `--use-timestamp` replay — a physical NCCL execution path for minimized canaries.
 - Tightened `verify-behavior` so it replays the full normalized source trace by default and marks prefix/subset canaries as partial-source rather than behaviorally verified.
 - Added simulator ablation controls for skew, overlap, ordering, rare tails, queue-reset gaps, pressure, and observed exposed latency.
 - Strengthened point-to-point semantics with sender/receiver, tag, channel, message sequence, and send/recv observations.

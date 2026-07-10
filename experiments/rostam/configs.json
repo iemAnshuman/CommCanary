@@ -1,0 +1,60 @@
+[
+  {
+    "name": "nccl-2.19.3-default",
+    "venv": "nccl-2.19.3",
+    "env": {}
+  },
+  {
+    "name": "nccl-2.20.5-default",
+    "venv": "nccl-2.20.5",
+    "env": {}
+  },
+  {
+    "name": "nccl-2.20.5-ring-ll",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Ring",
+      "NCCL_PROTO": "LL"
+    }
+  },
+  {
+    "name": "nccl-2.20.5-ring-ll128",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Ring",
+      "NCCL_PROTO": "LL128"
+    }
+  },
+  {
+    "name": "nccl-2.20.5-ring-simple",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Ring",
+      "NCCL_PROTO": "Simple"
+    }
+  },
+  {
+    "name": "nccl-2.20.5-tree-ll",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Tree",
+      "NCCL_PROTO": "LL"
+    }
+  },
+  {
+    "name": "nccl-2.20.5-tree-ll128",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Tree",
+      "NCCL_PROTO": "LL128"
+    }
+  },
+  {
+    "name": "nccl-2.20.5-tree-simple",
+    "venv": "nccl-2.20.5",
+    "env": {
+      "NCCL_ALGO": "Tree",
+      "NCCL_PROTO": "Simple"
+    }
+  }
+]

@@ -1,0 +1,43 @@
+name: Pages Demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/configure-pages@v5
+      - name: Build demo site
+        run: |
+          mkdir -p site
+          PYTHONPATH=src python -m commcanary compile examples/traces/llama70b_tp8_trace.json -o site/workload.canary.json
+          PYTHONPATH=src python -m commcanary replay site/workload.canary.json -o site/baseline.report.json --html site/baseline.report.html --include-samples
+          PYTHONPATH=src python -m commcanary replay site/workload.canary.json -o site/candidate.report.json --html site/candidate.report.html --latency-floor-us 12 --include-samples
+          # compare exits 1 on the demo's intentional fail verdict; anything else is a real error
+          PYTHONPATH=src python -m commcanary compare site/baseline.report.json site/candidate.report.json -o site/comparison.json --html site/comparison.html || [ "$?" -eq 1 ]
+          test -s site/comparison.html
+          cp docs/demo/index.html site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
