@@ -12,12 +12,14 @@ stricter fail-closed behavioral verifier.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
-from .compiler import (
+from .behavior_config import (
     _BEHAVIORAL_RANKING_METRICS,
-    _DEFAULT_BEHAVIORAL_CONFIGS,
     _behavioral_replay_args,
+    _normalize_behavior_configurations,
+)
+from .compiler import (
     _ranking_relation,
     compile_trace,
 )
@@ -63,17 +65,7 @@ def ddmin_ranking_reduction(
     sample_limit = None if timing_sample_limit is None else as_int(timing_sample_limit)
     if sample_limit is not None and sample_limit < 2:
         raise SchemaError("timing_sample_limit must be at least 2")
-    configs = [dict(config) for config in (configurations or _DEFAULT_BEHAVIORAL_CONFIGS)]
-    if len(configs) < 2:
-        raise SchemaError("ranking reduction requires at least two configurations")
-    config_names = [
-        str(config.get("name", f"config-{index}")) for index, config in enumerate(configs)
-    ]
-    if len(set(config_names)) != len(config_names):
-        raise SchemaError(
-            "ranking reduction requires unique configuration names; duplicates "
-            "would silently collapse the pairwise ranking oracle"
-        )
+    configs = _normalize_behavior_configurations(configurations)
 
     def replay_relations(subset: Sequence[Mapping[str, Any]]) -> Dict[Tuple[str, str, str], str]:
         candidate = {
@@ -91,10 +83,9 @@ def ddmin_ranking_reduction(
         else:
             canary = compile_trace(candidate, timing_sample_limit=sample_limit)
         metrics_by_name: Dict[str, Mapping[str, Any]] = {}
-        for index, raw_config in enumerate(configs):
-            config = dict(raw_config)
-            name = str(config.pop("name", f"config-{index}"))
-            replay_args = _behavioral_replay_args(config)
+        for raw_config in configs:
+            name = raw_config["name"]
+            replay_args = _behavioral_replay_args(raw_config)
             report = replay_canary(canary, backend_label=name, **replay_args)
             metrics_by_name[name] = report["metrics"]
         names = sorted(metrics_by_name)
@@ -178,9 +169,7 @@ def ddmin_ranking_reduction(
         "budget_exhausted": budget_exhausted,
         "ranking_tie_tolerance_us": tie_tolerance,
         "ranking_metrics": list(_BEHAVIORAL_RANKING_METRICS),
-        "configurations": [
-            str(config.get("name", f"config-{index}")) for index, config in enumerate(configs)
-        ],
+        "configurations": [config["name"] for config in configs],
         "timing_sample_limit": sample_limit,
     }
     reduced_trace: JsonDict = {

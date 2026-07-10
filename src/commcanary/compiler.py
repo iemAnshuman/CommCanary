@@ -7,6 +7,11 @@ from bisect import bisect_left
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from .behavior_config import (
+    _BEHAVIORAL_RANKING_METRICS,
+    _behavioral_replay_args,
+    _normalize_behavior_configurations,
+)
 from .schema import (
     ARTIFACT_PROVENANCE_ALGORITHM,
     CANARY_FORMAT,
@@ -14,9 +19,9 @@ from .schema import (
     TRACE_FORMAT,
     JsonDict,
     SchemaError,
+    arrival_skew_us,
     as_float,
     as_int,
-    arrival_skew_us,
     canary_artifact_provenance_sha256,
     canary_calibration_sha256,
     canary_execution_sha256,
@@ -46,49 +51,6 @@ _FIDELITY_FIELDS = (
     "max_prefix_gap_error_us",
 )
 _BEHAVIORAL_LATENCY_METRICS = ("median_us", "p95_us", "p99_us", "max_us", "mean_us")
-_BEHAVIORAL_RANKING_METRICS = ("median_us", "p95_us", "p99_us", "mean_us")
-_DEFAULT_BEHAVIORAL_CONFIGS = (
-    {
-        "name": "baseline",
-        "bandwidth_gbps": 55.0,
-        "latency_floor_us": 7.5,
-        "compute_pressure": 0.55,
-        "overlap_efficiency": 0.72,
-        "seed": 7,
-    },
-    {
-        "name": "low_latency",
-        "bandwidth_gbps": 55.0,
-        "latency_floor_us": 3.5,
-        "compute_pressure": 0.55,
-        "overlap_efficiency": 0.72,
-        "seed": 7,
-    },
-    {
-        "name": "high_bandwidth",
-        "bandwidth_gbps": 110.0,
-        "latency_floor_us": 10.0,
-        "compute_pressure": 0.55,
-        "overlap_efficiency": 0.72,
-        "seed": 7,
-    },
-    {
-        "name": "overlap_friendly",
-        "bandwidth_gbps": 55.0,
-        "latency_floor_us": 9.0,
-        "compute_pressure": 0.55,
-        "overlap_efficiency": 0.95,
-        "seed": 7,
-    },
-    {
-        "name": "congested",
-        "bandwidth_gbps": 28.0,
-        "latency_floor_us": 7.5,
-        "compute_pressure": 0.95,
-        "overlap_efficiency": 0.72,
-        "seed": 7,
-    },
-)
 
 
 def compile_trace(
@@ -392,6 +354,9 @@ def synthesize_behavioral_canary(
         raise SchemaError("min_timing_sample_limit must be at least 2")
     if max_limit < min_limit:
         raise SchemaError("max_timing_sample_limit must be at least min_timing_sample_limit")
+    normalized_behavior_configurations = _normalize_behavior_configurations(
+        behavior_configurations
+    )
 
     rows: List[JsonDict] = []
     best: Optional[Tuple[Tuple[int, int, int], JsonDict, JsonDict]] = None
@@ -429,7 +394,7 @@ def synthesize_behavioral_canary(
             verification = verify_canary_behavior(
                 trace,
                 candidate,
-                configurations=behavior_configurations,
+                configurations=normalized_behavior_configurations,
                 relative_tolerance_pct=relative_tolerance_pct,
                 absolute_tolerance_us=absolute_tolerance_us,
                 hidden_tolerance_points=hidden_tolerance_points,
@@ -483,7 +448,7 @@ def synthesize_behavioral_canary(
         require_lossless_timing=require_lossless_timing,
         allow_empty=allow_empty,
         enable_sequence_motifs=enable_sequence_motifs,
-        behavior_configurations=behavior_configurations,
+        behavior_configurations=normalized_behavior_configurations,
         relative_tolerance_pct=relative_tolerance_pct,
         absolute_tolerance_us=absolute_tolerance_us,
         hidden_tolerance_points=hidden_tolerance_points,
@@ -821,6 +786,7 @@ def verify_canary_behavior(
     ranking_tie_tolerance_us = _optional_non_negative(ranking_tie_tolerance_us, "ranking_tie_tolerance_us") or 0.0
     if tail_recall_threshold > 1.0:
         raise SchemaError("tail_recall_threshold must be between 0 and 1")
+    normalized_configurations = _normalize_behavior_configurations(configurations)
 
     compiler = canary.get("compiler", {})
     source_events = as_int(compiler.get("source_events"))
@@ -850,10 +816,9 @@ def verify_canary_behavior(
         allow_empty=trace_event_count == 0,
     )
     config_rows: List[JsonDict] = []
-    for raw_config in configurations or _DEFAULT_BEHAVIORAL_CONFIGS:
-        config = dict(raw_config)
-        name = str(config.pop("name", f"config-{len(config_rows)}"))
-        replay_args = _behavioral_replay_args(config)
+    for raw_config in normalized_configurations:
+        name = raw_config["name"]
+        replay_args = _behavioral_replay_args(raw_config)
         source_report = replay_canary(full_canary, backend_label=name, include_samples=True, **replay_args)
         canary_report = replay_canary(canary, backend_label=name, include_samples=True, **replay_args)
 
@@ -1211,19 +1176,6 @@ def _first_commitment_mismatch(expected: Mapping[str, Any], actual: Mapping[str,
                 "actual": actual_vector.get(key),
             }
     return None
-
-
-def _behavioral_replay_args(config: Mapping[str, Any]) -> JsonDict:
-    allowed = {
-        "bandwidth_gbps",
-        "latency_floor_us",
-        "compute_pressure",
-        "overlap_efficiency",
-        "iterations",
-        "seed",
-        "max_replay_events",
-    }
-    return {key: config[key] for key in allowed if key in config}
 
 
 def _behavior_count_check(source_metrics: Mapping[str, Any], canary_metrics: Mapping[str, Any]) -> JsonDict:
