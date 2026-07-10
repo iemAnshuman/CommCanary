@@ -21,6 +21,7 @@ import os
 import tempfile
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from .resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from .schema import (
     TRACE_FORMAT,
     JsonDict,
@@ -28,6 +29,7 @@ from .schema import (
     as_float,
     as_int,
     iter_canary_logical_events,
+    load_json_document,
     normalize_ranks,
     validate_canary,
     validate_trace,
@@ -114,18 +116,18 @@ _PARAM_EXPORT_DTYPES = {
 }
 
 
-def load_kineto_trace(path: str) -> JsonDict:
+def load_kineto_trace(
+    path: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> JsonDict:
     """Load a torch.profiler Chrome-trace JSON file.
 
     Unlike ``schema.load_json`` this accepts both the object form
     (``{"traceEvents": [...]}``) and a bare event array.
     """
 
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = json.load(handle, parse_constant=_reject_constant)
-    except (OSError, ValueError) as exc:
-        raise SchemaError(f"could not load kineto trace {path!r}: {exc}") from exc
+    data = load_json_document(path, limits=limits)
     if isinstance(data, list):
         return {"traceEvents": data}
     if isinstance(data, dict):
@@ -636,7 +638,3 @@ def _parse_int_list(value: Any) -> Optional[List[int]]:
     if not isinstance(parsed, list) or not all(isinstance(item, int) for item in parsed):
         return None
     return parsed if parsed else None
-
-
-def _reject_constant(value: str) -> None:
-    raise SchemaError(f"kineto trace contains unsupported JSON constant {value!r}")

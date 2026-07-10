@@ -8,6 +8,13 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
 
+from .resources import (
+    DEFAULT_RESOURCE_LIMITS,
+    JsonResourceError,
+    ResourceLimits,
+    load_bounded_json,
+)
+
 TRACE_FORMAT = "commcanary.trace.v1"
 CANARY_FORMAT = "commcanary.canary.v2"
 REPORT_FORMAT = "commcanary.report.v2"
@@ -61,22 +68,39 @@ class SchemaError(CommCanaryError):
 JsonDict = Dict[str, Any]
 
 
-def load_json(path: str) -> JsonDict:
+def load_json_document(
+    path: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> Any:
+    """Load one bounded JSON document without imposing a root shape."""
+
     try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = json.load(handle, parse_constant=_reject_json_constant)
+        return load_bounded_json(path, limits=limits)
     except FileNotFoundError as exc:
         raise SchemaError(f"{path} does not exist") from exc
     except UnicodeDecodeError as exc:
         raise SchemaError(f"{path} is not UTF-8 JSON: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise SchemaError(f"{path} is not valid JSON: {exc.msg}") from exc
+    except JsonResourceError as exc:
+        raise SchemaError(f"{path} violates JSON resource constraints: {exc}") from exc
+    except RecursionError as exc:
+        raise SchemaError(f"{path} exceeds the JSON parser nesting capacity") from exc
     except OSError as exc:
         raise SchemaError(f"cannot read {path}: {exc}") from exc
     except OverflowError as exc:
         raise SchemaError(f"{path} contains a number that is too large") from exc
     except ValueError as exc:
         raise SchemaError(f"{path} contains non-standard JSON: {exc}") from exc
+
+
+def load_json(
+    path: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> JsonDict:
+    data = load_json_document(path, limits=limits)
     if not isinstance(data, dict):
         raise SchemaError(f"{path} must contain a JSON object")
     return data
@@ -1647,10 +1671,6 @@ def merge_metadata(base: Optional[Mapping[str, Any]], override: Optional[Mapping
 
 def clean_private_keys(data: MutableMapping[str, Any]) -> JsonDict:
     return {key: value for key, value in data.items() if not key.startswith("_")}
-
-
-def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"constant {value!r} is not allowed")
 
 
 def _require_optional_mapping(data: Mapping[str, Any], key: str, label: str) -> None:
