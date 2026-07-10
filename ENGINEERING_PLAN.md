@@ -744,14 +744,18 @@ not be copied.
   - CommCanary commit, dirty flag and patch hash;
   - script/config/input hashes;
   - PARAM/PyTorch/NCCL/Python/tool versions and PARAM patch hash;
-  - exact command, environment constraints/lock, modules, topology, binding,
-    SLURM job/node/account/partition metadata;
+  - exact command, environment constraints/lock, and expected site constraints
+    (modules, topology, binding, account/partition policy);
   - warmup/measurement/aggregation/tie/exclusion policies;
   - raw archive URI and SHA-256 when results are external.
-- Each expected cell produces exactly one atomic terminal record: success,
-  failed, parse-failed, cancelled, or explicitly excluded. Failures retain exit
-  code, stdout/stderr locations, and reason; they are evidence, not invisible
-  rows.
+- Observed scheduler/job/node/account/partition metadata belongs in an
+  append-only submission ledger and immutable cell attempts, not in the frozen
+  manifest whose hash is known before submission.
+- Each attempt produces one atomic terminal record: success, failed,
+  parse-failed, cancelled, or explicitly excluded. Retries preserve earlier
+  attempts, while exactly one selected terminal attempt feeds completeness and
+  analysis. Failures retain exit code, stdout/stderr locations, and reason; they
+  are evidence, not invisible rows.
 - Store results below `results/<run-id>/`; never mix campaigns by globbing a
   shared directory.
 
