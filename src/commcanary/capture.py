@@ -3,10 +3,13 @@ from __future__ import annotations
 import atexit
 import copy
 import glob
+import hashlib
+import json
 import os
 import threading
 import time
 import uuid
+import warnings
 import weakref
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +40,12 @@ class TraceRecorder:
     ) -> None:
         self._requested_output_path = output_path
         self._recorder_id = uuid.uuid4().hex
-        self.output_path = _resolve_output_path(output_path, recorder_id=self._recorder_id)
+        self._trace_root = _configured_trace_root()
+        self.output_path = _resolve_output_path(
+            output_path,
+            recorder_id=self._recorder_id,
+            trace_root=self._trace_root,
+        )
         self.workload = copy.deepcopy(dict(workload or {}))
         self.system = copy.deepcopy(dict(system or {}))
         self.events: List[JsonDict] = []
@@ -66,7 +74,13 @@ class TraceRecorder:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        self.save()
+        if exc is None:
+            self.save()
+            return
+        try:
+            self.save()
+        except Exception as save_error:
+            _report_suppressed_save_error(exc, save_error)
 
     def elapsed_us(self) -> float:
         return (time.perf_counter_ns() - self._start_ns) / 1000.0
@@ -117,6 +131,13 @@ class TraceRecorder:
             parsed_observed = as_float(observed_exposed_us)
             if parsed_observed < 0.0:
                 raise SchemaError("observed_exposed_us must be non-negative")
+
+        metadata_snapshot: Optional[JsonDict] = None
+        if metadata is not None:
+            if not isinstance(metadata, Mapping):
+                raise SchemaError("metadata must be an object")
+            metadata_snapshot = copy.deepcopy(dict(metadata))
+            _validate_json_serializable(metadata_snapshot, "metadata")
 
         parsed_sender = as_int(sender_rank) if sender_rank is not None else None
         parsed_receiver = as_int(receiver_rank) if receiver_rank is not None else None
@@ -200,10 +221,8 @@ class TraceRecorder:
                 event["arrival_skew_us"] = parsed_skew
             if parsed_observed is not None:
                 event["observed_exposed_us"] = round(parsed_observed, 9)
-            if metadata:
-                if not isinstance(metadata, Mapping):
-                    raise SchemaError("metadata must be an object")
-                event["metadata"] = copy.deepcopy(dict(metadata))
+            if metadata_snapshot:
+                event["metadata"] = metadata_snapshot
             self.events.append(event)
             self._generation += 1
 
@@ -234,10 +253,13 @@ class TraceRecorder:
             snapshot = copy.deepcopy(self.events)
             trace = self._to_trace_locked(snapshot)
             output_path = self.output_path
+            trace_root = self._trace_root
         validate_trace(trace, allow_partial_arrivals=True)
         with self._save_lock:
             if generation <= self._last_saved_generation:
                 return
+            if trace_root is not None:
+                _require_path_below_root(Path(output_path), trace_root)
             write_json(output_path, trace)
             self._last_saved_generation = generation
 
@@ -261,10 +283,12 @@ class TraceRecorder:
         self._generation = 0
         self._last_saved_generation = -1
         self._recorder_id = uuid.uuid4().hex
+        self._trace_root = _configured_trace_root()
         self.output_path = _resolve_output_path(
             self._requested_output_path,
             force_shard=True,
             recorder_id=self._recorder_id,
+            trace_root=self._trace_root,
         )
 
 
@@ -395,24 +419,99 @@ def _resolve_output_path(
     *,
     force_shard: bool = False,
     recorder_id: Optional[str] = None,
+    trace_root: Optional[Path] = None,
 ) -> str:
     recorder_suffix = recorder_id or uuid.uuid4().hex
-    trace_dir = os.environ.get("COMMCANARY_TRACE_DIR")
-    if trace_dir:
-        Path(trace_dir).mkdir(parents=True, exist_ok=True)
-        return os.path.join(
-            trace_dir,
-            f"rank-{_rank_label()}-pid-{os.getpid()}-rec-{recorder_suffix}.trace.json",
+    configured_root = trace_root if trace_root is not None else _configured_trace_root()
+    if configured_root is not None:
+        rank_component = _rank_filename_component(_rank_label())
+        candidate = configured_root / (
+            f"rank-{rank_component}-pid-{os.getpid()}-rec-{recorder_suffix}.trace.json"
         )
+        _require_path_below_root(candidate, configured_root)
+        try:
+            configured_root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise SchemaError(f"cannot create trace directory {configured_root}: {exc}") from exc
+        _require_path_below_root(candidate, configured_root)
+        return str(candidate)
     if force_shard or os.environ.get("COMMCANARY_TRACE_SHARDED") == "1":
         target = Path(output_path)
         target.parent.mkdir(parents=True, exist_ok=True)
         return str(
             target.with_name(
-                f"{target.stem}.rank-{_rank_label()}-pid-{os.getpid()}-rec-{recorder_suffix}{target.suffix}"
+                f"{target.stem}.rank-{_rank_filename_component(_rank_label())}"
+                f"-pid-{os.getpid()}-rec-{recorder_suffix}{target.suffix}"
             )
         )
     return output_path
+
+
+def _configured_trace_root() -> Optional[Path]:
+    trace_dir = os.environ.get("COMMCANARY_TRACE_DIR")
+    if not trace_dir:
+        return None
+    try:
+        return Path(trace_dir).resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise SchemaError(f"cannot resolve trace directory {trace_dir!r}: {exc}") from exc
+
+
+def _require_path_below_root(path: Path, root: Path) -> Path:
+    """Resolve *path* and require it to remain a child of frozen *root*."""
+
+    try:
+        resolved_path = path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise SchemaError(f"cannot resolve capture shard path {path}: {exc}") from exc
+    if resolved_path == root or root not in resolved_path.parents:
+        raise SchemaError(
+            f"capture shard path {resolved_path} escapes configured trace directory {root}"
+        )
+    return resolved_path
+
+
+def _rank_filename_component(label: str) -> str:
+    """Return a bounded ASCII filename component without exposing unsafe text."""
+
+    if label == "unknown":
+        return label
+    if 1 <= len(label) <= 20 and label.isascii() and label.isdecimal():
+        return label
+    digest = hashlib.sha256(label.encode("utf-8", errors="surrogatepass")).hexdigest()[:16]
+    return f"label-{digest}"
+
+
+def _validate_json_serializable(value: Any, label: str) -> None:
+    try:
+        json.dumps(value, sort_keys=True, allow_nan=False)
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise SchemaError(f"{label} must be JSON serializable: {exc}") from exc
+
+
+def _report_suppressed_save_error(workload_error: BaseException, save_error: Exception) -> None:
+    try:
+        detail = str(save_error)
+    except Exception:
+        detail = type(save_error).__name__
+    message = f"CommCanary failed to save its capture while handling an exception: {detail}"
+    try:
+        setattr(workload_error, "commcanary_save_error", save_error)
+    except Exception:
+        pass
+    add_note = getattr(workload_error, "add_note", None)
+    if callable(add_note):
+        try:
+            add_note(message)
+        except Exception:
+            pass
+    else:
+        try:
+            warnings.warn(message, RuntimeWarning, stacklevel=3)
+        except Exception:
+            # Warning filters may promote warnings to exceptions. The workload
+            # exception must remain authoritative even in that configuration.
+            pass
 
 
 def _rank_label() -> str:
