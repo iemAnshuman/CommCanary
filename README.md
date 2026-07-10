@@ -65,8 +65,9 @@ commcanary compile trace.json -o canary.json --require-behavior-verification
 
 For research minimization, use behavior-search mode. It compiles every timing
 sample limit in the requested range, runs behavior verification for each
-candidate, rejects failures, and selects the smallest serialized passing
-artifact:
+candidate, rejects failures, selects the smallest serialized passing artifact,
+and then greedily lowers timing budgets for individual signature groups only
+when the canary remains source-, behavior-, and ranking-verified:
 
 ```bash
 commcanary compile trace.json -o canary.json \
@@ -75,10 +76,12 @@ commcanary compile trace.json -o canary.json \
   --timing-sample-limit 128
 ```
 
-The selected canary records every candidate's verification status, acceptance
-status, and the selected timing sample limit. It is still not a full
-per-window/Pareto optimizer, but it gives a fail-closed behavioral minimization
-path for the current compiler.
+The selected canary records every uniform-budget candidate, the per-group
+refinement attempts, the accepted lower group budgets, and the selected timing
+limit mode. It is still not a full per-window/Pareto optimizer, but it gives a
+fail-closed behavioral minimization path for the current compiler and avoids
+forcing quiet groups to carry the same sample budget as ranking-sensitive
+windows.
 
 The compiler reports both event compression and serialized-byte compression.
 A smaller event count is not described as compression when the artifact is
@@ -183,11 +186,11 @@ same execution.
 
 The repository includes a synthetic adversarial experiment that demonstrates why
 field-level compression is not enough. It constructs an isolated collective
-baseline, random-sampling and frequency-representative controls, and a full
-decode-like workload whose queue-reset gaps and high-overlap tail windows change
-configuration ranking. A canary that is too small is labelled unverified;
-behavior-search finds the smallest verified timing budget in the declared range,
-and a lossless compact canary preserves the workload ranking.
+baseline, random-sampling, frequency-representative, and clustering controls,
+and a full decode-like workload whose queue-reset gaps and high-overlap tail
+windows change configuration ranking. A canary that is too small is labelled
+unverified; behavior-search finds the smallest verified timing budget in the
+declared range, and a lossless compact canary preserves the workload ranking.
 
 ```bash
 PYTHONPATH=src python examples/research_scaffolding.py
@@ -205,16 +208,20 @@ verified under the same simulator contract as CommCanary artifacts:
 commcanary baseline trace.json -o out/isolated.trace.json --method isolated
 commcanary baseline trace.json -o out/random.trace.json --method random --sample-count 16 --seed 7
 commcanary baseline trace.json -o out/frequency.trace.json --method frequency
+commcanary baseline trace.json -o out/cluster.trace.json --method cluster --cluster-count 8
 ```
 
 `isolated` removes workload order, skew, queue-reset gaps, and overlap, matching
 the spirit of an isolated collective microbenchmark. `random` samples source
 events and tiles them to the original event count by default for count-fair
 behavioral comparison. `frequency` preserves operation frequency and order but
-replaces each signature by a representative, removing within-signature tails.
-These baselines are intentionally not source-verified against the original
-trace; `verify-behavior` should label them unverified unless they actually pass
-the full source, behavioral, and ranking gates.
+replaces each signature by one representative, removing within-signature tails.
+`cluster` is a stronger negative control: it preserves event count, operation
+order, operation signatures, and several deterministic timing medoids per
+signature, while still discarding exact burst/tail correlations and source
+commitments. These baselines are intentionally not source-verified against the
+original trace; `verify-behavior` should label them unverified unless they
+actually pass the full source, behavioral, and ranking gates.
 
 ## Trace timing semantics
 
@@ -306,6 +313,7 @@ PYTHONPATH=src python3 -m pytest -q
 
 The repository does not yet provide physical CUDA/NCCL replay, automatic
 Chakra/Nsight ingestion, dependency-aware compute-kernel synthesis,
-ranking-aware canary minimisation, or evidence across real serving engines and
-GPU generations. “Model-free” means the artifact omits weights and application
-code; it does not by itself prove privacy or absence of trace leakage.
+full per-window/per-motif Pareto minimisation, physical ranking evidence, or
+evidence across real serving engines and GPU generations. “Model-free” means
+the artifact omits weights and application code; it does not by itself prove
+privacy or absence of trace leakage.

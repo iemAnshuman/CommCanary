@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List
 
 from commcanary.baselines import (
+    clustering_representative_baseline_trace,
     frequency_representative_baseline_trace,
     random_sampling_baseline_trace,
 )
@@ -102,8 +103,10 @@ def main() -> None:
     too_small = compile_trace(workload_trace, timing_sample_limit=2)
     random_baseline_trace = random_sampling_baseline_trace(workload_trace, sample_count=8, seed=11)
     frequency_baseline_trace = frequency_representative_baseline_trace(workload_trace)
+    cluster_baseline_trace = clustering_representative_baseline_trace(workload_trace, cluster_count=4)
     random_baseline = compile_trace(random_baseline_trace, timing_sample_limit=16)
     frequency_baseline = compile_trace(frequency_baseline_trace, timing_sample_limit=16)
+    cluster_baseline = compile_trace(cluster_baseline_trace, timing_sample_limit=16)
     exact_small = compile_trace(workload_trace, timing_sample_limit=32, require_lossless_timing=True)
     behavior_search = synthesize_behavioral_canary(
         workload_trace,
@@ -118,8 +121,10 @@ def main() -> None:
     write_json(str(out / "too_small.canary.json"), too_small)
     write_json(str(out / "random_sampling_baseline.trace.json"), random_baseline_trace)
     write_json(str(out / "frequency_representative_baseline.trace.json"), frequency_baseline_trace)
+    write_json(str(out / "clustering_representative_baseline.trace.json"), cluster_baseline_trace)
     write_json(str(out / "random_sampling_baseline.canary.json"), random_baseline)
     write_json(str(out / "frequency_representative_baseline.canary.json"), frequency_baseline)
+    write_json(str(out / "clustering_representative_baseline.canary.json"), cluster_baseline)
     write_json(str(out / "verified_small.canary.json"), exact_small)
     write_json(str(out / "behavior_search.canary.json"), behavior_search)
 
@@ -153,6 +158,16 @@ def main() -> None:
         tail_recall_threshold=0.0,
         ranking_tie_tolerance_us=0.0,
     )
+    cluster_baseline_verification = verify_canary_behavior(
+        workload_trace,
+        cluster_baseline,
+        configurations=RANKING_CONFIGS,
+        relative_tolerance_pct=1000.0,
+        absolute_tolerance_us=1000.0,
+        hidden_tolerance_points=100.0,
+        tail_recall_threshold=0.0,
+        ranking_tie_tolerance_us=0.0,
+    )
     exact_verification = verify_canary_behavior(
         workload_trace,
         exact_small,
@@ -168,6 +183,7 @@ def main() -> None:
     write_json(str(out / "too_small.behavior.json"), lossy_verification)
     write_json(str(out / "random_sampling_baseline.behavior.json"), random_baseline_verification)
     write_json(str(out / "frequency_representative_baseline.behavior.json"), frequency_baseline_verification)
+    write_json(str(out / "clustering_representative_baseline.behavior.json"), cluster_baseline_verification)
     write_json(str(out / "verified_small.behavior.json"), exact_verification)
     write_json(str(out / "behavior_search.behavior.json"), behavior_search_verification)
 
@@ -185,6 +201,12 @@ def main() -> None:
         frequency_baseline_verification["status"],
         frequency_baseline_verification["source_verified_status"],
         frequency_baseline_verification["configuration_ranking_status"],
+    )
+    print(
+        "cluster baseline status:",
+        cluster_baseline_verification["status"],
+        cluster_baseline_verification["source_verified_status"],
+        cluster_baseline_verification["configuration_ranking_status"],
     )
     print("verified canary status:", exact_verification["status"], exact_verification["configuration_ranking_status"])
     print(

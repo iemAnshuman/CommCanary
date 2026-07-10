@@ -67,12 +67,12 @@ injected and naturally occurring regressions.
 - fail-closed behavior-gated compilation for canaries that must pass source,
   behavioral, and ranking verification;
 - behavior-search compilation that exhaustively searches a declared global
-  timing-sample budget range and selects the smallest source-, behavioral-, and
-  ranking-verified canary in that range;
+  timing-sample budget range, then greedily lowers per-signature-group timing
+  budgets when source, behavioral, and ranking verification still pass;
 - model-recomputed report verification that rejects forged canary identity,
   replay protocol, backend, workload, or canary-summary metadata;
-- research baseline generators for isolated collectives, random sampling, and
-  frequency representatives;
+- research baseline generators for isolated collectives, random sampling,
+  frequency representatives, and clustering representatives;
 - simulator ablation controls for skew, overlap, ordering, rare tails, queue
   reset gaps, pressure, and observed exposed latency;
 - principled point-to-point identity fields for send/recv pairs;
@@ -88,8 +88,9 @@ injected and naturally occurring regressions.
 - dependency-graph and communicator reconstruction;
 - full per-window/per-motif optimisation that directly minimises canary size
   subject to ranking preservation across multiple target configurations;
-  current behavior-search optimises only the global timing sample limit and
-  does not search the Pareto frontier;
+  current behavior-search searches global timing budgets plus greedy per-group
+  refinements, but it still does not search the true Pareto frontier over
+  windows, motifs, and event-program structure;
 - delta debugging or sequence minimisation against a real regression oracle;
 - privacy leakage analysis;
 - multi-engine, multi-model, multi-generation hardware evaluation.
@@ -111,8 +112,9 @@ source trace by default; prefix-only or subset canaries are labelled
 `partial_source_verified` and cannot receive a strong behavioral claim.
 `compile --require-behavior-verification` applies that same gate at
 artifact-generation time. `compile --behavior-search` goes further by searching
-the declared timing sample limit range and selecting the smallest passing
-candidate it finds.
+the declared timing sample limit range, then greedily lowering per-group timing
+budgets when the verifier still passes. It is a verified minimization heuristic,
+not a proof of global optimality.
 
 ## Required baselines
 
@@ -124,8 +126,9 @@ candidate it finds.
 6. CommCanary with each preservation mechanism ablated.
 
 This repository now includes simulator-side baseline trace generators for items
-1-3, but the physical `nccl-tests` baseline still needs real hardware execution
-and comparable measurement methodology.
+1-3, including a clustering representative negative control, but the physical
+`nccl-tests` baseline still needs real hardware execution and comparable
+measurement methodology.
 
 ## Most decisive first experiment
 

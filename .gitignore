@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.egg-info
 *.egg-info/
 .coverage
 htmlcov/
@@ -8,3 +9,8 @@ build/
 dist/
 out/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+repomix-output.*
+context.md

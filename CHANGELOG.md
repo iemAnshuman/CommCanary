@@ -12,8 +12,9 @@
 - Added replay-equivalent sequence motif compression for exact repeated multi-event programs, with scheduler-hash equivalence to flat encodings.
 - Added fail-closed behavior-gated compilation via `--require-behavior-verification`.
 - Added behavior-search compilation that exhaustively searches timing sample limits and selects the smallest source-, behavior-, and ranking-verified canary.
+- Added greedy per-group behavior-search refinement so quiet signature groups can use lower timing budgets while ranking-sensitive groups retain detail.
 - Strengthened `verify-report` so forged canary identity, replay protocol, backend, workload, or canary-summary metadata fails model recomputation.
-- Added research baseline trace generators for isolated-collective, random-sampling, and frequency-representative controls, plus a `commcanary baseline` CLI.
+- Added research baseline trace generators for isolated-collective, random-sampling, frequency-representative, and clustering-representative controls, plus a `commcanary baseline` CLI.
 - Tightened `verify-behavior` so it replays the full normalized source trace by default and marks prefix/subset canaries as partial-source rather than behaviorally verified.
 - Added simulator ablation controls for skew, overlap, ordering, rare tails, queue-reset gaps, pressure, and observed exposed latency.
 - Strengthened point-to-point semantics with sender/receiver, tag, channel, message sequence, and send/recv observations.
