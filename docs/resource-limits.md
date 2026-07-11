@@ -94,6 +94,12 @@ service_limits = replace(
 canary = compile_trace(trace, limits=service_limits)
 ```
 
+On the command line, `commcanary import-kineto` accepts
+`--max-input-bytes BYTES` because real multi-rank profiler traces routinely
+exceed the default input budget; the raised budget applies to that one
+invocation and every other limit keeps its default. The flag exists for
+trusted, locally produced profiles — hostile input should keep the default.
+
 Use the same object for a complete pipeline:
 
 ```python

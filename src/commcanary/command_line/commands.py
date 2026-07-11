@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from dataclasses import replace
 from typing import Any, Callable, List
 
 from ..adapters.kineto import kineto_trace_to_commcanary_trace, load_kineto_trace
@@ -20,6 +21,7 @@ from ..experimental import (
 )
 from ..replay import replay_canary
 from ..reporting import write_compare_html, write_report_html
+from ..resources import DEFAULT_RESOURCE_LIMITS
 from ..services import compile_trace, ddmin_ranking_reduction, synthesize_behavioral_canary
 from ..verification.canary import verify_canary_behavior, verify_canary_fidelity
 from ..verification.report import verify_report_against_canary
@@ -231,7 +233,12 @@ def reduce_command(
 
 
 def import_kineto_command(args: Any) -> int:
-    kineto = load_kineto_trace(args.kineto_trace)
+    limits = DEFAULT_RESOURCE_LIMITS
+    if args.max_input_bytes is not None:
+        if args.max_input_bytes < 1:
+            raise CommCanaryError("--max-input-bytes must be a positive integer")
+        limits = replace(limits, max_input_bytes=args.max_input_bytes)
+    kineto = load_kineto_trace(args.kineto_trace, limits=limits)
     trace = kineto_trace_to_commcanary_trace(
         kineto,
         workload_name=args.workload_name,

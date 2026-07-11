@@ -195,6 +195,12 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         default=None,
         help="import only events from this Process Group Name",
     )
+    import_parser.add_argument(
+        "--max-input-bytes",
+        type=int,
+        default=None,
+        help="raise the bounded-JSON input budget for a trusted, locally produced profile",
+    )
     import_parser.set_defaults(func=handlers.import_kineto)
 
     export_parser = sub.add_parser(

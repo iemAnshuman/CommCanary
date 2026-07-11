@@ -238,7 +238,7 @@
           "{workspace}/profile.json"
         ],
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8"],
+          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8"],
           ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
           ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace.json", "--dtype", "bfloat16", "--skip-unsupported"]
         ],
@@ -307,7 +307,7 @@
         ],
         "readiness": "requires-rostam-gemm-calibration",
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-overlap"],
+          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-overlap"],
           ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
           ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "PENDING_ROSTAM_GEMM_CALIBRATION_US", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
@@ -376,7 +376,7 @@
         ],
         "readiness": "requires-rostam-gemm-calibration",
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-shared"],
+          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-shared"],
           ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
           ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "PENDING_ROSTAM_GEMM_CALIBRATION_US", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
