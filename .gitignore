@@ -8,6 +8,9 @@ htmlcov/
 build/
 dist/
 out/
+.benchmark-data/
+release-metadata/
+experiments/rostam/results/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
