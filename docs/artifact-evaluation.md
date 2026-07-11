@@ -51,6 +51,35 @@ and postimage
 The ordinary-context patch passes `git apply --check` on the clean commit;
 neither setup nor PARAM execution was run.
 
+## Recorded pre-Rostam binding (2026-07-11)
+
+The repository-local gate has been executed to completion and its exact
+artifacts recorded. This is the handoff state a Rostam operator starts from;
+nothing below implies any cluster execution.
+
+- Source commit: `521b8fb7909933c29d73fb820bbae4015eb30ff4`
+  (branch `codex/engineering-plan-implementation`, clean worktree).
+- `python -m tools.verify --reproducible --artifact-dir dist --metadata-dir
+  release-metadata` passed on macOS arm64 / CPython 3.10.14: 699 tests,
+  90.47% statement coverage against the 86% floor, every per-responsibility
+  branch floor met, strict mypy, Ruff, import boundaries, schema/shell/
+  workflow/README checks, two fixed-epoch builds byte-identical, and the
+  installed wheel retested outside the checkout.
+- Exact artifacts (also in `release-metadata/SHA256SUMS`, inventory, and SPDX
+  SBOM produced by the same run):
+  - `commcanary-0.3.0-py3-none-any.whl`
+    `sha256:416dbea60943cf5ff93282547b1c350edb8880e0cc3e719bf6d1aef794a6738e`
+  - `commcanary-0.3.0.tar.gz`
+    `sha256:49443d276dea934e06494a30159ff247a53d461bf048febe095da667e2058014`
+- A `git archive HEAD` checkout of that commit passed all 699 tests in a fresh
+  virtualenv against the exact tested wheel, and `commcanary --version`
+  reports the full format capability matrix.
+- The wheel commit and SHA-256 are bound in
+  `experiments/rostam/constraints/environment-contract.json` under
+  `commcanary_wheel`; the contract status remains `pending-rostam-resolution`
+  until the site evidence below is collected, and the Rostam-side rebuild must
+  reproduce the recorded hash before any submission.
+
 ## Inputs that remain site-observed
 
 Before a Rostam submission, the operator must replace or record every unresolved

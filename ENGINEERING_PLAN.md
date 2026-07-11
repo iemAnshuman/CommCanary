@@ -1,45 +1,57 @@
 # CommCanary Engineering Plan
 
-## Implementation checkpoint — 2026-07-11
+## Implementation checkpoint — 2026-07-11 (evening; supersedes the morning entry)
 
-This live checkpoint is before any Rostam login, setup, scheduler, Torch/GPU,
-NCCL, PARAM execution, or cluster command. The branch is
-`codex/engineering-plan-implementation`; the implementation is still
-uncommitted and must not be treated as a release candidate yet.
+This live checkpoint is still before any Rostam login, setup, scheduler,
+Torch/GPU, NCCL, PARAM execution, or cluster command. The implementation is
+now committed on `codex/engineering-plan-implementation` as a reviewable
+series ending at `521b8fb7909933c29d73fb820bbae4015eb30ff4`, the full
+reproducible gate is green against that commit, and the exact artifacts are
+built, hashed, and bound in the pending Rostam environment contract. 0.3.0
+remains unreleased: no tag exists, and pushing or merging still needs the
+explicit maintainer decision recorded under Phase 0 (the local history and
+`origin/main` have no merge base).
 
 | Phase | Checkpoint status | What is done | What remains |
 |---|---|---|---|
-| 0 — reconcile state | **Locally complete; integration pending** | Work is isolated on the implementation branch and release inputs are inventoried. | Deliberately commit the assembled tree. The local history and `origin/main` have no merge base and disagree on license history, so pushing/merging needs an explicit maintainer decision. |
-| 1 — integrity and safety | **Complete before this checkpoint** | Integrity ladder, recursive provenance recomputation, detached outputs, path containment, capture hardening, and bounded public resource policies are implemented with adversarial tests. | Re-run the final canonical gate after Phase 7 is repaired. |
-| 2 — wire contracts | **Complete before this checkpoint** | Published schemas, strict canonical JSON/hash vectors, compatibility rules, runtime schema mirror, and installed-wheel contract tests are implemented. | Final clean-archive verification only. |
-| 3 — guardrails | **Complete before this checkpoint** | Canonical local/CI verification, Ruff, strict mypy, coverage floors, import boundaries, shell/workflow/docs checks, and exact installed-wheel tests are implemented. | Extend the now-configured whole-experiment mypy gate to green after the interrupted Phase 7 edits. |
-| 4 — characterization | **Complete before this checkpoint** | Semantic, hash, comparison-boundary, CLI-exit, public-import, and golden artifact characterization is in place. | Final regression run only. |
-| 5 — architecture | **Complete before this checkpoint** | Artifact, compilation, replay, verification, comparison, service, adapter, reporting, and CLI packages now sit behind compatibility facades; the monolithic test file was split by capability. | Final regression run only. |
-| 6 — API and CLI | **Complete before this checkpoint** | Stable API/version/format capability surface, typed package marker, CLI error taxonomy, diagnostics/progress, deprecation behavior, and honest HTML output are implemented. | Final installed-wheel and archive checks only. |
-| 7 — experiment subsystem | **Locally complete; physical evidence pending** | Immutable manifests/cell IDs, append-only attempts, explicit selection, fail-closed completeness, local non-SLURM runner, thin scheduler wrappers, exact submission planning, distinct physical producer schemas, reviewed PARAM patch evidence, and structurally complete core/overlap/shared catalogs are implemented. Experiment JSON/control inputs and child output are bounded. Runtime observations record driver/GPU/topology/binding/clocks. The trusted analyzer binds physical results to manifests, dependencies, inputs, traces, selections, and verdicts; complete multi-campaign results generate ranking/Kendall/regression/cost claims and a post-run archive descriptor. Legacy glob analysis requires an explicit unsafe flag and watermark. | Final clean-archive/package verification. Actual environment resolution, GEMM calibration, shared trace capture, campaign execution, archive bytes, and generated physical claims are Rostam-only. |
+| 0 — reconcile state | **Complete locally; integration pending** | The assembled tree is committed as a reviewable dependency-ordered series (hygiene, core split, schemas, gate/CI, tests, benchmarks, experiments, docs, toolchain fix, binding). The worktree is clean; private context and generated output are ignored and untracked. | Pushing/merging: the local history and `origin/main` have no merge base and disagree on license history, so publication of this branch needs an explicit maintainer decision. |
+| 1 — integrity and safety | **Complete** | Integrity ladder, recursive provenance recomputation, detached outputs, path containment, capture hardening, and bounded public resource policies are implemented with adversarial tests. | — |
+| 2 — wire contracts | **Complete** | Published schemas, strict canonical JSON/hash vectors, compatibility rules, runtime schema mirror, and installed-wheel contract tests are implemented and re-verified from a clean archive. | — |
+| 3 — guardrails | **Complete** | Canonical local/CI verification, Ruff, strict mypy (whole experiment tree included), statement and per-responsibility branch floors, import boundaries, shell/workflow/docs checks, and exact installed-wheel tests are green. The three floors left short by the interrupted edits (capture, compiler+integrity, replay+verification) were closed with behavior-asserting branch tests. | — |
+| 4 — characterization | **Complete** | Semantic, hash, comparison-boundary, CLI-exit, public-import, and golden artifact characterization is in place and passing. | — |
+| 5 — architecture | **Complete** | Artifact, compilation, replay, verification, comparison, service, adapter, reporting, and CLI packages sit behind compatibility facades; the monolithic test file is split by capability. | — |
+| 6 — API and CLI | **Complete** | Stable API/version/format capability surface, typed package marker, CLI error taxonomy, diagnostics/progress, deprecation behavior, and honest HTML output are implemented; installed-wheel and archive checks passed. | — |
+| 7 — experiment subsystem | **Locally complete; physical evidence pending** | Immutable manifests/cell IDs, append-only attempts, explicit selection, fail-closed completeness, local non-SLURM runner, thin scheduler wrappers, exact submission planning, distinct physical producer schemas, reviewed PARAM patch evidence, and structurally complete core/overlap/shared catalogs are implemented and gate-verified. The wheel commit and SHA-256 are now bound in the pending environment contract. | Environment resolution, GEMM calibration, shared trace capture, campaign execution, archive bytes, and generated physical claims are Rostam-only. |
 | 8 — measured optimization | **Locally complete** | Deterministic 1K/10K/100K fixtures, isolated wall/RSS/allocation measurements, semantic hashes, smoke/scheduled workflows, and measured capture/PARAM optimizations are implemented. No threshold was fabricated from one runner. | Accumulate stable-runner history before choosing regression thresholds; this is not a Rostam prerequisite. |
-| 9 — docs and release | **Mostly complete; finalization pending** | Architecture/API/CLI/format/integrity/privacy/platform/resource/release docs, ADRs, contributor/security files, reproducible package tooling, SBOM/inventory/checksums, paper-publication boundary, and historical-paper corrections are implemented. Two clean local builds were byte-identical; the installed wheel passed 334 tests before the interrupted Phase 7 edits. | Restore the full green gate; create reviewable commits; verify a clean `git archive HEAD`; build and retain the exact wheel/sdist plus metadata; bind the wheel/source commit in the pending Rostam environment contract; write the final pre-Rostam handoff. Tagging, publishing, and supported-platform CI remain later release actions. |
+| 9 — docs and release | **Complete up to the release boundary** | Docs, ADRs, contributor/security files, reproducible package tooling, SBOM/inventory/checksums, the paper-publication boundary, reviewable commits, a verified clean `git archive HEAD`, exact retained wheel/sdist with recorded hashes, the environment-contract binding, and the pre-Rostam handoff record in `docs/artifact-evaluation.md` are done. A fresh-venv toolchain gap (setuptools <70.1 cannot build wheels without the separate `wheel` package) was fixed by raising the dev-extra floor. | Tagging, publishing, and supported-platform CI remain deliberate later release actions; 0.3.0 stays `Unreleased` until then. |
 
-### Last known verification state
+### Last known verification state (commit `521b8fb`)
 
-- The canonical fast gate passes with **620 tests**, 88.44% statement coverage
-  (86% floor), every critical branch floor, whole-experiment strict mypy,
-  Ruff/import/shell/workflow/docs checks, and 37 JSON files/18 schemas.
-- The focused Rostam subsystem has **136 passing tests**. All 26 Rostam source
-  files pass strict mypy and all 35 Rostam source/test files pass Ruff and its
-  formatting check.
-- Before the last Phase 7 additions, 334 installed-wheel tests and two
-  byte-identical wheel/sdist builds passed. The final exact archived build and
-  artifact hashes remain to be recorded after the implementation commit.
+- `python -m tools.verify --reproducible --artifact-dir dist --metadata-dir
+  release-metadata` passes end to end on macOS arm64 / CPython 3.10.14:
+  **699 tests**, 90.47% statement coverage (86% floor), every
+  per-responsibility branch floor (capture 89.7%/70, compiler+integrity
+  87.6%/85, replay+verification 80.1%/75, resource limits 90.0%/90, others
+  above floor), whole-tree strict mypy, Ruff and formatting, import
+  boundaries, schema/shell/workflow/README checks, two byte-identical
+  fixed-epoch builds, and installed-wheel tests outside the checkout.
+- A `git archive HEAD` checkout passed all 699 tests in a fresh virtualenv
+  against the exact tested wheel.
+- Exact artifacts (hashes also in `release-metadata/SHA256SUMS`, inventory,
+  and SPDX SBOM): `commcanary-0.3.0-py3-none-any.whl`
+  `416dbea60943cf5ff93282547b1c350edb8880e0cc3e719bf6d1aef794a6738e`;
+  `commcanary-0.3.0.tar.gz`
+  `49443d276dea934e06494a30159ff247a53d461bf048febe095da667e2058014`.
+  Both are bound to source commit `521b8fb7909933c29d73fb820bbae4015eb30ff4`
+  in `experiments/rostam/constraints/environment-contract.json`.
 
 ### Remaining order before Rostam
 
-1. Commit the implementation, verify a clean archived checkout, build exact
-   artifacts, bind their hashes/commit, and record the pre-Rostam handoff.
-2. Re-run the full reproducible package/install gate against that clean state.
-3. Stop. Only after that checkpoint should a maintainer enter Rostam to
-   resolve its ABI/platform locks, observe the site/runtime, calibrate GEMM,
-   capture the shared trace, or submit a campaign.
+1. Maintainer decision on publishing the branch (no merge base with
+   `origin/main`; license history differs).
+2. Stop. Only after review should a maintainer enter Rostam to resolve its
+   ABI/platform locks, observe the site/runtime, calibrate GEMM, capture the
+   shared trace, or submit a campaign, per `docs/artifact-evaluation.md`.
 
 _Original roadmap re-audited 2026-07-10. Its baseline observations below are
 historical; the live implementation status is the checkpoint above._
