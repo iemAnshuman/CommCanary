@@ -8,13 +8,16 @@ now committed on `codex/engineering-plan-implementation` as a reviewable
 series ending at `521b8fb7909933c29d73fb820bbae4015eb30ff4`, the full
 reproducible gate is green against that commit, and the exact artifacts are
 built, hashed, and bound in the pending Rostam environment contract. 0.3.0
-remains unreleased: no tag exists, and pushing or merging still needs the
-explicit maintainer decision recorded under Phase 0 (the local history and
-`origin/main` have no merge base).
+remains unreleased and untagged. The publication decision was made on
+2026-07-11: `origin/main` had only GitHub's 2026-07-01 license-boilerplate
+init commit (an Apache-2.0 LICENSE file, no code, preserved as
+`archive/github-init`), the project license is and remains MIT across
+LICENSE, packaging metadata, and README, and `main` was set to this verified
+history rather than merging two unrelated lines.
 
 | Phase | Checkpoint status | What is done | What remains |
 |---|---|---|---|
-| 0 — reconcile state | **Complete locally; integration pending** | The assembled tree is committed as a reviewable dependency-ordered series (hygiene, core split, schemas, gate/CI, tests, benchmarks, experiments, docs, toolchain fix, binding). The worktree is clean; private context and generated output are ignored and untracked. | Pushing/merging: the local history and `origin/main` have no merge base and disagree on license history, so publication of this branch needs an explicit maintainer decision. |
+| 0 — reconcile state | **Complete** | The assembled tree is committed as a reviewable dependency-ordered series (hygiene, core split, schemas, gate/CI, tests, benchmarks, experiments, docs, toolchain fix, binding). The worktree is clean; private context and generated output are ignored and untracked. Published 2026-07-11: `main` set to this history, the review branch pushed, and the unrelated GitHub init commit (Apache LICENSE boilerplate, no code) preserved as `archive/github-init`. | — |
 | 1 — integrity and safety | **Complete** | Integrity ladder, recursive provenance recomputation, detached outputs, path containment, capture hardening, and bounded public resource policies are implemented with adversarial tests. | — |
 | 2 — wire contracts | **Complete** | Published schemas, strict canonical JSON/hash vectors, compatibility rules, runtime schema mirror, and installed-wheel contract tests are implemented and re-verified from a clean archive. | — |
 | 3 — guardrails | **Complete** | Canonical local/CI verification, Ruff, strict mypy (whole experiment tree included), statement and per-responsibility branch floors, import boundaries, shell/workflow/docs checks, and exact installed-wheel tests are green. The three floors left short by the interrupted edits (capture, compiler+integrity, replay+verification) were closed with behavior-asserting branch tests. | — |
@@ -47,11 +50,12 @@ explicit maintainer decision recorded under Phase 0 (the local history and
 
 ### Remaining order before Rostam
 
-1. Maintainer decision on publishing the branch (no merge base with
-   `origin/main`; license history differs).
-2. Stop. Only after review should a maintainer enter Rostam to resolve its
-   ABI/platform locks, observe the site/runtime, calibrate GEMM, capture the
-   shared trace, or submit a campaign, per `docs/artifact-evaluation.md`.
+Repository-side work is finished. What remains is Rostam-side collection per
+`docs/artifact-evaluation.md`: resolve the two locked environments, record
+platform/ABI/resolver evidence, rebuild and hash-verify the bound wheel,
+calibrate GEMM, capture the shared trace, then plan and submit campaigns
+through the fail-closed harness. Tagging and publishing 0.3.0 remain
+deliberate later release actions.
 
 _Original roadmap re-audited 2026-07-10. Its baseline observations below are
 historical; the live implementation status is the checkpoint above._
