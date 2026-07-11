@@ -20,6 +20,7 @@ from commcanary.resources import (
     checked_add,
     checked_multiply,
     require_within,
+    validate_json_mapping,
     validate_json_value,
 )
 from commcanary.schema import (
@@ -48,6 +49,26 @@ class BoundedJsonLoaderTests(unittest.TestCase):
             ResourceLimits(max_json_depth=True)
         with self.assertRaisesRegex(ValueError, "max_expanded_events"):
             ResourceLimits(max_expanded_events=0)
+        with self.assertRaisesRegex(ValueError, "max_json_depth"):
+            ResourceLimits(max_json_depth=0)
+        with self.assertRaisesRegex(ValueError, "max_json_items"):
+            ResourceLimits(max_json_items=-1)
+        with self.assertRaisesRegex(ValueError, "max_json_string_bytes"):
+            ResourceLimits(max_json_string_bytes=-1)
+        with self.assertRaisesRegex(ValueError, "max_json_number_chars"):
+            ResourceLimits(max_json_number_chars=0)
+        with self.assertRaisesRegex(ValueError, "max_behavior_configurations must be at least 2"):
+            ResourceLimits(max_behavior_configurations=1)
+
+    def test_circular_references_are_rejected_without_recursion(self) -> None:
+        circular_mapping: dict = {"payload": {}}
+        circular_mapping["payload"]["loop"] = circular_mapping
+        with self.assertRaisesRegex(JsonResourceError, "circular references"):
+            validate_json_mapping(circular_mapping)
+        circular_list: list = [[]]
+        circular_list[0].append(circular_list)
+        with self.assertRaisesRegex(JsonResourceError, "circular references"):
+            validate_json_value(circular_list)
 
     def test_checked_work_arithmetic_rejects_overflow_before_expansion(self) -> None:
         self.assertEqual(checked_add(2, 3, label="events"), 5)
