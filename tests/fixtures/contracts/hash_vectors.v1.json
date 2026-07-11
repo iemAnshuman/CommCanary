@@ -1,0 +1,148 @@
+{
+  "artifact_chain": {
+    "calibration_projection": {
+      "canonical_utf8": "{\"events\":[{\"bytes\":1024,\"concurrent_groups\":1,\"group\":\"tp\",\"observed_runs\":[{\"observed_exposed_us\":null,\"weight\":1}],\"op\":\"all_reduce\",\"phase\":\"decode\",\"ranks\":[0,1]}],\"format\":\"commcanary.canary.v2\"}",
+      "sha256": "6ee857f630f3ed42ba01b39ba1745b5a0b1c2aefaf4f6d62f3f91412ccfa5800"
+    },
+    "execution_projection": {
+      "canonical_utf8": "{\"events\":[{\"bytes\":1024,\"concurrent_groups\":1,\"execution_occurrence_base\":0,\"group\":\"tp\",\"op\":\"all_reduce\",\"phase\":\"decode\",\"rank_count\":2,\"ranks\":[0,1],\"timing_runs\":[{\"item\":{\"arrival_offsets_us\":[0.0,1.0],\"compute_overlap_us\":0.0,\"compute_pressure\":0.5,\"gap_us\":0.0},\"weight\":1}]}],\"format\":\"commcanary.canary.v2\"}",
+      "sha256": "0589f6935d42d99f8db9a6222707c9ac34cab18cf8f7eb129bfd45887bce2f60"
+    },
+    "expected_hashes": {
+      "artifact_provenance_sha256": "fcd7ff91c8fe85373d8c07b517296ad219fdbbbadf513d9b7600c711fe83b980",
+      "calibration_evaluation_sha256": "6ee857f630f3ed42ba01b39ba1745b5a0b1c2aefaf4f6d62f3f91412ccfa5800",
+      "execution_semantic_sha256": "0589f6935d42d99f8db9a6222707c9ac34cab18cf8f7eb129bfd45887bce2f60",
+      "report_canary_sha256": "e2735a739af76e9d0d993d2e0101bb050529f7f58c690993d524f725837441fd",
+      "scheduler_execution_sha256": "0589f6935d42d99f8db9a6222707c9ac34cab18cf8f7eb129bfd45887bce2f60",
+      "source_normalized_sha256": "c844d9789e7def7b3e8af5a3f200e1dafa186a8af1f29e64fbd9bde1cceea9a0",
+      "source_trace_sha256": "c844d9789e7def7b3e8af5a3f200e1dafa186a8af1f29e64fbd9bde1cceea9a0"
+    },
+    "leaf_source_digest": {
+      "canonical_records_hex": "3000",
+      "ids": [
+        0
+      ],
+      "sha256": "e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95"
+    },
+    "protocol_projection": {
+      "canonical_utf8": "{\"ablations\":[],\"bandwidth_unit\":\"Gbit/s\",\"iterations\":1,\"model_name\":\"commcanary.replay\",\"model_version\":\"deterministic-scheduler-v4\",\"quantile_method\":\"linear-interpolated-sorted\",\"seed\":11}",
+      "sha256": "752075faf613a90040804cc11ee03c7e9c226d86e3988c3fbe1d595acd939873"
+    },
+    "replay_seed": 11,
+    "source_trace_projection": {
+      "canonical_utf8": "{\"events\":[{\"arrival_skew_us\":1.0,\"bytes\":1024,\"group\":\"tp\",\"op\":\"all_reduce\",\"phase\":\"decode\",\"rank_arrival_us\":{\"0\":0.0,\"1\":1.0},\"rank_count\":2,\"ranks\":[0,1]}],\"format\":\"commcanary.trace.v1\",\"system\":{\"backend\":\"fixture\"},\"workload\":{\"name\":\"contract-fixture\"}}",
+      "canonical_utf8_hex": "7b226576656e7473223a5b7b226172726976616c5f736b65775f7573223a312e302c226279746573223a313032342c2267726f7570223a227470222c226f70223a22616c6c5f726564756365222c227068617365223a226465636f6465222c2272616e6b5f6172726976616c5f7573223a7b2230223a302e302c2231223a312e307d2c2272616e6b5f636f756e74223a322c2272616e6b73223a5b302c315d7d5d2c22666f726d6174223a22636f6d6d63616e6172792e74726163652e7631222c2273797374656d223a7b226261636b656e64223a2266697874757265227d2c22776f726b6c6f6164223a7b226e616d65223a22636f6e74726163742d66697874757265227d7d",
+      "sha256": "c844d9789e7def7b3e8af5a3f200e1dafa186a8af1f29e64fbd9bde1cceea9a0"
+    },
+    "trace": {
+      "events": [
+        {
+          "arrival_skew_us": 1.0,
+          "bytes": 1024,
+          "group": "tp",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "rank_count": 2,
+          "ranks": [
+            0,
+            1
+          ]
+        }
+      ],
+      "format": "commcanary.trace.v1",
+      "system": {
+        "backend": "fixture"
+      },
+      "workload": {
+        "name": "contract-fixture"
+      }
+    }
+  },
+  "canonical_json_vectors": [
+    {
+      "canonical_utf8": "{\"a\":[true,null,1.25],\"z\":-0.0,\"\\u00e9\":\"\\u2603\"}",
+      "canonical_utf8_hex": "7b2261223a5b747275652c6e756c6c2c312e32355d2c227a223a2d302e302c225c7530306539223a225c7532363033227d",
+      "input": {
+        "a": [
+          true,
+          null,
+          1.25
+        ],
+        "z": -0.0,
+        "é": "☃"
+      },
+      "name": "ordering_unicode_float",
+      "sha256": "71ed3689acb3b9a91317b3c5345942c3cbf09ea5d6a61212de6b5ee9b074d1d1"
+    },
+    {
+      "canonical_utf8": "{\"empty\":[],\"integer\":9007199254740991,\"outer\":{\"line\":\"a\\nb\",\"quote\":\"\\\"\"}}",
+      "canonical_utf8_hex": "7b22656d707479223a5b5d2c22696e7465676572223a393030373139393235343734303939312c226f75746572223a7b226c696e65223a22615c6e62222c2271756f7465223a225c22227d7d",
+      "input": {
+        "empty": [],
+        "integer": 9007199254740991,
+        "outer": {
+          "line": "a\nb",
+          "quote": "\""
+        }
+      },
+      "name": "nested_escapes",
+      "sha256": "0c2181cce69f06c766882154ff281d7b142bb2c68bed2698b450fa9e7b553419"
+    },
+    {
+      "canonical_utf8": "{\"canary\":\"commcanary.canary.v2\",\"report\":\"commcanary.report.v2\",\"trace\":\"commcanary.trace.v1\"}",
+      "canonical_utf8_hex": "7b2263616e617279223a22636f6d6d63616e6172792e63616e6172792e7632222c227265706f7274223a22636f6d6d63616e6172792e7265706f72742e7632222c227472616365223a22636f6d6d63616e6172792e74726163652e7631227d",
+      "input": {
+        "canary": "commcanary.canary.v2",
+        "report": "commcanary.report.v2",
+        "trace": "commcanary.trace.v1"
+      },
+      "name": "cross_format_tags",
+      "sha256": "74f1a31d75b430ec60f62417b2fc4381be8bf5ed396f2ef88b4ec84c24b38f5f"
+    }
+  ],
+  "format": "commcanary.hash_vectors.v1",
+  "motif_source_digest": {
+    "canonical_utf8": "{\"sources\":[\"e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95\",\"e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95\",\"e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95\",\"e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95\"]}",
+    "sha256": "639067a8c88e474451978846d5c418ea47af413885e877169b05db1b5a7a423c",
+    "source_digests": [
+      "e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95",
+      "e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95",
+      "e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95",
+      "e4f60d0aa6d7f3d3b6a6494b1c861b99f649c6f9ec51abaf201b20f297327c95"
+    ]
+  },
+  "source_segment_digest": {
+    "canonical_utf8": "{\"samples\":[{\"arrival_offsets_us\":[0.0,2.0],\"arrival_skew_us\":2.0,\"compute_before_us\":3.0,\"compute_overlap_us\":4.0,\"compute_pressure\":0.5,\"gap_us\":1.0},{\"arrival_offsets_us\":[1.0,1.0],\"arrival_skew_us\":0.0,\"compute_before_us\":0.0,\"compute_fields_uncertain\":true,\"compute_overlap_us\":5.0,\"compute_pressure\":0.75,\"gap_us\":2.5,\"observed_exposed_us\":9.25}]}",
+    "samples": [
+      {
+        "arrival_offsets_us": [
+          0.0,
+          2.0
+        ],
+        "arrival_skew_us": 2.0,
+        "compute_before_us": 3.0,
+        "compute_overlap_us": 4.0,
+        "compute_pressure": 0.5,
+        "gap_us": 1.0
+      },
+      {
+        "arrival_offsets_us": [
+          1.0,
+          1.0
+        ],
+        "arrival_skew_us": 0.0,
+        "compute_before_us": 0.0,
+        "compute_fields_uncertain": true,
+        "compute_overlap_us": 5.0,
+        "compute_pressure": 0.75,
+        "gap_us": 2.5,
+        "observed_exposed_us": 9.25
+      }
+    ],
+    "sha256": "2c429eaae8eb55abad97521c6df42636906074f692d78188241f6b3f8de0937a"
+  }
+}

@@ -1,0 +1,307 @@
+{
+  "format": "commcanary.semantic_vectors.v1",
+  "motif_equivalence": {
+    "expected": {
+      "calibration_evaluation_sha256": "a9033c7ebccdd4d0519e04b352a28bd511fa0b809f26eba473f3ae3170cc4c03",
+      "execution_semantic_sha256": "e57875471cc6d3fdba8ee3a00f529bb66f3d76e26834ea6c66a53786a774d3d6",
+      "motif_source_digest": "ebc763d59c98b4cf3c9e5339af39e9f53215278c9d3cd8c6bb054c4e8fc6bf0e",
+      "replay_samples_sha256": "8f417ef7422a55b037072c313f9432fed10120a49d2fabe806b91f18e0d9a22c",
+      "scheduler_execution_sha256": "e57875471cc6d3fdba8ee3a00f529bb66f3d76e26834ea6c66a53786a774d3d6",
+      "sequence_motif_count": 1
+    },
+    "replay_seed": 7,
+    "trace": {
+      "events": [
+        {
+          "bytes": 1024,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-0",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1536,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-1",
+          "op": "all_gather",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-2",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1536,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-3",
+          "op": "all_gather",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-4",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1536,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-5",
+          "op": "all_gather",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-6",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1536,
+          "compute_overlap_us": 2.0,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-7",
+          "op": "all_gather",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 1.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        }
+      ],
+      "format": "commcanary.trace.v1",
+      "workload": {
+        "name": "abab-golden"
+      }
+    }
+  },
+  "replay_determinism": {
+    "expected_metrics_by_seed": {
+      "0": {
+        "arrival_skew_max_us": 1.0,
+        "arrival_skew_median_us": 1.0,
+        "arrival_skew_p95_us": 1.0,
+        "avg_rank_wait_median_us": 0.5,
+        "communication_hidden_pct": 0.0,
+        "count": 1,
+        "max_us": 13.898,
+        "mean_us": 13.898,
+        "median_us": 13.898,
+        "p95_us": 13.898,
+        "p99_us": 13.898
+      },
+      "11": {
+        "arrival_skew_max_us": 1.0,
+        "arrival_skew_median_us": 1.0,
+        "arrival_skew_p95_us": 1.0,
+        "avg_rank_wait_median_us": 0.5,
+        "communication_hidden_pct": 0.0,
+        "count": 1,
+        "max_us": 14.529,
+        "mean_us": 14.529,
+        "median_us": 14.529,
+        "p95_us": 14.529,
+        "p99_us": 14.529
+      },
+      "3": {
+        "arrival_skew_max_us": 1.0,
+        "arrival_skew_median_us": 1.0,
+        "arrival_skew_p95_us": 1.0,
+        "avg_rank_wait_median_us": 0.5,
+        "communication_hidden_pct": 0.0,
+        "count": 1,
+        "max_us": 14.224,
+        "mean_us": 14.224,
+        "median_us": 14.224,
+        "p95_us": 14.224,
+        "p99_us": 14.224
+      },
+      "9223372036854775807": {
+        "arrival_skew_max_us": 1.0,
+        "arrival_skew_median_us": 1.0,
+        "arrival_skew_p95_us": 1.0,
+        "avg_rank_wait_median_us": 0.5,
+        "communication_hidden_pct": 0.0,
+        "count": 1,
+        "max_us": 13.64,
+        "mean_us": 13.64,
+        "median_us": 13.64,
+        "p95_us": 13.64,
+        "p99_us": 13.64
+      }
+    },
+    "trace_fixture": "trace.valid.json"
+  },
+  "run_pattern_equivalence": {
+    "expected": {
+      "calibration_evaluation_sha256": "7bceb5e6a853586a6ab25d7f3b601ac1aa9a8e353fd50258085283b34f672780",
+      "execution_semantic_sha256": "71dede2c1acddd231d3bbbde93841788967323508a0eab7a1548c6fc6ecb47db",
+      "replay_metrics_seed_3": {
+        "arrival_skew_max_us": 0.0,
+        "arrival_skew_median_us": 0.0,
+        "arrival_skew_p95_us": 0.0,
+        "avg_rank_wait_median_us": 0.0,
+        "communication_hidden_pct": 0.0,
+        "count": 4,
+        "max_us": 48.587,
+        "mean_us": 30.889,
+        "median_us": 30.872,
+        "p95_us": 46.818,
+        "p99_us": 48.233
+      }
+    },
+    "replay_seed": 3,
+    "trace": {
+      "events": [
+        {
+          "bytes": 1024,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-0",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 0.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-1",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 0.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-2",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 0.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        },
+        {
+          "bytes": 1024,
+          "gap_us": 1.0,
+          "group": "tp",
+          "id": "event-3",
+          "op": "all_reduce",
+          "phase": "decode",
+          "rank_arrival_us": {
+            "0": 0.0,
+            "1": 0.0
+          },
+          "ranks": [
+            0,
+            1
+          ]
+        }
+      ],
+      "format": "commcanary.trace.v1",
+      "workload": {
+        "name": "run-pattern-golden"
+      }
+    }
+  }
+}

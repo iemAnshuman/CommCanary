@@ -1,0 +1,79 @@
+{
+  "canonical_numeric_trace": {
+    "events": [
+      {
+        "arrival_skew_us": "1.0",
+        "bytes": "1024",
+        "op": "all_reduce",
+        "rank_arrival_us": {
+          "0": "0.0",
+          "1": "1.0"
+        },
+        "rank_count": "2",
+        "ranks": [
+          "0",
+          "1"
+        ]
+      }
+    ],
+    "format": "commcanary.trace.v1"
+  },
+  "format": "commcanary.wire_policy_vectors.v1",
+  "parse_cases": [
+    {
+      "error_fragment": "duplicate JSON object key 'events'",
+      "name": "duplicate_root_key",
+      "payload": "{\"format\":\"commcanary.trace.v1\",\"events\":[],\"events\":[]}"
+    },
+    {
+      "error_fragment": "duplicate JSON object key 'name'",
+      "name": "duplicate_nested_key",
+      "payload": "{\"format\":\"commcanary.trace.v1\",\"workload\":{\"name\":\"a\",\"name\":\"b\"},\"events\":[]}"
+    },
+    {
+      "error_fragment": "non-standard JSON constant 'NaN'",
+      "name": "non_finite_constant",
+      "payload": "{\"format\":\"commcanary.trace.v1\",\"events\":[],\"value\":NaN}"
+    }
+  ],
+  "policy": {
+    "duplicate_keys": "reject_during_load",
+    "extensions": "ordinary_unknown_fields_with_no_reserved_semantics",
+    "numeric_coercion": "runtime_validator_accepts_without_mutating_but_portable_schema_rejects",
+    "unknown_fields": "accept_and_include_in_full_provenance_but_semantic_projections_may_ignore",
+    "unsupported_format": "load_as_json_then_reject_in_artifact_validator"
+  },
+  "unknown_and_extension_trace": {
+    "events": [
+      {
+        "bytes": 1024,
+        "commcanary_future_hint": {
+          "mode": "opaque"
+        },
+        "op": "all_reduce",
+        "ranks": [
+          0,
+          1
+        ]
+      }
+    ],
+    "extensions": {
+      "vendor.example": {
+        "root": true
+      }
+    },
+    "format": "commcanary.trace.v1",
+    "workload": {
+      "extensions": {
+        "vendor.example": {
+          "classification": "internal"
+        }
+      },
+      "name": "extension-policy"
+    }
+  },
+  "unsupported_trace": {
+    "events": [],
+    "format": "commcanary.trace.v2"
+  }
+}

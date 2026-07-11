@@ -80,14 +80,10 @@ class BehaviorConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(SchemaError, "must be a mapping"):
             _normalize_behavior_configurations([{"name": "left"}, "right"])
 
-        maximum = _normalize_behavior_configurations(
-            [{"name": f"config-{index}"} for index in range(32)]
-        )
+        maximum = _normalize_behavior_configurations([{"name": f"config-{index}"} for index in range(32)])
         self.assertEqual(len(maximum), 32)
         with self.assertRaisesRegex(SchemaError, "at most 32"):
-            _normalize_behavior_configurations(
-                [{"name": f"config-{index}"} for index in range(33)]
-            )
+            _normalize_behavior_configurations([{"name": f"config-{index}"} for index in range(33)])
 
     def test_names_are_required_nonempty_strings_and_unique(self):
         invalid = (
@@ -102,19 +98,13 @@ class BehaviorConfigurationTests(unittest.TestCase):
                     _normalize_behavior_configurations(configurations)
 
         with self.assertRaisesRegex(SchemaError, "unique configuration names"):
-            _normalize_behavior_configurations(
-                [{"name": "duplicate"}, {"name": "duplicate"}]
-            )
+            _normalize_behavior_configurations([{"name": "duplicate"}, {"name": "duplicate"}])
         with self.assertRaisesRegex(SchemaError, "unique configuration names"):
-            _normalize_behavior_configurations(
-                [{"name": " duplicate "}, {"name": "duplicate"}]
-            )
+            _normalize_behavior_configurations([{"name": " duplicate "}, {"name": "duplicate"}])
 
     def test_unknown_keys_are_rejected(self):
         with self.assertRaisesRegex(SchemaError, "unknown keys.*'mystery'"):
-            _normalize_behavior_configurations(
-                _two_configs({"mystery": 1})
-            )
+            _normalize_behavior_configurations(_two_configs({"mystery": 1}))
 
     def test_replay_fields_are_normalized_and_detached(self):
         raw = _two_configs(

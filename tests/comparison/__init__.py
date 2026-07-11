@@ -1,0 +1,1 @@
+"""Comparison capability tests."""

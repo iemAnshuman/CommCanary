@@ -1,0 +1,16 @@
+{
+  "compiler": {
+    "artifact_provenance_algorithm": "commcanary.artifact-provenance.v2",
+    "artifact_provenance_sha256": "c1d68e104d40965e526f3a03280c1abb04bcffbfa39e171a9c71151265d0b3c3",
+    "calibration_evaluation_sha256": "d88ec419bf18fa984ef3aa58a291ca05e640ddc6e2ef160f9e2f61c523d87edc",
+    "execution_semantic_sha256": "d88ec419bf18fa984ef3aa58a291ca05e640ddc6e2ef160f9e2f61c523d87edc",
+    "integrity_profile": "commcanary.canary-integrity.v1",
+    "scheduler_execution_sha256": "d88ec419bf18fa984ef3aa58a291ca05e640ddc6e2ef160f9e2f61c523d87edc",
+    "source_events": 0,
+    "source_normalized_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "source_trace_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "events": [],
+  "format": "commcanary.canary.v2",
+  "source_format": "commcanary.trace.v1"
+}

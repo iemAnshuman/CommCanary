@@ -1,0 +1,131 @@
+{
+  "absolute_tolerance_us": 1.0,
+  "assurance_state": "behaviorally_verified",
+  "behavioral_fidelity_status": "pass",
+  "capture_uncertainty": {
+    "compute_fields_uncertain_events": 0,
+    "status": "certain"
+  },
+  "configuration_ranking_status": "pass",
+  "configurations": [
+    {
+      "canary_metrics": {
+        "communication_hidden_pct": 0.0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "canary_queue_wait_metrics": {
+        "count": 0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "checks": [],
+      "name": "fixture-a",
+      "op_checks": [],
+      "phase_checks": [],
+      "queue_wait_checks": [],
+      "source_metrics": {
+        "communication_hidden_pct": 0.0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "source_queue_wait_metrics": {
+        "count": 0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "status": "pass",
+      "tail_event_recall": {
+        "checks": [],
+        "status": "pass"
+      }
+    },
+    {
+      "canary_metrics": {
+        "communication_hidden_pct": 0.0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "canary_queue_wait_metrics": {
+        "count": 0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "checks": [],
+      "name": "fixture-b",
+      "op_checks": [],
+      "phase_checks": [],
+      "queue_wait_checks": [],
+      "source_metrics": {
+        "communication_hidden_pct": 0.0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "source_queue_wait_metrics": {
+        "count": 0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "status": "pass",
+      "tail_event_recall": {
+        "checks": [],
+        "status": "pass"
+      }
+    }
+  ],
+  "format": "commcanary.behavior_verification.v1",
+  "hidden_tolerance_points": 5.0,
+  "ranking": {
+    "agreement": 1.0,
+    "metric": "pairwise_latency_metrics",
+    "orders": {},
+    "pairwise": [],
+    "passed_pairs": 0,
+    "status": "pass",
+    "tie_tolerance_us": 0.001,
+    "total_pairs": 0
+  },
+  "ranking_tie_tolerance_us": 0.001,
+  "relative_tolerance_pct": 10.0,
+  "representation_fidelity_status": "lossless_timing",
+  "source_coverage_status": "full_source",
+  "source_events": 0,
+  "source_verification": {
+    "assurance_state": "source_corresponding",
+    "checks": [
+      {
+        "name": "source_format",
+        "status": "pass"
+      }
+    ],
+    "format": "commcanary.fidelity_verification.v1",
+    "status": "source_verified"
+  },
+  "source_verified_status": "source_verified",
+  "status": "behaviorally_verified",
+  "tail_recall_threshold": 0.8
+}

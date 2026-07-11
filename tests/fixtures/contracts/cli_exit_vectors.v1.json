@@ -1,0 +1,56 @@
+{
+  "cases": {
+    "capture_child_failure": {
+      "exit_code": 4,
+      "stderr": "commcanary: workload exited with child code 7\n",
+      "stdout": ""
+    },
+    "commcanary_input_error": {
+      "exit_code": 3,
+      "stderr_prefix": "commcanary: ",
+      "stdout": ""
+    },
+    "successful_compile": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout_prefix": "compiled 1 trace events into 1 canary events;"
+    },
+    "usage_error": {
+      "exit_code": 2,
+      "stderr_contains": [
+        "usage: commcanary",
+        "the following arguments are required: command"
+      ],
+      "stdout": ""
+    },
+    "valid_negative_verification": {
+      "exit_code": 1,
+      "stderr": "",
+      "stdout_prefix": "fidelity verification: failed"
+    },
+    "version_capability_summary": {
+      "exit_code": 0,
+      "stderr": "",
+      "stdout_lines": [
+        "commcanary 0.3.0",
+        "canonicalization: commcanary.canonical-json.v1",
+        "replay-model: deterministic-scheduler-v4",
+        "formats:",
+        "  trace: commcanary.trace.v1",
+        "  canary: commcanary.canary.v2",
+        "  report: commcanary.report.v2",
+        "  comparison: commcanary.compare.v2",
+        "  fidelity_verification: commcanary.fidelity_verification.v1",
+        "  behavior_verification: commcanary.behavior_verification.v1",
+        "  report_verification: commcanary.report_verification.v1"
+      ],
+      "stdout_prefix": "commcanary "
+    }
+  },
+  "format": "commcanary.cli_exit_vectors.v1",
+  "contract_notes": [
+    "Usage, valid-negative, application-error, child-failure, and interrupt codes occupy distinct classes.",
+    "Capture records the original child code in stderr while returning the tool-defined child-failure code.",
+    "The --version output exposes exact format capabilities, canonicalization, and replay model versions."
+  ]
+}

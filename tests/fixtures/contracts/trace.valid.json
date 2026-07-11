@@ -1,0 +1,27 @@
+{
+  "events": [
+    {
+      "arrival_skew_us": 1.0,
+      "bytes": 1024,
+      "group": "tp",
+      "op": "all_reduce",
+      "phase": "decode",
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 1.0
+      },
+      "rank_count": 2,
+      "ranks": [
+        0,
+        1
+      ]
+    }
+  ],
+  "format": "commcanary.trace.v1",
+  "system": {
+    "backend": "fixture"
+  },
+  "workload": {
+    "name": "contract-fixture"
+  }
+}

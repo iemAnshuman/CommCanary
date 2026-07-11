@@ -1,0 +1,11 @@
+{
+  "assurance_state": "model_recomputed",
+  "checks": [
+    {
+      "name": "metrics",
+      "status": "pass"
+    }
+  ],
+  "format": "commcanary.report_verification.v1",
+  "status": "model_recomputed"
+}

@@ -1,0 +1,1 @@
+"""Compilation capability tests."""

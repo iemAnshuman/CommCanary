@@ -1,0 +1,217 @@
+{
+  "base_report_fixture": "report.valid.json",
+  "cases": [
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 11.5,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 11.5
+      },
+      "expected": {
+        "absolute_delta": 1.5,
+        "evaluation_code": "overall.p99",
+        "reasons": [
+          "latency regression is below the failure threshold but large enough to inspect"
+        ],
+        "relative_delta_pct": 15.0,
+        "relative_status": "finite",
+        "threshold_result": "warn",
+        "verdict": "warn"
+      },
+      "name": "relative_failure_threshold_is_exclusive"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 11.51,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 11.51
+      },
+      "expected": {
+        "absolute_delta": 1.51,
+        "evaluation_code": "overall.p99",
+        "reasons": [
+          "p99 regression 15.1% exceeds 15.0%"
+        ],
+        "relative_delta_pct": 15.1,
+        "relative_status": "finite",
+        "threshold_result": "fail",
+        "verdict": "fail"
+      },
+      "name": "relative_failure_threshold_just_above"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 1.0,
+        "mean_us": 1.0,
+        "median_us": 1.0,
+        "p95_us": 1.0,
+        "p99_us": 1.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 2.0,
+        "mean_us": 1.0,
+        "median_us": 1.0,
+        "p95_us": 1.0,
+        "p99_us": 2.0
+      },
+      "expected": {
+        "absolute_delta": 1.0,
+        "evaluation_code": "overall.p99",
+        "reasons": [
+          "latency regression is below the failure threshold but large enough to inspect"
+        ],
+        "relative_delta_pct": 100.0,
+        "relative_status": "finite",
+        "threshold_result": "warn",
+        "verdict": "warn"
+      },
+      "name": "absolute_failure_threshold_is_exclusive"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 1.0,
+        "mean_us": 1.0,
+        "median_us": 1.0,
+        "p95_us": 1.0,
+        "p99_us": 1.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 2.001,
+        "mean_us": 1.0,
+        "median_us": 1.0,
+        "p95_us": 1.0,
+        "p99_us": 2.001
+      },
+      "expected": {
+        "absolute_delta": 1.001,
+        "evaluation_code": "overall.p99",
+        "reasons": [
+          "p99 regression 100.1% exceeds 15.0%"
+        ],
+        "relative_delta_pct": 100.1,
+        "relative_status": "finite",
+        "threshold_result": "fail",
+        "verdict": "fail"
+      },
+      "name": "absolute_failure_threshold_just_above"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 45.0,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "expected": {
+        "absolute_delta": 5.0,
+        "evaluation_code": "overall.communication_hidden_pct_drop",
+        "reasons": [
+          "latency regression is below the failure threshold but large enough to inspect"
+        ],
+        "relative_delta_pct": null,
+        "relative_status": null,
+        "threshold_result": "warn",
+        "verdict": "warn"
+      },
+      "name": "hidden_drop_failure_threshold_is_exclusive"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 44.99,
+        "max_us": 10.0,
+        "mean_us": 10.0,
+        "median_us": 10.0,
+        "p95_us": 10.0,
+        "p99_us": 10.0
+      },
+      "expected": {
+        "absolute_delta": 5.01,
+        "evaluation_code": "overall.communication_hidden_pct_drop",
+        "reasons": [
+          "communication hidden percentage dropped 5.01 points, exceeding 5.00"
+        ],
+        "relative_delta_pct": null,
+        "relative_status": null,
+        "threshold_result": "fail",
+        "verdict": "fail"
+      },
+      "name": "hidden_drop_failure_threshold_just_above"
+    },
+    {
+      "baseline_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 0.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 0.0
+      },
+      "candidate_metrics": {
+        "communication_hidden_pct": 50.0,
+        "max_us": 2.0,
+        "mean_us": 0.0,
+        "median_us": 0.0,
+        "p95_us": 0.0,
+        "p99_us": 2.0
+      },
+      "expected": {
+        "absolute_delta": 2.0,
+        "evaluation_code": "overall.p99",
+        "reasons": [
+          "p99 regression is new nonzero latency (2.000 us absolute delta from a zero baseline)"
+        ],
+        "relative_delta_pct": null,
+        "relative_status": "new_nonzero_regression",
+        "threshold_result": "fail",
+        "verdict": "fail"
+      },
+      "name": "zero_baseline_has_explicit_structured_status"
+    }
+  ],
+  "format": "commcanary.comparison_boundary_vectors.v1",
+  "structured_reason_code_path": "evaluations[].metric"
+}

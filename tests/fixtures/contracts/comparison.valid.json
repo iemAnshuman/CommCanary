@@ -1,0 +1,133 @@
+{
+  "baseline": {
+    "backend": {},
+    "metrics": {
+      "arrival_skew_max_us": 0.0,
+      "arrival_skew_median_us": 0.0,
+      "arrival_skew_p95_us": 0.0,
+      "avg_rank_wait_median_us": 0.0,
+      "communication_hidden_pct": 0.0,
+      "count": 0,
+      "max_us": 0.0,
+      "mean_us": 0.0,
+      "median_us": 0.0,
+      "p95_us": 0.0,
+      "p99_us": 0.0
+    }
+  },
+  "breakdown_delta": {
+    "by_op": [],
+    "by_phase": []
+  },
+  "candidate": {
+    "backend": {},
+    "metrics": {
+      "arrival_skew_max_us": 0.0,
+      "arrival_skew_median_us": 0.0,
+      "arrival_skew_p95_us": 0.0,
+      "avg_rank_wait_median_us": 0.0,
+      "communication_hidden_pct": 0.0,
+      "count": 0,
+      "max_us": 0.0,
+      "mean_us": 0.0,
+      "median_us": 0.0,
+      "p95_us": 0.0,
+      "p99_us": 0.0
+    }
+  },
+  "compatibility": {
+    "baseline_canary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "baseline_execution_semantic_sha256": null,
+    "baseline_replay_protocol_sha256": "8d124cb2027b98d38360fae19674dea6337cac272c42107da04af1442cdf0180",
+    "baseline_scheduler_execution_sha256": null,
+    "baseline_simulation_model": "fixture-v1",
+    "candidate_canary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "candidate_execution_semantic_sha256": null,
+    "candidate_replay_protocol_sha256": "8d124cb2027b98d38360fae19674dea6337cac272c42107da04af1442cdf0180",
+    "candidate_scheduler_execution_sha256": null,
+    "candidate_simulation_model": "fixture-v1",
+    "compatible": true,
+    "reasons": []
+  },
+  "created_at": "2026-07-10T20:51:00.342040+00:00",
+  "delta": {
+    "communication_hidden_pct_points": 0.0,
+    "median_absolute_us": 0.0,
+    "median_pct": 0.0,
+    "median_relative_status": "both_zero",
+    "p95_absolute_us": 0.0,
+    "p95_pct": 0.0,
+    "p95_relative_status": "both_zero",
+    "p99_absolute_us": 0.0,
+    "p99_pct": 0.0,
+    "p99_relative_status": "both_zero"
+  },
+  "derived_verdict": "pass",
+  "evaluations": [
+    {
+      "absolute_delta": 0.0,
+      "absolute_threshold_us": 1.0,
+      "baseline": 0.0,
+      "candidate": 0.0,
+      "metric": "overall.median",
+      "relative_delta_pct": 0.0,
+      "relative_status": "both_zero",
+      "threshold_pct": 8.0,
+      "threshold_result": "pass"
+    },
+    {
+      "absolute_delta": 0.0,
+      "absolute_threshold_us": 1.0,
+      "baseline": 0.0,
+      "candidate": 0.0,
+      "metric": "overall.p95",
+      "relative_delta_pct": 0.0,
+      "relative_status": "both_zero",
+      "threshold_pct": 10.0,
+      "threshold_result": "pass"
+    },
+    {
+      "absolute_delta": 0.0,
+      "absolute_threshold_us": 1.0,
+      "baseline": 0.0,
+      "candidate": 0.0,
+      "metric": "overall.p99",
+      "relative_delta_pct": 0.0,
+      "relative_status": "both_zero",
+      "threshold_pct": 15.0,
+      "threshold_result": "pass"
+    },
+    {
+      "baseline": 0.0,
+      "candidate": 0.0,
+      "drop_points": 0.0,
+      "metric": "overall.communication_hidden_pct_drop",
+      "threshold_points": 5.0,
+      "threshold_result": "pass"
+    }
+  ],
+  "format": "commcanary.compare.v2",
+  "reasons": [
+    "candidate is within configured thresholds"
+  ],
+  "thresholds": {
+    "breakdown_absolute_threshold_us": 1.0,
+    "breakdown_threshold_pct": 15.0,
+    "hidden_drop_threshold_points": 5.0,
+    "median_absolute_threshold_us": 1.0,
+    "median_threshold_pct": 8.0,
+    "p95_absolute_threshold_us": 1.0,
+    "p95_threshold_pct": 10.0,
+    "p99_absolute_threshold_us": 1.0,
+    "p99_threshold_pct": 15.0
+  },
+  "uncertainty": {
+    "baseline_compute_fields_uncertain_events": 0,
+    "candidate_compute_fields_uncertain_events": 0
+  },
+  "verdict": "pass",
+  "worst_regressions": {
+    "operation": null,
+    "phase": null
+  }
+}

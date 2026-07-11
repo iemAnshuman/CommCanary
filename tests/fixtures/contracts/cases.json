@@ -1,0 +1,109 @@
+{
+  "behavior_verification": {
+    "invalid": {
+      "path": [
+        "tail_recall_threshold"
+      ],
+      "value": 1.5
+    },
+    "tampered": {
+      "path": [
+        "status"
+      ],
+      "value": "failed"
+    }
+  },
+  "canary": {
+    "invalid": {
+      "path": [
+        "compiler",
+        "source_events"
+      ],
+      "value": -1
+    },
+    "tampered": {
+      "path": [
+        "compiler",
+        "artifact_provenance_sha256"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
+  "comparison": {
+    "invalid": {
+      "path": [
+        "thresholds",
+        "p99_threshold_pct"
+      ],
+      "value": -1.0
+    },
+    "tampered": {
+      "path": [
+        "verdict"
+      ],
+      "value": "warn"
+    }
+  },
+  "fidelity_verification": {
+    "invalid": {
+      "path": [
+        "format"
+      ],
+      "value": "commcanary.fidelity_verification.v2"
+    },
+    "tampered": {
+      "path": [
+        "status"
+      ],
+      "value": "failed"
+    }
+  },
+  "report": {
+    "invalid": {
+      "path": [
+        "metrics",
+        "communication_hidden_pct"
+      ],
+      "value": 101.0
+    },
+    "tampered": {
+      "path": [
+        "replay_protocol",
+        "sha256"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
+  "report_verification": {
+    "invalid": {
+      "path": [
+        "format"
+      ],
+      "value": "commcanary.report_verification.v2"
+    },
+    "tampered": {
+      "path": [
+        "status"
+      ],
+      "value": "failed"
+    }
+  },
+  "trace": {
+    "invalid": {
+      "path": [
+        "events",
+        0,
+        "bytes"
+      ],
+      "value": 0
+    },
+    "tampered": {
+      "path": [
+        "events",
+        0,
+        "rank_count"
+      ],
+      "value": 3
+    }
+  }
+}
