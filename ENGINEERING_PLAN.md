@@ -1,7 +1,48 @@
 # CommCanary Engineering Plan
 
-_Re-audited 2026-07-10 against the live repository working tree._
-_Status: implementation roadmap; no code changes are included._
+## Implementation checkpoint — 2026-07-11
+
+This live checkpoint is before any Rostam login, setup, scheduler, Torch/GPU,
+NCCL, PARAM execution, or cluster command. The branch is
+`codex/engineering-plan-implementation`; the implementation is still
+uncommitted and must not be treated as a release candidate yet.
+
+| Phase | Checkpoint status | What is done | What remains |
+|---|---|---|---|
+| 0 — reconcile state | **Locally complete; integration pending** | Work is isolated on the implementation branch and release inputs are inventoried. | Deliberately commit the assembled tree. The local history and `origin/main` have no merge base and disagree on license history, so pushing/merging needs an explicit maintainer decision. |
+| 1 — integrity and safety | **Complete before this checkpoint** | Integrity ladder, recursive provenance recomputation, detached outputs, path containment, capture hardening, and bounded public resource policies are implemented with adversarial tests. | Re-run the final canonical gate after Phase 7 is repaired. |
+| 2 — wire contracts | **Complete before this checkpoint** | Published schemas, strict canonical JSON/hash vectors, compatibility rules, runtime schema mirror, and installed-wheel contract tests are implemented. | Final clean-archive verification only. |
+| 3 — guardrails | **Complete before this checkpoint** | Canonical local/CI verification, Ruff, strict mypy, coverage floors, import boundaries, shell/workflow/docs checks, and exact installed-wheel tests are implemented. | Extend the now-configured whole-experiment mypy gate to green after the interrupted Phase 7 edits. |
+| 4 — characterization | **Complete before this checkpoint** | Semantic, hash, comparison-boundary, CLI-exit, public-import, and golden artifact characterization is in place. | Final regression run only. |
+| 5 — architecture | **Complete before this checkpoint** | Artifact, compilation, replay, verification, comparison, service, adapter, reporting, and CLI packages now sit behind compatibility facades; the monolithic test file was split by capability. | Final regression run only. |
+| 6 — API and CLI | **Complete before this checkpoint** | Stable API/version/format capability surface, typed package marker, CLI error taxonomy, diagnostics/progress, deprecation behavior, and honest HTML output are implemented. | Final installed-wheel and archive checks only. |
+| 7 — experiment subsystem | **Locally complete; physical evidence pending** | Immutable manifests/cell IDs, append-only attempts, explicit selection, fail-closed completeness, local non-SLURM runner, thin scheduler wrappers, exact submission planning, distinct physical producer schemas, reviewed PARAM patch evidence, and structurally complete core/overlap/shared catalogs are implemented. Experiment JSON/control inputs and child output are bounded. Runtime observations record driver/GPU/topology/binding/clocks. The trusted analyzer binds physical results to manifests, dependencies, inputs, traces, selections, and verdicts; complete multi-campaign results generate ranking/Kendall/regression/cost claims and a post-run archive descriptor. Legacy glob analysis requires an explicit unsafe flag and watermark. | Final clean-archive/package verification. Actual environment resolution, GEMM calibration, shared trace capture, campaign execution, archive bytes, and generated physical claims are Rostam-only. |
+| 8 — measured optimization | **Locally complete** | Deterministic 1K/10K/100K fixtures, isolated wall/RSS/allocation measurements, semantic hashes, smoke/scheduled workflows, and measured capture/PARAM optimizations are implemented. No threshold was fabricated from one runner. | Accumulate stable-runner history before choosing regression thresholds; this is not a Rostam prerequisite. |
+| 9 — docs and release | **Mostly complete; finalization pending** | Architecture/API/CLI/format/integrity/privacy/platform/resource/release docs, ADRs, contributor/security files, reproducible package tooling, SBOM/inventory/checksums, paper-publication boundary, and historical-paper corrections are implemented. Two clean local builds were byte-identical; the installed wheel passed 334 tests before the interrupted Phase 7 edits. | Restore the full green gate; create reviewable commits; verify a clean `git archive HEAD`; build and retain the exact wheel/sdist plus metadata; bind the wheel/source commit in the pending Rostam environment contract; write the final pre-Rostam handoff. Tagging, publishing, and supported-platform CI remain later release actions. |
+
+### Last known verification state
+
+- The canonical fast gate passes with **620 tests**, 88.44% statement coverage
+  (86% floor), every critical branch floor, whole-experiment strict mypy,
+  Ruff/import/shell/workflow/docs checks, and 37 JSON files/18 schemas.
+- The focused Rostam subsystem has **136 passing tests**. All 26 Rostam source
+  files pass strict mypy and all 35 Rostam source/test files pass Ruff and its
+  formatting check.
+- Before the last Phase 7 additions, 334 installed-wheel tests and two
+  byte-identical wheel/sdist builds passed. The final exact archived build and
+  artifact hashes remain to be recorded after the implementation commit.
+
+### Remaining order before Rostam
+
+1. Commit the implementation, verify a clean archived checkout, build exact
+   artifacts, bind their hashes/commit, and record the pre-Rostam handoff.
+2. Re-run the full reproducible package/install gate against that clean state.
+3. Stop. Only after that checkpoint should a maintainer enter Rostam to
+   resolve its ABI/platform locks, observe the site/runtime, calibrate GEMM,
+   capture the shared trace, or submit a campaign.
+
+_Original roadmap re-audited 2026-07-10. Its baseline observations below are
+historical; the live implementation status is the checkpoint above._
 
 This is an engineering plan, not a research agenda. The research material is
 useful as a demanding workload and as an artifact-reproducibility test, but the

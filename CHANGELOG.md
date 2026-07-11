@@ -1,11 +1,96 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - Unreleased
+
+### Integrity and safety
+
+- Added explicit assurance states for structural validity, internal
+  consistency, source correspondence, model recomputation, and behavioral
+  verification; documented that embedded hashes are not authenticity.
+- Recompute profiled canary provenance and source commitments recursively,
+  including motif wrappers/children, and independently verify source IDs,
+  bounds, and digests so a producer-side rehash cannot forge source
+  correspondence.
+- Added one immutable `ResourceLimits` policy across bounded JSON loading,
+  validation, motif/timing preflight, replay, behavior search, reduction,
+  capture merge, and PARAM export; duplicate keys, non-finite constants,
+  excessive nesting, checked-count overflow, and over-budget expansion fail
+  before iteration/materialization.
+- Hardened capture path containment, direct-output ownership across processes,
+  fork/global-recorder lifecycle, linear rank-domain comparison, and bounded
+  checksum-preserving failure bundles.
+- Public compile/replay/compare/baseline/reduction/verification/interop outputs
+  are detached from caller-owned nested input.
+
+### Contracts and API
+
+- Published Draft 2020-12 schemas, literal canonical/hash vectors,
+  compatibility/unknown-field/coercion decisions, equivalence/determinism
+  characterization, and exact comparison boundary fixtures for every supported
+  artifact family.
+- Added an immutable format-capability query, metadata-derived package version,
+  deliberate top-level stable API, explicit experimental namespace, and PEP 561
+  typed-package marker.
+- Stabilized CLI exits: 1 for a valid negative verdict, 2 for usage, 3 for
+  CommCanary application errors, 4 for child/workload failure, and 130 for
+  interruption. `--version` reports package/format/canonicalization/model
+  versions and `--diagnostics-json` emits JSON Lines on stderr.
+- Added lifecycle timing and bounded-work progress diagnostics for behavior
+  search and reduction, rejects method-inapplicable baseline flags, and makes
+  `render-html` the primary spelling while retaining `report` as a deprecated
+  compatibility alias through 0.4.
+- The module-level capture helper now has a typed signature and supports the
+  clearer `byte_count=` spelling while retaining `bytes=` compatibility.
+- HTML reports declare a self-contained content-security policy, structurally
+  escape untrusted content, and explicitly show summary-only data when samples
+  are unavailable instead of synthesizing a distribution.
+
+### Engineering and reproducibility
+
+- Split artifact contracts, compilation, replay, verification, services,
+  comparison, adapters, and reporting by dependency boundary behind tested
+  compatibility facades; an AST gate now rejects upward imports, cycles,
+  unclassified modules, and cross-boundary private imports.
+
+- Added one canonical fast/full/release verification command with Ruff, strict
+  mypy, coverage policy, schema/shell/workflow/docs checks, reproducible build,
+  exact-wheel installation tests, artifact inventory, SHA256SUMS, and SPDX 2.3
+  SBOM generation.
+- Release staging now includes the reviewed docs, schemas, examples, benchmark,
+  experiment, test, and verification sources referenced by the README; archive
+  inspection rejects missing members, the unreproducible historical paper, and
+  private/generated paths, while release mode requires a clean HEAD and unique
+  dated changelog identity.
+- CI tests supported Python versions from built artifacts, pins every action to
+  a reviewed full commit SHA, separates low-privilege release building from
+  OIDC publishing, enables signed PyPI attestations, and reviews/updates
+  dependencies automatically.
+- Added deterministic local 1K/10K/100K benchmark fixtures and an isolated
+  wall/RSS/allocation/semantic-hash runner.
+- Added a pinned weekly scale-observation workflow that retains deterministic
+  three-repeat results but does not fabricate a regression threshold before a
+  stable runner history is reviewed.
+- Added immutable experiment manifests, terminal attempts, explicit retry
+  selection, fail-closed completeness, a bounded shell-free local cell runner,
+  and a golden mini-campaign without SLURM.
+- Bounded every experiment control/result JSON reader, campaign expansion, and
+  physical stdout/stderr path; exit-time output bursts are truncated and
+  recorded, while mocked bounded probes capture driver, GPU, topology,
+  binding, clock, Python, Torch, CUDA, and NCCL observations in attempts.
+- Added a completeness-gated multi-campaign analyzer that binds physical rows
+  to manifest workloads, configurations, dependencies, selected attempts,
+  runtime identities, inputs, and trace hashes before deriving ranking,
+  Kendall, regression, cost, aggregate, and paper-fragment outputs.
+- Added a post-run archive descriptor bound to exact manifests, selections,
+  and completeness verdicts; legacy directory-glob analysis now requires an
+  explicit unsafe flag and watermarks every JSON/Markdown output.
+- Replaced mutable third-party patching with a reviewed PARAM commit/archive,
+  contextual patch, and preimage/postimage hash contract; overlap/shared
+  catalogs remain fail-closed until their Rostam-only GEMM calibration is
+  supplied.
 
 - Added `--overlap-structure` to `export-param`: collectives are emitted for asynchronous issue with explicit `wait` entries placed after the next gap's gemm entries, reconstructing compute/communication concurrency; issue entries carry an `issue` marker so parsers separate issue lines from completion-bearing wait lines.
 - Added compute-fill mode to `export-param` (`--compute-fill-us-per-gemm`, `--compute-fill-gemm-dim`): inter-collective gaps export as PARAM `{"compute": "gemm"}` entries instead of idle timestamps, so physical replay reproduces compute/communication interference. Replay compute-filled traces without `--use-timestamp`.
-
-## 0.3.0 - 2026-07-03
 
 ### Research fidelity
 

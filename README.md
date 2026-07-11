@@ -31,7 +31,12 @@ What makes it different:
   summarizes, so a third party holding the trace can recompute every claim.
 - **Tamper-evident artifacts.** Report validation re-runs the scheduler model
   over embedded samples; `verify-report` recomputes bit-identically. Edited
-  numbers fail validation.
+  numbers fail validation. The exact digest coverage, assurance ladder, and
+  authenticity limits are documented in [`docs/integrity.md`](docs/integrity.md).
+- **Bounded untrusted input.** Loading, expansion, replay, behavior search,
+  reduction, capture merging, and PARAM export share one immutable resource
+  policy. Defaults and stricter service configurations are documented in
+  [`docs/resource-limits.md`](docs/resource-limits.md).
 - **Ecosystem-native.** PyTorch Kineto profiler traces in
   (`import-kineto`), PARAM comms-replay traces out (`export-param`) for
   physical NCCL execution.
@@ -56,7 +61,7 @@ claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install -e .
 
 commcanary compile examples/traces/llama70b_tp8_trace.json \
   --output out/workload.canary.json
@@ -232,7 +237,7 @@ unverified; behavior-search finds the smallest verified timing budget in the
 declared range, and a lossless compact canary preserves the workload ranking.
 
 ```bash
-PYTHONPATH=src python examples/research_scaffolding.py
+python examples/research_scaffolding.py
 ```
 
 The script writes traces, canaries, and behavior-verification outputs under
@@ -375,6 +380,15 @@ commcanary capture --output trace.json --workload-name llama70b -- \
   python examples/instrumented_decode.py
 ```
 
+Direct, non-sharded output files are single-owner across processes. For a child
+that may fail after writing useful partial shards, preserve a bounded checksum
+bundle without recording its environment or raw command line:
+
+```bash
+commcanary capture --output trace.json --preserve-on-failure failed-capture -- \
+  python examples/instrumented_decode.py
+```
+
 ## Reports and comparison
 
 Reports contain:
@@ -404,23 +418,50 @@ global thresholds.
 - `commcanary.canary.v2`
 - `commcanary.report.v2`
 - `commcanary.compare.v2`
+- `commcanary.fidelity_verification.v1`
+- `commcanary.behavior_verification.v1`
+- `commcanary.report_verification.v1`
+
+Exact read/write/validation/migration support and the published JSON Schemas are
+listed in [`docs/formats/compatibility.md`](docs/formats/compatibility.md).
 
 Replay bandwidth is interpreted as **Gbit/s**.
 
-## Tests
+## Development and verification
 
 ```bash
-PYTHONPATH=src python3 -m pytest -q
+python -m pip install -e ".[dev]"
+python -m tools.verify --fast
 ```
+
+`python -m tools.verify` additionally builds wheel and sdist artifacts, installs
+the exact wheel outside the checkout with source-path overrides removed, and
+runs installed-package tests. `python -m tools.verify --reproducible` checks two
+fixed-epoch builds byte-for-byte without pretending an unreleased changelog is
+final; `--release` additionally checks release identity. CI invokes the same
+gate; `PYTHONPATH=src` is not part of the supported verification path.
+
+Contributor workflow, platform guarantees, security reporting, and artifact
+redaction guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md),
+[docs/platform-support.md](docs/platform-support.md),
+[SECURITY.md](SECURITY.md), and [docs/privacy.md](docs/privacy.md). The stable
+[Python API](docs/api.md) and [CLI contract](docs/cli.md) are documented
+separately; maintainers use the [release runbook](docs/release.md). Durable
+engineering choices live in the [ADR index](docs/adr/README.md), and the
+[artifact-evaluation guide](docs/artifact-evaluation.md) names the exact
+handoff between local verification and authorized cluster execution.
+The enforced package DAG, component ownership, data flow, and extension points
+are in [docs/architecture.md](docs/architecture.md).
 
 ## Important limitations
 
-Physical NCCL replay evidence now exists through the PARAM export path and
-the overlap-aware reference replayer in [`experiments/rostam/`](experiments/rostam/).
-That evidence is deliberately narrow: one workload, one `cuda-A100` node,
-PCIe, and 4 GPUs. The repository still does not provide multi-node,
-NVLink-class, multi-model, or multi-generation-hardware evaluation; Chakra ET
-or Nsight ingestion, dependency-aware compute-kernel synthesis, and full
-per-window/per-motif Pareto minimisation also remain open. “Model-free”
-means the artifact omits weights and application code; it does not by itself
-prove privacy or absence of trace leakage.
+The paper and Rostam design notes report a narrow historical physical campaign
+on one 4×A100 PCIe node. The legacy raw attempt archive was not committed, so
+the repository-local engineering gate cannot independently regenerate or
+revalidate those numbers. A new publication-grade claim requires the
+manifest-bound, hash-verified campaign described in the artifact-evaluation
+guide. Multi-node, NVLink-class, multi-model, and multi-generation-hardware
+evaluation; Chakra ET or Nsight ingestion; dependency-aware compute-kernel
+synthesis; and full per-window/per-motif Pareto minimisation remain open.
+“Model-free” means the artifact omits weights and application code; it does not
+by itself prove privacy or absence of trace leakage.

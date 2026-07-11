@@ -12,7 +12,6 @@ from commcanary.compiler import compile_trace, synthesize_behavioral_canary, ver
 from commcanary.replay import replay_canary
 from commcanary.schema import TRACE_FORMAT, write_json
 
-
 RANKING_CONFIGS = [
     {
         "name": "isolated-fast-no-overlap",

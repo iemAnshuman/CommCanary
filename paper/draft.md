@@ -2,8 +2,11 @@
 
 **Anshuman Agrawal** — Louisiana State University *(affiliation to confirm)*
 
-*Draft v0.1 — July 2026. All numbers regenerate from the open artifact
-(`experiments/rostam/` in the CommCanary repository).*
+*Draft v0.1 — July 2026. The numbers below report a historical Rostam
+campaign. Its complete raw attempt archive is not tracked in this checkout, so
+the current open artifact cannot yet regenerate them. Publication requires a
+new manifest-bound, hash-verified campaign and byte-for-byte table
+regeneration.*
 
 ## Abstract
 
@@ -508,14 +511,20 @@ extensions the released kit already parameterizes.
 
 ## 8 Artifact
 
-Everything regenerates from a public repository: the CommCanary pipeline
-(importer/compiler/exporter/verifiers, 126 tests), the Rostam experiment
-kit (SLURM scripts with every cluster-integration failure documented
-in-line as comments), the overlap replayer, all three sweeps' result
-JSONs, and the analysis that produces every table above. The two
-serialized replay modes run under unmodified PARAM (one pinned commit,
-one 1-line compatibility shim, both scripted); the overlap mode runs
-under our replayer on the same trace files.
+The repository preserves the CommCanary importer/compiler/exporter/verifier
+pipeline, the manifest-driven Rostam experiment subsystem, the overlap-aware
+reference replayer, and the historical analysis source. It does **not** contain
+the historical campaign's complete raw attempts, frozen manifest, selection,
+completeness verdict, or all sweep result JSONs. Consequently this checkout
+cannot regenerate the numeric tables above, and neither those tables nor a
+historical test count are current release evidence.
+
+A future publication artifact must use the current immutable campaign workflow:
+retain every terminal attempt, select exactly one attempt per expected cell,
+obtain a complete fail-closed verdict, regenerate the aggregate and paper
+fragment from the hash-bound evidence, and byte-compare the tracked outputs.
+Until that evidence exists, this document remains the historical draft described
+in `paper/README.md` and is excluded from CommCanary release distributions.
 
 ---
 

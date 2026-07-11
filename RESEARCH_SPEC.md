@@ -1,5 +1,12 @@
 # CommCanary research contract
 
+> **Evidence status (2026-07-11):** the paper and legacy Rostam notes report an
+> earlier narrow physical campaign, but its complete raw attempt archive is not
+> tracked in this checkout. The reported values are historical evidence, not a
+> campaign independently regenerable by the current local gate. A new strong
+> claim must use the immutable manifest, attempt ledger, completeness, and
+> hash-verification workflow in `experiments/rostam/`.
+
 ## Defensible paper claim
 
 > Automatically synthesize the smallest model-free communication canary that
