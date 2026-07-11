@@ -1,0 +1,33 @@
+{
+  "$id": "commcanary.rostam.physical.overlap-measurement.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {"pattern": "^a-[0-9]{6}$", "type": "string"},
+    "count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
+    "global_ranks": {"items": {"minimum": 0, "type": "integer"}, "minItems": 1, "type": "array", "uniqueItems": true},
+    "iqr_us": {"minimum": 0, "type": "number"},
+    "operation": {"const": "all_reduce"},
+    "replay_mode": {"enum": ["explicit-wait-overlap", "fixed-input-explicit-wait-overlap"], "type": "string"},
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {"minLength": 1, "type": "string"},
+        "job_id": {"type": ["string", "null"]},
+        "python_version": {"minLength": 1, "type": "string"},
+        "runtime_nccl_version_code": {"maximum": 99999, "minimum": 1, "type": "integer"},
+        "torch_cuda_version": {"type": ["string", "null"]},
+        "torch_version": {"minLength": 1, "type": "string"}
+      },
+      "required": ["hostname", "job_id", "python_version", "runtime_nccl_version_code", "torch_cuda_version", "torch_version"],
+      "type": "object"
+    },
+    "samples_us": {"items": {"minimum": 0, "type": "number"}, "maxItems": 1000000, "minItems": 1, "type": "array"},
+    "trace_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "value_us": {"minimum": 0, "type": "number"},
+    "wall_time_s": {"minimum": 0, "type": "number"},
+    "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
+  },
+  "required": ["attempt_id", "count", "global_ranks", "iqr_us", "operation", "replay_mode", "runtime", "samples_us", "trace_sha256", "value_us", "wall_time_s", "world_size"],
+  "type": "object"
+}

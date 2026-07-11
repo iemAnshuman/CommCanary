@@ -1,0 +1,33 @@
+{
+  "$id": "commcanary.rostam.physical.micro-measurement.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {"pattern": "^a-[0-9]{6}$", "type": "string"},
+    "count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
+    "dtype": {"enum": ["bf16", "fp16", "fp32"], "type": "string"},
+    "global_ranks": {"items": {"minimum": 0, "type": "integer"}, "minItems": 1, "type": "array", "uniqueItems": true},
+    "iqr_us": {"minimum": 0, "type": "number"},
+    "message_sizes_bytes": {"items": {"minimum": 1, "type": "integer"}, "minItems": 1, "type": "array"},
+    "operation": {"const": "all_reduce"},
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {"minLength": 1, "type": "string"},
+        "job_id": {"type": ["string", "null"]},
+        "python_version": {"minLength": 1, "type": "string"},
+        "runtime_nccl_version_code": {"maximum": 99999, "minimum": 1, "type": "integer"},
+        "torch_cuda_version": {"type": ["string", "null"]},
+        "torch_version": {"minLength": 1, "type": "string"}
+      },
+      "required": ["hostname", "job_id", "python_version", "runtime_nccl_version_code", "torch_cuda_version", "torch_version"],
+      "type": "object"
+    },
+    "samples_us": {"items": {"minimum": 0, "type": "number"}, "maxItems": 1000000, "minItems": 1, "type": "array"},
+    "value_us": {"minimum": 0, "type": "number"},
+    "wall_time_s": {"minimum": 0, "type": "number"},
+    "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
+  },
+  "required": ["attempt_id", "count", "dtype", "global_ranks", "iqr_us", "message_sizes_bytes", "operation", "runtime", "samples_us", "value_us", "wall_time_s", "world_size"],
+  "type": "object"
+}

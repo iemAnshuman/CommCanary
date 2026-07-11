@@ -1,0 +1,9 @@
+# Proposed exact direct requirements. These are not an install lock: setup.sh
+# refuses to use them until Rostam resolver output and every wheel hash have
+# been reviewed into environment-contract.json and constraints/locks/.
+pip==24.2
+setuptools==75.1.0
+wheel==0.44.0
+numpy==1.26.4
+pydot==3.0.2
+torch==2.4.1

@@ -1,135 +1,85 @@
 #!/usr/bin/env bash
+# Reproduce the reviewed Rostam user-space environments. This script is
+# intentionally fail-closed: unresolved locks, missing hashes, a dirty/wrong
+# PARAM checkout, or a stale CommCanary wheel abort before mkdir/venv/install.
 set -euo pipefail
 
 EXP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$EXP_DIR/../.." && pwd)"
-# PARAM (pinned commit) uses PEP 604 annotations (str | None) and needs
-# Python >= 3.10; Rostam's default python3 is 3.9. Point PYTHON_BIN at a
-# 3.10+ interpreter (e.g. PYTHON_BIN=python3.11 bash setup.sh).
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
-  echo "error: $PYTHON_BIN is $("$PYTHON_BIN" -V 2>&1); PARAM needs Python >= 3.10." >&2
-  echo "On Rostam: module load python/3.12.3, then PYTHON_BIN=python3 bash experiments/rostam/setup.sh" >&2
+PARAM_DIR="${PARAM_DIR:-$EXP_DIR/third_party/param}"
+VENVS_DIR="$EXP_DIR/venvs"
+PATCH_PATH="$EXP_DIR/patches/param-use-triton-default.patch"
+
+: "${COMMCANARY_WHEEL:?set COMMCANARY_WHEEL to the reviewed wheel path}"
+: "${COMMCANARY_WHEEL_SHA256:?set COMMCANARY_WHEEL_SHA256 to its reviewed digest}"
+
+cd "$REPO_ROOT"
+
+# Static contract hashes and every target-observed field are checked before
+# this script creates or modifies anything.
+"$PYTHON_BIN" -m experiments.rostam.lib.environment_contract \
+  --experiment-dir "$EXP_DIR" verify-ready \
+  --wheel "$COMMCANARY_WHEEL" \
+  --wheel-sha256 "$COMMCANARY_WHEEL_SHA256"
+"$PYTHON_BIN" -m experiments.rostam.lib.environment_contract \
+  --experiment-dir "$EXP_DIR" verify-param-preimage \
+  --param-dir "$PARAM_DIR"
+
+if [[ -e "$VENVS_DIR/nccl-2.19.3" || -e "$VENVS_DIR/nccl-2.20.5" ]]; then
+  echo "refusing to reuse an existing Rostam venv; archive it and rerun setup" >&2
   exit 1
 fi
-echo "using interpreter: $PYTHON_BIN ($("$PYTHON_BIN" -V 2>&1))"
-VENVS_DIR="$EXP_DIR/venvs"
-THIRD_PARTY_DIR="$EXP_DIR/third_party"
-PARAM_DIR="$THIRD_PARTY_DIR/param"
-# Full 40-char SHA required: GitHub's fetch-by-SHA accepts only
-# unabbreviated hashes ("couldn't find remote ref" otherwise).
-# a437fce ("backout D70007712", 2025-03-26): the last commit where the
-# legacy comms replay path is internally consistent AND torch<=2.4
-# compatible. Later commits break one or the other: f2f54d3 (Jun 13) has
-# comms_utils expecting args.use_device_time that commsTraceReplay's parser
-# never defines; Jun 17+ imports torch.distributed._symmetric_memory
-# (torch>=2.5). This commit was verified by a COMPLETE local replay of a
-# CommCanary-exported trace (gloo CPU, 1 and 4 ranks).
-PARAM_COMMIT="a437fcebd3add1aee66fba880f28cec9fd744589"
 
-mkdir -p "$VENVS_DIR" "$THIRD_PARTY_DIR" "$EXP_DIR/results"
+mkdir -p "$VENVS_DIR"
 
-create_venv() {
-  local nccl_version="$1"
-  local name="nccl-$nccl_version"
-  local venv="$VENVS_DIR/$name"
+create_reviewed_venv() {
+  local environment_id="$1"
+  local lock="$EXP_DIR/constraints/locks/${environment_id}.lock.txt"
+  local venv="$VENVS_DIR/$environment_id"
   local python="$venv/bin/python"
+  local freeze_file
 
-  if [[ ! -x "$python" ]]; then
-    echo "creating venv: $venv"
-    "$PYTHON_BIN" -m venv "$venv"
-  else
-    echo "reusing venv: $venv"
-  fi
+  "$PYTHON_BIN" -m venv "$venv"
+  # The complete lock enumerates every transitive wheel. --no-deps is required
+  # for the reviewed torch-2.4.1/NCCL-2.19.3 substitution; --require-hashes
+  # prevents an index or cache from silently changing any artifact.
+  "$python" -m pip install --no-deps --require-hashes -r "$lock"
+  "$python" -m pip install --no-deps "$COMMCANARY_WHEEL"
 
-  "$python" -m pip install --upgrade pip setuptools wheel
-  # torch 2.4.1 is pinned deliberately, on Rostam-verified evidence:
-  # - it is the FIRST torch whose exported Kineto traces carry the named
-  #   collective args (Collective name, In/Out msg nelems, Process Group
-  #   Ranks, ...) over NCCL: probe job 159694 showed 2.3.1 emits none and
-  #   2.4.1 emits all; 2.2.2 emitted none (jobs 159692/159693).
-  # - its native NCCL pin is 2.20.5, and NCCL 2.19.3 link-loads under it
-  #   (verified via /proc/self/maps + ncclGetVersion on the login node), so
-  #   both experiment NCCLs run under ONE identical torch binary.
-  # - torch 2.8 references NCCL 2.27 symbols (ncclMemFree,
-  #   ncclGroupSimulateEnd) and cannot load either pinned version.
-  "$python" -m pip install "torch==2.4.1"
-  # torch 2.2 is incompatible with NumPy 2.x and warns without any numpy;
-  # pin a compatible one so the profiler path has no soft failures.
-  "$python" -m pip install "numpy<2" pydot
-  "$python" -m pip install "nvidia-nccl-cu12==$nccl_version" --force-reinstall
-  "$python" -m pip install -e "$REPO_ROOT"
-  echo "$nccl_version" > "$venv/.commcanary-nccl-version"
+  freeze_file="$(mktemp "${TMPDIR:-/tmp}/commcanary-${environment_id}-freeze.XXXXXX")"
+  trap 'rm -f "$freeze_file"' RETURN
+  "$python" -m pip freeze --all >"$freeze_file"
+  "$PYTHON_BIN" -m experiments.rostam.lib.environment_contract \
+    --experiment-dir "$EXP_DIR" verify-freeze \
+    --environment-id "$environment_id" \
+    --freeze "$freeze_file"
+  rm -f "$freeze_file"
+  trap - RETURN
 }
 
-clone_if_missing() {
-  local url="$1"
-  local target="$2"
-  if [[ -d "$target/.git" ]]; then
-    echo "reusing clone: $target"
-    return 0
-  fi
-  if [[ -e "$target" ]]; then
-    echo "error: $target exists but is not a git clone" >&2
-    return 1
-  fi
-  echo "cloning $url -> $target"
-  git clone --depth 1 "$url" "$target"
-}
+create_reviewed_venv "nccl-2.19.3"
+create_reviewed_venv "nccl-2.20.5"
 
-check_param_invocation() {
-  local replay="$PARAM_DIR/train/comms/pt/commsTraceReplay.py"
-  if [[ ! -f "$replay" ]]; then
-    echo "warning: PARAM replay entry point not found at $replay" >&2
-    return 0
-  fi
-  local missing=0
-  for flag in "--trace-type" "--trace-path"; do
-    if ! grep -R -q -- "$flag" "$replay" "$PARAM_DIR/train/comms/pt" 2>/dev/null; then
-      echo "warning: PARAM replay flag $flag was not found; inspect $replay before running run_canary.sbatch" >&2
-      missing=1
-    fi
-  done
-  if [[ "$missing" -eq 0 ]]; then
-    echo "confirmed PARAM legacy replay flags near $replay: --trace-type basic --trace-path <json>"
-  fi
-  if grep -R -q -- "--use-timestamp" "$replay" "$PARAM_DIR/train/comms/pt" 2>/dev/null; then
-    echo "confirmed PARAM timestamp pacing flag: --use-timestamp"
-  else
-    echo "warning: PARAM --use-timestamp flag was not found; adjust PARAM_EXTRA_ARGS if this checkout differs" >&2
-  fi
-}
+# The preimage and commit were already verified. git applies the committed
+# patch only after a dry check; a postimage hash proves the exact mutation.
+git -C "$PARAM_DIR" apply --check "$PATCH_PATH"
+git -C "$PARAM_DIR" apply "$PATCH_PATH"
+"$PYTHON_BIN" -m experiments.rostam.lib.environment_contract \
+  --experiment-dir "$EXP_DIR" verify-param-postimage \
+  --param-dir "$PARAM_DIR"
 
-create_venv "2.19.3"
-create_venv "2.20.5"
-
-if [[ ! -d "$PARAM_DIR/.git" ]]; then
-  if [[ -e "$PARAM_DIR" ]]; then
-    echo "error: $PARAM_DIR exists but is not a git clone" >&2
+PARAM_LINK="$EXP_DIR/third_party/param_bench"
+if [[ -L "$PARAM_LINK" ]]; then
+  if [[ "$(readlink "$PARAM_LINK")" != "param" ]]; then
+    echo "existing PARAM compatibility link has an unexpected target" >&2
     exit 1
   fi
-  echo "cloning param -> $PARAM_DIR"
-  git clone "https://github.com/facebookresearch/param.git" "$PARAM_DIR"
+elif [[ -e "$PARAM_LINK" ]]; then
+  echo "PARAM compatibility path exists and is not a symlink" >&2
+  exit 1
+else
+  ln -s "param" "$PARAM_LINK"
 fi
-if ! git -C "$PARAM_DIR" cat-file -e "$PARAM_COMMIT^{commit}" 2>/dev/null; then
-  git -C "$PARAM_DIR" fetch --depth 1 origin "$PARAM_COMMIT"
-fi
-git -C "$PARAM_DIR" checkout -q "$PARAM_COMMIT"
-echo "param pinned at $(git -C "$PARAM_DIR" log --format='%h %ad %s' --date=short -n 1)"
-# PARAM internal-drift shim (verified necessary at this pin): the gemm kernel
-# reads collectiveArgs.use_triton, which only commsComputeBench ever sets --
-# commsTraceReplay does not, so compute entries crash without this default.
-if grep -q 'if collectiveArgs.use_triton:' "$PARAM_DIR/train/comms/pt/pytorch_dist_backend.py"; then
-  sed -i 's/if collectiveArgs.use_triton:/if getattr(collectiveArgs, "use_triton", False):/' \
-    "$PARAM_DIR/train/comms/pt/pytorch_dist_backend.py"
-  echo "applied use_triton compat shim to PARAM checkout"
-fi
-# PARAM imports itself as the package 'param_bench' and its parser needs the
-# sibling 'et_replay' package; the symlink plus PYTHONPATH entries for
-# third_party and third_party/param (set in run_canary.sbatch) satisfy both.
-ln -sfn "param" "$THIRD_PARTY_DIR/param_bench"
-check_param_invocation
 
-echo "W-micro is pure torch, so no CUDA toolkit or nvcc build step is required."
-
-echo "setup complete"
+echo "reviewed Rostam environments and PARAM patch installed"

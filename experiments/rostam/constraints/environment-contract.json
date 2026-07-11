@@ -1,0 +1,68 @@
+{
+  "schema": "commcanary.rostam.environment-contract.v1",
+  "status": "pending-rostam-resolution",
+  "reviewed_at": null,
+  "target": {
+    "implementation": "CPython",
+    "python_version": "3.12.3",
+    "python_module": "python/3.12.3",
+    "platform_tags": [],
+    "abi_tag": null
+  },
+  "direct_requirement_files": [
+    {
+      "path": "constraints/direct-common.txt",
+      "sha256": "dae5cc33e52c81192ef1b33f1c5d6bdb9a0f025afbaf65ffcde25ad2e042b822"
+    },
+    {
+      "path": "constraints/direct-nccl-2.19.3.txt",
+      "sha256": "ff0f1de5fd109a3eb42eb119445af0b8882d627b94600ddc422251f750952218"
+    },
+    {
+      "path": "constraints/direct-nccl-2.20.5.txt",
+      "sha256": "12761ac6d845cdb9cdcf907081d6b8170f757b6f860e74e53c71bea39cea337b"
+    }
+  ],
+  "resolver": {
+    "name": "pip",
+    "version": "24.2",
+    "commands": [],
+    "report_sha256": null
+  },
+  "environments": [
+    {
+      "id": "nccl-2.19.3",
+      "lock_path": "constraints/locks/nccl-2.19.3.lock.txt",
+      "lock_sha256": null,
+      "install_phases": [
+        "complete-no-deps-require-hashes",
+        "commcanary-wheel-no-deps"
+      ],
+      "wheel_artifacts": [],
+      "freeze_sha256": null
+    },
+    {
+      "id": "nccl-2.20.5",
+      "lock_path": "constraints/locks/nccl-2.20.5.lock.txt",
+      "lock_sha256": null,
+      "install_phases": [
+        "complete-no-deps-require-hashes",
+        "commcanary-wheel-no-deps"
+      ],
+      "wheel_artifacts": [],
+      "freeze_sha256": null
+    }
+  ],
+  "commcanary_wheel": {
+    "filename": null,
+    "sha256": null,
+    "repository_commit": null
+  },
+  "collection_required": [
+    "Resolve both environments with the target python/3.12.3 module on Rostam.",
+    "Record sysconfig platform/ABI tags and pip --report output.",
+    "Hash every downloaded wheel and both complete --require-hashes locks.",
+    "Install in disposable venvs, capture pip freeze --all, and review runtime imports.",
+    "Build the CommCanary wheel from the manifest repository commit and record its SHA-256."
+  ]
+}

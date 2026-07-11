@@ -17,7 +17,9 @@ import math
 import os
 import statistics
 from contextlib import nullcontext
-from typing import Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
+
+WORKLOAD_STDOUT_SCHEMA = "commcanary.rostam.workload_tp8.stdout.v1"
 
 
 def _parse_size(value: str) -> int:
@@ -72,6 +74,42 @@ def _iqr(values: List[float]) -> float:
     return float(statistics.median(upper) - statistics.median(lower))
 
 
+def _result_payload(
+    *,
+    rank: int,
+    world_size: int,
+    tokens: int,
+    layers: int,
+    hidden: int,
+    gemm_m: int,
+    gemm_n: int,
+    dtype: str,
+    message_sizes: Sequence[int],
+    inject_skew: float,
+    timings_us: Sequence[float],
+) -> Dict[str, object]:
+    rounded = [round(value, 3) for value in timings_us]
+    return {
+        "schema": WORKLOAD_STDOUT_SCHEMA,
+        "rank": rank,
+        "world_size": world_size,
+        "tokens": tokens,
+        "layers": layers,
+        "hidden": hidden,
+        "gemm_m_rank0": gemm_m,
+        "gemm_n": gemm_n,
+        "dtype": dtype,
+        "msg_sizes_bytes": list(message_sizes),
+        "inject_skew": inject_skew,
+        "timings_us": rounded,
+        "metrics": {
+            "median_us": round(_median(rounded), 3),
+            "iqr_us": round(_iqr(rounded), 3),
+            "count": len(rounded),
+        },
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Torch distributed TP8 decode-like workload for CommCanary Rostam experiments."
@@ -89,10 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_torch():
+def _load_torch() -> Tuple[Any, Any]:
     try:
-        import torch
-        import torch.distributed as dist
+        import torch  # type: ignore[import-not-found]
+        import torch.distributed as dist  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SystemExit(
             "workload_tp8.py requires torch for execution. "
@@ -101,7 +139,7 @@ def _load_torch():
     return torch, dist
 
 
-def _torch_dtype(torch, name: str):
+def _torch_dtype(torch: Any, name: str) -> Any:
     if name == "bf16":
         return torch.bfloat16
     if name == "fp16":
@@ -129,7 +167,7 @@ def _scaled_gemm_m(base: int, rank: int, world_size: int, inject_skew: float) ->
     return max(1, int(round(base * factor)))
 
 
-def _run_layer(torch, dist, activation, weight, comm_buffer) -> None:
+def _run_layer(torch: Any, dist: Any, activation: Any, weight: Any, comm_buffer: Any) -> None:
     torch.matmul(activation, weight)
     dist.all_reduce(comm_buffer, op=dist.ReduceOp.SUM)
 
@@ -156,7 +194,9 @@ def run(args: argparse.Namespace) -> int:
     activation = torch.randn((gemm_m, args.hidden), device=device, dtype=dtype)
     weight = torch.randn((args.hidden, gemm_n), device=device, dtype=dtype)
     comm_buffers = [
-        torch.empty((max(1, math.ceil(size / torch.tensor([], dtype=dtype).element_size())),), device=device, dtype=dtype)
+        torch.empty(
+            (max(1, math.ceil(size / torch.tensor([], dtype=dtype).element_size())),), device=device, dtype=dtype
+        )
         for size in args.msg_sizes
     ]
     for buffer in comm_buffers:
@@ -203,25 +243,19 @@ def run(args: argparse.Namespace) -> int:
         prof.export_chrome_trace(args.profile)
 
     if rank == 0:
-        result = {
-            "schema": "commcanary.rostam.workload_tp8.stdout.v1",
-            "rank": rank,
-            "world_size": world_size,
-            "tokens": args.tokens,
-            "layers": args.layers,
-            "hidden": args.hidden,
-            "gemm_m_rank0": gemm_m,
-            "gemm_n": gemm_n,
-            "dtype": args.dtype,
-            "msg_sizes_bytes": args.msg_sizes,
-            "inject_skew": args.inject_skew,
-            "timings_us": [round(value, 3) for value in latencies_us],
-            "metrics": {
-                "median_us": round(_median(latencies_us), 3),
-                "iqr_us": round(_iqr(latencies_us), 3),
-                "count": len(latencies_us),
-            },
-        }
+        result = _result_payload(
+            rank=rank,
+            world_size=world_size,
+            tokens=args.tokens,
+            layers=args.layers,
+            hidden=args.hidden,
+            gemm_m=gemm_m,
+            gemm_n=gemm_n,
+            dtype=args.dtype,
+            message_sizes=args.msg_sizes,
+            inject_skew=args.inject_skew,
+            timings_us=latencies_us,
+        )
         print(json.dumps(result, sort_keys=True), flush=True)
 
     dist.destroy_process_group()

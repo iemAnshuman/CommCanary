@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commcanary.experiment.local.fail-once-measurement.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["attempt_id", "config_value", "mode", "samples_us", "secret_present", "value_us"],
+  "properties": {
+    "attempt_id": {"type": "string", "pattern": "^a-[0-9]{6}$"},
+    "config_value": {"type": ["string", "null"]},
+    "mode": {"const": "fail-once"},
+    "samples_us": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": {"type": "number", "minimum": 0}
+    },
+    "secret_present": {"const": false},
+    "value_us": {"type": "number", "minimum": 0}
+  }
+}

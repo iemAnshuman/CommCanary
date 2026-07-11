@@ -1,0 +1,13 @@
+diff --git a/train/comms/pt/pytorch_dist_backend.py b/train/comms/pt/pytorch_dist_backend.py
+index 51cbeb0..7593840 100644
+--- a/train/comms/pt/pytorch_dist_backend.py
++++ b/train/comms/pt/pytorch_dist_backend.py
+@@ -742,7 +742,7 @@ class PyTorchDistBackend(backendFunctions):
+ 
+     def gemm(self, collectiveArgs):
+         # Matrix multiplication as compute kernel
+-        if collectiveArgs.use_triton:
++        if getattr(collectiveArgs, "use_triton", False):
+             if has_triton:
+                 collectiveArgs.MMout = triton_matmul(
+                     collectiveArgs.MMin1, collectiveArgs.MMin2

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commcanary.experiment.cell-result.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "cell_id",
+    "cell_identity_sha256",
+    "producer_schema",
+    "measurement_schema",
+    "measurement"
+  ],
+  "properties": {
+    "schema": {"const": "commcanary.experiment.cell-result.v1"},
+    "cell_id": {"type": "string", "minLength": 1, "maxLength": 80},
+    "cell_identity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "producer_schema": {"type": "string", "minLength": 1, "maxLength": 160},
+    "measurement_schema": {"type": "string", "minLength": 1, "maxLength": 160},
+    "measurement": {"type": "object"}
+  }
+}

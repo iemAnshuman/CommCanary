@@ -1,0 +1,21 @@
+{
+  "schema": "commcanary.rostam.param-patch-contract.v1",
+  "status": "reviewed",
+  "upstream": {
+    "repository": "https://github.com/facebookresearch/param.git",
+    "commit": "a437fcebd3add1aee66fba880f28cec9fd744589",
+    "source_archive_sha256": "d509a84fa3db007ab99be343b01f678d593628cda270af2ad571b15a2c06a7eb"
+  },
+  "target": {
+    "path": "train/comms/pt/pytorch_dist_backend.py",
+    "preimage_sha256": "68dfa9362b66d47a1203f95cc0f1484397f7052def3e0e124f2e12e8fa912f8d",
+    "postimage_sha256": "219c95f65814d5db66762b96aa8ec5b34b7da4ca928b58abaaa48651880dd23a"
+  },
+  "patch": {
+    "path": "patches/param-use-triton-default.patch",
+    "sha256": "59bf7dff99faf3d187a11424a641a9b2f0d190cf58794da2064d5542dc0141fc",
+    "apply_arguments": ["--check"]
+  },
+  "reviewed_at": "2026-07-11T00:03:06Z",
+  "collection_required": []
+}

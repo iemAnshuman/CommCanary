@@ -1,0 +1,33 @@
+{
+  "$id": "commcanary.rostam.raw-archive-descriptor.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "campaigns": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "campaign_id": {"maxLength": 128, "minLength": 1, "type": "string"},
+          "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "repository_commit": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+          "run_id": {"maxLength": 128, "minLength": 1, "type": "string"},
+          "selection_id": {"maxLength": 128, "minLength": 1, "type": "string"},
+          "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+          "verdict_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+        },
+        "required": ["run_id", "campaign_id", "repository_commit", "manifest_sha256", "selection_id", "selection_sha256", "verdict_sha256"],
+        "type": "object"
+      },
+      "maxItems": 10000,
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "schema": {"const": "commcanary.rostam.raw-archive-descriptor.v1"},
+    "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "size_bytes": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"},
+    "uri": {"maxLength": 4096, "pattern": "^(https|s3|gs|doi|urn|ipfs):[^\\s\\u0000]+$", "type": "string"}
+  },
+  "required": ["schema", "uri", "sha256", "size_bytes", "campaigns"],
+  "type": "object"
+}

@@ -4,7 +4,9 @@
 This file intentionally imports torch lazily so ``python microbench_tp8.py --help``
 works on machines without torch. It measures back-to-back NCCL all_reduce calls
 over bf16-sized communication buffers, matching the message-size cycling and
-stdout JSON schema of ``workload_tp8.py`` while removing all interleaved compute.
+communication dtype of ``workload_tp8.py`` while removing all interleaved
+compute. Its stdout contract is microbenchmark-specific and contains no
+synthetic workload-shape fields.
 """
 
 from __future__ import annotations
@@ -14,7 +16,9 @@ import json
 import math
 import os
 import statistics
-from typing import Iterable, List
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
+
+MICRO_STDOUT_SCHEMA = "commcanary.rostam.microbench_tp8.stdout.v1"
 
 
 def _parse_size(value: str) -> int:
@@ -69,6 +73,30 @@ def _iqr(values: List[float]) -> float:
     return float(statistics.median(upper) - statistics.median(lower))
 
 
+def _result_payload(
+    *,
+    rank: int,
+    world_size: int,
+    dtype: str,
+    message_sizes: Sequence[int],
+    timings_us: Sequence[float],
+) -> Dict[str, object]:
+    rounded = [round(value, 3) for value in timings_us]
+    return {
+        "schema": MICRO_STDOUT_SCHEMA,
+        "rank": rank,
+        "world_size": world_size,
+        "dtype": dtype,
+        "msg_sizes_bytes": list(message_sizes),
+        "timings_us": rounded,
+        "metrics": {
+            "median_us": round(_median(rounded), 3),
+            "iqr_us": round(_iqr(rounded), 3),
+            "count": len(rounded),
+        },
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Torch distributed TP8 all_reduce microbenchmark for CommCanary Rostam experiments."
@@ -80,10 +108,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _load_torch():
+def _load_torch() -> Tuple[Any, Any]:
     try:
-        import torch
-        import torch.distributed as dist
+        import torch  # type: ignore[import-not-found]
+        import torch.distributed as dist  # type: ignore[import-not-found]
     except ImportError as exc:
         raise SystemExit(
             "microbench_tp8.py requires torch for execution. "
@@ -92,7 +120,7 @@ def _load_torch():
     return torch, dist
 
 
-def _torch_dtype(torch, name: str):
+def _torch_dtype(torch: Any, name: str) -> Any:
     if name == "bf16":
         return torch.bfloat16
     if name == "fp16":
@@ -112,7 +140,7 @@ def _world_size() -> int:
     return int(os.environ.get("WORLD_SIZE", os.environ.get("SLURM_NTASKS", "1")))
 
 
-def _run_collective(dist, comm_buffer) -> None:
+def _run_collective(dist: Any, comm_buffer: Any) -> None:
     dist.all_reduce(comm_buffer, op=dist.ReduceOp.SUM)
 
 
@@ -131,8 +159,7 @@ def run(args: argparse.Namespace) -> int:
     dtype = _torch_dtype(torch, args.dtype)
     element_size = torch.tensor([], dtype=dtype).element_size()
     comm_buffers = [
-        torch.empty((max(1, math.ceil(size / element_size)),), device=device, dtype=dtype)
-        for size in args.msg_sizes
+        torch.empty((max(1, math.ceil(size / element_size)),), device=device, dtype=dtype) for size in args.msg_sizes
     ]
     for buffer in comm_buffers:
         buffer.fill_(rank + 1)
@@ -158,25 +185,13 @@ def run(args: argparse.Namespace) -> int:
     dist.barrier()
 
     if rank == 0:
-        result = {
-            "schema": "commcanary.rostam.workload_tp8.stdout.v1",
-            "rank": rank,
-            "world_size": world_size,
-            "tokens": args.iters,
-            "layers": 1,
-            "hidden": 0,
-            "gemm_m_rank0": 0,
-            "gemm_n": 0,
-            "dtype": args.dtype,
-            "msg_sizes_bytes": args.msg_sizes,
-            "inject_skew": 0.0,
-            "timings_us": [round(value, 3) for value in latencies_us],
-            "metrics": {
-                "median_us": round(_median(latencies_us), 3),
-                "iqr_us": round(_iqr(latencies_us), 3),
-                "count": len(latencies_us),
-            },
-        }
+        result = _result_payload(
+            rank=rank,
+            world_size=world_size,
+            dtype=args.dtype,
+            message_sizes=args.msg_sizes,
+            timings_us=latencies_us,
+        )
         print(json.dumps(result, sort_keys=True), flush=True)
 
     dist.destroy_process_group()
