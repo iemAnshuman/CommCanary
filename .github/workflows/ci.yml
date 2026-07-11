@@ -4,30 +4,51 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  verify:
     name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             python-version: "3.9"
+            gate-args: ""
           - os: ubuntu-latest
             python-version: "3.10"
+            gate-args: ""
           - os: ubuntu-latest
             python-version: "3.11"
+            gate-args: ""
           - os: ubuntu-latest
             python-version: "3.12"
+            gate-args: --reproducible
           - os: ubuntu-latest
             python-version: "3.13"
+            gate-args: ""
           - os: macos-latest
             python-version: "3.12"
+            gate-args: ""
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
-      - run: pip install pytest
-      - run: PYTHONPATH=src python -m pytest -q
+          cache: pip
+      - name: Install project and canonical gate dependencies
+        run: python -m pip install --disable-pip-version-check ".[dev]"
+      - name: Run canonical verification gate
+        run: python -m tools.verify ${{ matrix.gate-args }}

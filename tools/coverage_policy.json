@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "statement_floor_percent": "86.0",
+  "responsibilities": [
+    {
+      "name": "resource limits",
+      "branch_floor_percent": "90.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/resources.py",
+        "commcanary/resources.py",
+        "src/commcanary/artifacts/resources.py",
+        "commcanary/artifacts/resources.py"
+      ],
+      "globs": [
+        "*/src/commcanary/resources.py",
+        "*/commcanary/resources.py",
+        "*/commcanary/artifacts/resources/*.py",
+        "src/commcanary/artifacts/resources/*.py",
+        "commcanary/artifacts/resources/*.py"
+      ]
+    },
+    {
+      "name": "schema and validators",
+      "branch_floor_percent": "70.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/schema.py",
+        "commcanary/schema.py",
+        "src/commcanary/validation.py",
+        "commcanary/validation.py",
+        "src/commcanary/artifacts/canary_validation.py",
+        "commcanary/artifacts/canary_validation.py",
+        "src/commcanary/artifacts/wire.py",
+        "commcanary/artifacts/wire.py"
+      ],
+      "globs": [
+        "*/src/commcanary/schema.py",
+        "*/src/commcanary/validation.py",
+        "*/src/commcanary/artifacts/*.py",
+        "*/commcanary/artifacts/*.py",
+        "src/commcanary/artifacts/*.py",
+        "commcanary/artifacts/*.py"
+      ]
+    },
+    {
+      "name": "capture paths",
+      "branch_floor_percent": "70.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/capture.py",
+        "commcanary/capture.py",
+        "src/commcanary/adapters/capture.py",
+        "commcanary/adapters/capture.py",
+        "src/commcanary/adapters/capture_merge.py",
+        "commcanary/adapters/capture_merge.py"
+      ],
+      "globs": [
+        "*/src/commcanary/capture.py",
+        "*/commcanary/capture/*.py",
+        "*/src/commcanary/adapters/capture*.py",
+        "*/commcanary/adapters/capture*.py",
+        "src/commcanary/capture/*.py",
+        "commcanary/capture/*.py",
+        "src/commcanary/adapters/capture*.py",
+        "commcanary/adapters/capture*.py"
+      ]
+    },
+    {
+      "name": "CLI exit and error handling",
+      "branch_floor_percent": "60.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/cli.py",
+        "commcanary/cli.py"
+      ],
+      "globs": [
+        "*/src/commcanary/cli.py",
+        "*/commcanary/cli/*.py",
+        "*/commcanary/command_line/*.py",
+        "src/commcanary/cli/*.py",
+        "src/commcanary/command_line/*.py",
+        "commcanary/cli/*.py",
+        "commcanary/command_line/*.py"
+      ]
+    },
+    {
+      "name": "compiler and integrity",
+      "branch_floor_percent": "85.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/compiler.py",
+        "commcanary/compiler.py",
+        "src/commcanary/integrity.py",
+        "commcanary/integrity.py",
+        "src/commcanary/artifacts/canary_hashes.py",
+        "commcanary/artifacts/canary_hashes.py",
+        "src/commcanary/verification/fidelity.py",
+        "commcanary/verification/fidelity.py"
+      ],
+      "globs": [
+        "*/src/commcanary/compiler.py",
+        "*/src/commcanary/integrity.py",
+        "*/src/commcanary/artifacts/canary_hashes.py",
+        "*/src/commcanary/verification/fidelity.py",
+        "*/commcanary/compilation/*.py",
+        "*/commcanary/integrity/*.py",
+        "*/commcanary/artifacts/canary_hashes.py",
+        "*/commcanary/verification/fidelity.py",
+        "src/commcanary/compilation/*.py",
+        "src/commcanary/integrity/*.py",
+        "commcanary/compilation/*.py",
+        "commcanary/integrity/*.py"
+      ]
+    },
+    {
+      "name": "comparison policy",
+      "branch_floor_percent": "80.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/compare.py",
+        "commcanary/compare.py",
+        "src/commcanary/comparison.py",
+        "commcanary/comparison.py"
+      ],
+      "globs": [
+        "*/src/commcanary/compare.py",
+        "*/src/commcanary/comparison.py",
+        "*/commcanary/comparison/*.py",
+        "src/commcanary/comparison/*.py",
+        "commcanary/comparison/*.py"
+      ]
+    },
+    {
+      "name": "replay and verification",
+      "branch_floor_percent": "75.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/replay.py",
+        "commcanary/replay.py",
+        "src/commcanary/verification.py",
+        "commcanary/verification.py"
+      ],
+      "globs": [
+        "*/src/commcanary/replay.py",
+        "*/src/commcanary/verification.py",
+        "*/commcanary/replay/*.py",
+        "*/commcanary/verification/*.py",
+        "src/commcanary/replay/*.py",
+        "src/commcanary/verification/*.py",
+        "commcanary/replay/*.py",
+        "commcanary/verification/*.py"
+      ]
+    },
+    {
+      "name": "artifact codec and I/O foundations",
+      "branch_floor_percent": "80.0",
+      "required": true,
+      "paths": [
+        "src/commcanary/artifacts.py",
+        "commcanary/artifacts.py",
+        "src/commcanary/artifact_codec.py",
+        "commcanary/artifact_codec.py",
+        "src/commcanary/artifact_io.py",
+        "commcanary/artifact_io.py",
+        "src/commcanary/artifacts/json_codec.py",
+        "commcanary/artifacts/json_codec.py",
+        "src/commcanary/artifacts/io.py",
+        "commcanary/artifacts/io.py"
+      ],
+      "globs": [
+        "*/commcanary/artifacts/*codec*.py",
+        "*/commcanary/artifacts/io*.py",
+        "src/commcanary/artifacts/*codec*.py",
+        "src/commcanary/artifacts/io*.py",
+        "commcanary/artifacts/*codec*.py",
+        "commcanary/artifacts/io*.py"
+      ]
+    }
+  ]
+}
