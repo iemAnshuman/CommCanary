@@ -573,6 +573,16 @@ def test_setup_is_hash_locked_wheel_only_and_has_no_mutating_source_shortcuts() 
     assert "refusing to record a stale binding" in text
 
 
+def test_vendored_third_party_checkouts_are_excluded_from_strict_typing() -> None:
+    # The reviewed PARAM clone lives under third_party/ only on the cluster, so
+    # a gate run there must not type-check vendored code. Ruff skips it via
+    # .gitignore; mypy needs the explicit exclude.
+    pyproject = (REPOSITORY_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert '"^experiments/rostam/third_party/"' in pyproject
+    gitignore = (EXPERIMENT_DIRECTORY / ".gitignore").read_text(encoding="utf-8")
+    assert "third_party/" in gitignore
+
+
 def test_design_marks_historical_evidence_and_the_exact_precluster_boundary() -> None:
     text = (EXPERIMENT_DIRECTORY / "DESIGN.md").read_text(encoding="utf-8")
 

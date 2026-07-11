@@ -102,3 +102,6 @@ strict = true
 warn_unreachable = true
 pretty = true
 show_error_codes = true
+# Vendored third-party checkouts (the reviewed PARAM clone on the cluster) are
+# not ours to type; ruff already skips them via .gitignore, mypy does not.
+exclude = ["^experiments/rostam/third_party/"]
