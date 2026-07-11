@@ -49,6 +49,18 @@ from experiments.rostam.lib.submission import (
 
 REPOSITORY_ROOT = Path(__file__).parents[3]
 EXPERIMENT_DIRECTORY = REPOSITORY_ROOT / "experiments" / "rostam"
+
+
+def _copy_experiment_sources(destination: Path) -> None:
+    """Copy the experiment tree without cluster-side state (venvs, checkouts, results)."""
+
+    shutil.copytree(
+        EXPERIMENT_DIRECTORY,
+        destination,
+        ignore=shutil.ignore_patterns("venvs", "third_party", "results", "__pycache__"),
+    )
+
+
 CATALOG_PATH = EXPERIMENT_DIRECTORY / "configs.json"
 PENDING_GEMM_CALIBRATION = "PENDING_ROSTAM_GEMM_CALIBRATION_US"
 
@@ -323,9 +335,23 @@ def test_param_trace_contract_rejects_aliasing_and_bad_request_lifetimes() -> No
         validate_param_trace(pending, world_size=4)
 
 
-def test_environment_is_pending_while_param_patch_contract_is_locally_reviewed(tmp_path: Path) -> None:
+def test_static_contract_audit_is_coherent_on_both_sides_of_the_cluster_boundary(tmp_path: Path) -> None:
+    # The environment contract is legitimately pending before cluster evidence
+    # collection and reviewed after it; the same checkout must audit cleanly in
+    # both states, but each state must be internally coherent.
     audit = audit_static_contracts(EXPERIMENT_DIRECTORY)
-    assert audit["environment_status"] == "pending-rostam-resolution"
+    environment = json.loads(
+        (EXPERIMENT_DIRECTORY / "constraints" / "environment-contract.json").read_text(encoding="utf-8")
+    )
+    if audit["environment_status"] == "reviewed":
+        assert environment["collection_required"] == []
+        assert environment["reviewed_at"]
+        for row in environment["environments"]:
+            assert row["wheel_artifacts"], f"reviewed environment {row['id']} has no wheel inventory"
+            assert row["freeze_sha256"], f"reviewed environment {row['id']} has no freeze evidence"
+    else:
+        assert audit["environment_status"] == "pending-rostam-resolution"
+        assert environment["collection_required"]
     assert audit["patch_status"] == "reviewed"
     assert audit["param_patch_sha256"] == "59bf7dff99faf3d187a11424a641a9b2f0d190cf58794da2064d5542dc0141fc"
     assert audit["param_source_archive_sha256"] == ("d509a84fa3db007ab99be343b01f678d593628cda270af2ad571b15a2c06a7eb")
@@ -376,7 +402,7 @@ def test_reviewed_param_patch_contract_rejects_regressed_evidence(
     message: str,
 ) -> None:
     experiment = tmp_path / "rostam"
-    shutil.copytree(EXPERIMENT_DIRECTORY, experiment)
+    _copy_experiment_sources(experiment)
     contract_path = experiment / "patches" / "param-patch-contract.json"
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     mutation(contract)
@@ -388,7 +414,7 @@ def test_reviewed_param_patch_contract_rejects_regressed_evidence(
 
 def test_reviewed_param_patch_rejects_zero_context_even_with_matching_patch_hash(tmp_path: Path) -> None:
     experiment = tmp_path / "rostam"
-    shutil.copytree(EXPERIMENT_DIRECTORY, experiment)
+    _copy_experiment_sources(experiment)
     patch_path = experiment / "patches" / "param-use-triton-default.patch"
     zero_context = (
         "diff --git a/train/comms/pt/pytorch_dist_backend.py b/train/comms/pt/pytorch_dist_backend.py\n"

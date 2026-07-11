@@ -291,7 +291,14 @@ def _forbidden_tracked_path(path: Path) -> bool:
         return True
     if path.suffix in {".pyc", ".pyo"} or any(part.endswith(".egg-info") for part in path.parts):
         return True
-    return path.parts[:3] == ("experiments", "rostam", "results")
+    # Cluster-side working state: generated results, vendored reviewed
+    # checkouts, and built virtualenvs live inside the experiment tree on the
+    # target machine but are never tracked or staged into a source release.
+    return path.parts[:2] == ("experiments", "rostam") and path.parts[2:3] in {
+        ("results",),
+        ("third_party",),
+        ("venvs",),
+    }
 
 
 def _validate_json_files() -> None:
