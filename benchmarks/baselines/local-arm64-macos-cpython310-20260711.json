@@ -1,0 +1,399 @@
+{
+  "format": "commcanary.benchmark-baseline.v1",
+  "review_status": "observational-baseline-no-regression-thresholds",
+  "measured_on": "2026-07-11",
+  "regression_thresholds": null,
+  "environment": {
+    "commcanary_version": "0.3.0",
+    "python_version": "3.10.14",
+    "python_implementation": "CPython",
+    "platform": "macOS-15.7.7-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "cpu_count": 10,
+    "wall_clock": "time.perf_counter_ns",
+    "peak_rss": "resource.getrusage.ru_maxrss-bytes",
+    "python_allocation_peak": "tracemalloc measured region"
+  },
+  "measurement_policy": {
+    "process_isolation": "one fresh Python process per result",
+    "timed_scope": "registered operation only",
+    "preparation_included_in_wall_time": false,
+    "rss_baseline_after_preparation": true,
+    "repeats": 1,
+    "interpretation": "single-run engineering evidence; not a release or CI threshold"
+  },
+  "optimization_review": {
+    "review_status": "measured-local-before-after-no-regression-thresholds",
+    "measured_on": "2026-07-11",
+    "regression_thresholds": null,
+    "fixture_manifest_sha256": "af34b767c9c3b4900e8ff8f5b1f536abf77c7767f8209fdfefc97936a24d2357",
+    "measurement_policy": {
+      "process_isolation": "one fresh Python process per result",
+      "timed_scope": "registered operation only",
+      "preparation_included_in_wall_time": false,
+      "rss_baseline_after_preparation": true,
+      "repeats": 3,
+      "summary_statistic": "median of three isolated results",
+      "interpretation": "working-tree optimization evidence; semantic hashes prove output equivalence, not a portable speed promise"
+    },
+    "semantic_set_sha256": {
+      "capture_merge_before_and_after": "3a5885214226214c8a9b02adfd2db49fcda83090103f299e25290187574b2a49",
+      "param_export_before_and_after": "755c1485aa90166d612c5428d91bfe1de55e0d8221f61c041a3b4454224bebb5"
+    },
+    "results": [
+      {
+        "operation": "capture_merge",
+        "case_id": "trace-1000",
+        "stored_events": 1000,
+        "logical_events": 1000,
+        "input_sha256": "af4adb36c18bf8726b259266ae659668c7afec13a00d645272aa01ca8fe38f56",
+        "prepared_input_semantic_sha256": "17e31355117381b93d31c80eaeb0210f7280b5fd66f2c043dbaf5acf0c42b31d",
+        "semantic_sha256": "ed1adb392ab92e2417afb9f72feed66561c1114ce51a42bee977b71a55baeb04",
+        "before_samples": {
+          "wall_time_seconds": [0.074472041, 0.074474916, 0.075179875],
+          "peak_rss_bytes": [33685504, 33931264, 34242560],
+          "python_peak_allocated_bytes": [68319580, 68319580, 68319580]
+        },
+        "after_samples": {
+          "wall_time_seconds": [0.071748042, 0.071415, 0.071393833],
+          "peak_rss_bytes": [31473664, 34783232, 33308672],
+          "python_peak_allocated_bytes": [68290292, 68290232, 68290292]
+        },
+        "before_median": {
+          "wall_time_seconds": 0.074474916,
+          "peak_rss_bytes": 33931264,
+          "python_peak_allocated_bytes": 68319580
+        },
+        "after_median": {
+          "wall_time_seconds": 0.071415,
+          "peak_rss_bytes": 33308672,
+          "python_peak_allocated_bytes": 68290292
+        },
+        "change_pct": {
+          "wall_time_seconds": -4.11,
+          "peak_rss_bytes": -1.83,
+          "python_peak_allocated_bytes": -0.04
+        }
+      },
+      {
+        "operation": "capture_merge",
+        "case_id": "trace-10000",
+        "stored_events": 10000,
+        "logical_events": 10000,
+        "input_sha256": "d2fc9d7006cb4b28214868ea4c2c0386b7f4ce540df54e0775dd8eed737d0277",
+        "prepared_input_semantic_sha256": "ef07408f1da0727f10e9f7624c6e51b7a22d96792ecfd663e302ca03c3f48cf6",
+        "semantic_sha256": "51e4a8f93e9add872e1b4eb0c793dbf39a1e173496a4152a83cfb421622f128e",
+        "before_samples": {
+          "wall_time_seconds": [0.789517625, 0.806563083, 0.809907375],
+          "peak_rss_bytes": [113606656, 113262592, 113393664],
+          "python_peak_allocated_bytes": [79289812, 79289867, 79289867]
+        },
+        "after_samples": {
+          "wall_time_seconds": [0.751524791, 0.757364042, 0.7514425],
+          "peak_rss_bytes": [97026048, 93585408, 96927744],
+          "python_peak_allocated_bytes": [79227067, 79227067, 79227009]
+        },
+        "before_median": {
+          "wall_time_seconds": 0.806563083,
+          "peak_rss_bytes": 113393664,
+          "python_peak_allocated_bytes": 79289867
+        },
+        "after_median": {
+          "wall_time_seconds": 0.751524791,
+          "peak_rss_bytes": 96927744,
+          "python_peak_allocated_bytes": 79227067
+        },
+        "change_pct": {
+          "wall_time_seconds": -6.82,
+          "peak_rss_bytes": -14.52,
+          "python_peak_allocated_bytes": -0.08
+        }
+      },
+      {
+        "operation": "capture_merge",
+        "case_id": "trace-100000",
+        "stored_events": 100000,
+        "logical_events": 100000,
+        "input_sha256": "061fbbe1fbb54800bcc108707dac251dae1035d1fc35896d9908a31189df94dc",
+        "prepared_input_semantic_sha256": "fe90b8bcd53bf5618608564ce909246babb66389057f996d382a36d92a1a1f7b",
+        "semantic_sha256": "2ffd5032396e1c6b0fad80e4c16108dc119a3e7c66b308a21d35b8a6125b884c",
+        "before_samples": {
+          "wall_time_seconds": [8.306424708, 8.267648208, 8.342955375],
+          "peak_rss_bytes": [757170176, 753844224, 782499840],
+          "python_peak_allocated_bytes": [284066881, 284066826, 284066886]
+        },
+        "after_samples": {
+          "wall_time_seconds": [8.004489833, 7.879393459, 7.787144709],
+          "peak_rss_bytes": [655523840, 715866112, 712769536],
+          "python_peak_allocated_bytes": [245054815, 245054815, 245054815]
+        },
+        "before_median": {
+          "wall_time_seconds": 8.306424708,
+          "peak_rss_bytes": 757170176,
+          "python_peak_allocated_bytes": 284066881
+        },
+        "after_median": {
+          "wall_time_seconds": 7.879393459,
+          "peak_rss_bytes": 712769536,
+          "python_peak_allocated_bytes": 245054815
+        },
+        "change_pct": {
+          "wall_time_seconds": -5.14,
+          "peak_rss_bytes": -5.86,
+          "python_peak_allocated_bytes": -13.73
+        }
+      },
+      {
+        "operation": "param_export",
+        "case_id": "canary-compressed-10000",
+        "stored_events": 17,
+        "logical_events": 10000,
+        "input_sha256": "f142d1c392c3fee8e888ec4a5a7857f907e5ac808515ad8855e7ae44840c45b9",
+        "semantic_sha256": "9d48f6b7e8e864c7e6609b3482345a304ff93e05254da85604f8a5c687681e08",
+        "before_samples": {
+          "wall_time_seconds": [1.251684375, 1.247900083, 1.237867291],
+          "peak_rss_bytes": [79790080, 82771968, 83247104],
+          "python_peak_allocated_bytes": [19201959, 19201959, 19201959]
+        },
+        "after_samples": {
+          "wall_time_seconds": [1.199997916, 1.221920584, 1.21661875],
+          "peak_rss_bytes": [82755584, 89341952, 87572480],
+          "python_peak_allocated_bytes": [19201999, 19201999, 19201999]
+        },
+        "before_median": {
+          "wall_time_seconds": 1.247900083,
+          "peak_rss_bytes": 82771968,
+          "python_peak_allocated_bytes": 19201959
+        },
+        "after_median": {
+          "wall_time_seconds": 1.21661875,
+          "peak_rss_bytes": 87572480,
+          "python_peak_allocated_bytes": 19201999
+        },
+        "change_pct": {
+          "wall_time_seconds": -2.51,
+          "peak_rss_bytes": 5.8,
+          "python_peak_allocated_bytes": 0.0
+        }
+      },
+      {
+        "operation": "param_export",
+        "case_id": "canary-compressed-100000",
+        "stored_events": 17,
+        "logical_events": 100000,
+        "input_sha256": "32e9ca362f983af52250d530c3cfc5c4cef40d7f8ba04e5c29684938e5dd54bb",
+        "semantic_sha256": "9146c67237ca18f83ad163087fbd438a430fb7b74c80076c2cf71781cfa93fa4",
+        "before_samples": {
+          "wall_time_seconds": [13.0615575, 12.814561041, 13.046064167],
+          "peak_rss_bytes": [443154432, 442023936, 441827328],
+          "python_peak_allocated_bytes": [189493150, 189493150, 189493150]
+        },
+        "after_samples": {
+          "wall_time_seconds": [12.47620525, 12.57839575, 12.479019167],
+          "peak_rss_bytes": [437796864, 438075392, 442073088],
+          "python_peak_allocated_bytes": [189493190, 189493190, 189493190]
+        },
+        "before_median": {
+          "wall_time_seconds": 13.046064167,
+          "peak_rss_bytes": 442023936,
+          "python_peak_allocated_bytes": 189493150
+        },
+        "after_median": {
+          "wall_time_seconds": 12.479019167,
+          "peak_rss_bytes": 438075392,
+          "python_peak_allocated_bytes": 189493190
+        },
+        "change_pct": {
+          "wall_time_seconds": -4.35,
+          "peak_rss_bytes": -0.89,
+          "python_peak_allocated_bytes": 0.0
+        }
+      }
+    ],
+    "profiling_observations": [
+      "Capture merge's common case allocated one list per singleton identity and copied every event twice; direct singleton storage/finalization removes that materialization and releases buckets before final ordering.",
+      "At 10K, cProfile attributed about 90% of PARAM export cumulative time to mandatory validate_canary work. Template rank/gap caching improves the 100K expansion path, while 10K end-to-end movement remained within noise.",
+      "No threshold was inferred from these local observations."
+    ]
+  },
+  "campaign": {
+    "stored_trace_events": [
+      1000,
+      10000,
+      100000
+    ],
+    "compressed_canary_logical_events": [
+      1000,
+      10000,
+      100000
+    ],
+    "fixture_generator_version": "1",
+    "skipped": [
+      {
+        "operation": "behavior_search",
+        "sizes": [
+          10000,
+          100000
+        ],
+        "reason": "The clean 1K operation took 19.77587125 seconds; larger exhaustive-search cases were disproportionate for this local campaign and were not used to invent a threshold."
+      }
+    ]
+  },
+  "adversarial_smoke": {
+    "result_count": 14,
+    "semantic_set_sha256": "d1eaad91960d27b0549a08932f041fd9e7463279b6cf724ea450a549673905f1",
+    "preflight_results": [
+      {
+        "operation": "capture_merge_preflight",
+        "wall_time_seconds": 0.00122675,
+        "peak_rss_bytes": 22986752,
+        "python_peak_allocated_bytes": 25754,
+        "semantic_sha256": "f1136adccbdf9ab1e86bc8d0a5b2613e9ecda03ae02090e52ece57aea2ce8c4b"
+      },
+      {
+        "operation": "behavior_search_preflight",
+        "wall_time_seconds": 0.001205958,
+        "peak_rss_bytes": 23298048,
+        "python_peak_allocated_bytes": 4816,
+        "semantic_sha256": "bfdfe4835fc128d5a4e077e3cd1a22f51e1428d7250740efba4570a76a4cec08"
+      },
+      {
+        "operation": "param_export_preflight",
+        "wall_time_seconds": 0.024220667,
+        "peak_rss_bytes": 23592960,
+        "python_peak_allocated_bytes": 296151,
+        "semantic_sha256": "0eeb8e5b2e36a550c0b667555a357e361430f2a6f0df1b970971c6c68a0d5daa"
+      }
+    ]
+  },
+  "results": [
+    {
+      "case_id": "trace-1000",
+      "operation": "capture_merge",
+      "stored_events": 1000,
+      "logical_events": 1000,
+      "wall_time_seconds": 0.177041208,
+      "peak_rss_baseline_bytes": 28442624,
+      "peak_rss_bytes": 31129600,
+      "python_peak_allocated_bytes": 68321068,
+      "input_sha256": "af4adb36c18bf8726b259266ae659668c7afec13a00d645272aa01ca8fe38f56",
+      "prepared_input_semantic_sha256": "17e31355117381b93d31c80eaeb0210f7280b5fd66f2c043dbaf5acf0c42b31d",
+      "semantic_sha256": "ed1adb392ab92e2417afb9f72feed66561c1114ce51a42bee977b71a55baeb04"
+    },
+    {
+      "case_id": "trace-10000",
+      "operation": "capture_merge",
+      "stored_events": 10000,
+      "logical_events": 10000,
+      "wall_time_seconds": 1.807941209,
+      "peak_rss_baseline_bytes": 77905920,
+      "peak_rss_bytes": 120225792,
+      "python_peak_allocated_bytes": 79290955,
+      "input_sha256": "d2fc9d7006cb4b28214868ea4c2c0386b7f4ce540df54e0775dd8eed737d0277",
+      "prepared_input_semantic_sha256": "ef07408f1da0727f10e9f7624c6e51b7a22d96792ecfd663e302ca03c3f48cf6",
+      "semantic_sha256": "51e4a8f93e9add872e1b4eb0c793dbf39a1e173496a4152a83cfb421622f128e"
+    },
+    {
+      "case_id": "trace-100000",
+      "operation": "capture_merge",
+      "stored_events": 100000,
+      "logical_events": 100000,
+      "wall_time_seconds": 18.25953575,
+      "peak_rss_baseline_bytes": 413974528,
+      "peak_rss_bytes": 674562048,
+      "python_peak_allocated_bytes": 284067914,
+      "input_sha256": "061fbbe1fbb54800bcc108707dac251dae1035d1fc35896d9908a31189df94dc",
+      "prepared_input_semantic_sha256": "fe90b8bcd53bf5618608564ce909246babb66389057f996d382a36d92a1a1f7b",
+      "semantic_sha256": "2ffd5032396e1c6b0fad80e4c16108dc119a3e7c66b308a21d35b8a6125b884c"
+    },
+    {
+      "case_id": "canary-compressed-1000",
+      "operation": "param_export",
+      "stored_events": 17,
+      "logical_events": 1000,
+      "wall_time_seconds": 0.254046542,
+      "peak_rss_baseline_bytes": 22167552,
+      "peak_rss_bytes": 35799040,
+      "python_peak_allocated_bytes": 4248751,
+      "input_sha256": "75cd25624156f085b761447401ea68238ec7d2f58c0d1d0cc8e61425aa05f7d7",
+      "semantic_sha256": "6cd89863665020a7505c981f549922a9d42feaff5750e80376102149aed81f56"
+    },
+    {
+      "case_id": "canary-compressed-10000",
+      "operation": "param_export",
+      "stored_events": 17,
+      "logical_events": 10000,
+      "wall_time_seconds": 2.70413025,
+      "peak_rss_baseline_bytes": 22888448,
+      "peak_rss_bytes": 89128960,
+      "python_peak_allocated_bytes": 19200935,
+      "input_sha256": "f142d1c392c3fee8e888ec4a5a7857f907e5ac808515ad8855e7ae44840c45b9",
+      "semantic_sha256": "9d48f6b7e8e864c7e6609b3482345a304ff93e05254da85604f8a5c687681e08"
+    },
+    {
+      "case_id": "canary-compressed-100000",
+      "operation": "param_export",
+      "stored_events": 17,
+      "logical_events": 100000,
+      "wall_time_seconds": 27.91586925,
+      "peak_rss_baseline_bytes": 22970368,
+      "peak_rss_bytes": 451346432,
+      "python_peak_allocated_bytes": 189492190,
+      "input_sha256": "32e9ca362f983af52250d530c3cfc5c4cef40d7f8ba04e5c29684938e5dd54bb",
+      "semantic_sha256": "9146c67237ca18f83ad163087fbd438a430fb7b74c80076c2cf71781cfa93fa4"
+    },
+    {
+      "case_id": "canary-compressed-1000",
+      "operation": "compare",
+      "stored_events": 17,
+      "logical_events": 1000,
+      "wall_time_seconds": 0.001788708,
+      "peak_rss_baseline_bytes": 31096832,
+      "peak_rss_bytes": 31096832,
+      "python_peak_allocated_bytes": 43527,
+      "input_sha256": "75cd25624156f085b761447401ea68238ec7d2f58c0d1d0cc8e61425aa05f7d7",
+      "prepared_input_semantic_sha256": "c6d456760cefa6a1606d72e52968fff75fa2f51cf091c39f11ae92dbde191c9b",
+      "semantic_sha256": "49787e0d98ff00046dca22b6754464055f1faf816c7210ce135331b096358abc"
+    },
+    {
+      "case_id": "canary-compressed-10000",
+      "operation": "compare",
+      "stored_events": 17,
+      "logical_events": 10000,
+      "wall_time_seconds": 0.001380208,
+      "peak_rss_baseline_bytes": 79446016,
+      "peak_rss_bytes": 79446016,
+      "python_peak_allocated_bytes": 43338,
+      "input_sha256": "f142d1c392c3fee8e888ec4a5a7857f907e5ac808515ad8855e7ae44840c45b9",
+      "prepared_input_semantic_sha256": "fc8df9a5d4a7f93556dcb93404379d44642b2bee93dfa989119b4690d5dc5a2c",
+      "semantic_sha256": "4fcff55157cded69ba49e02a06b4cff3ad07dfe682cc842d29c863f287fbdc8d"
+    },
+    {
+      "case_id": "canary-compressed-100000",
+      "operation": "compare",
+      "stored_events": 17,
+      "logical_events": 100000,
+      "wall_time_seconds": 0.0013775,
+      "peak_rss_baseline_bytes": 361955328,
+      "peak_rss_bytes": 361955328,
+      "python_peak_allocated_bytes": 43338,
+      "input_sha256": "32e9ca362f983af52250d530c3cfc5c4cef40d7f8ba04e5c29684938e5dd54bb",
+      "prepared_input_semantic_sha256": "e5ffaf68815dc26be6c9c4e14aa068050ee4603141dfe6121618052d057d826f",
+      "semantic_sha256": "bbf59050c97cd732a1bfaa89f0748d890a8cb2f1fec3f50d7019ed3dc4ef9cef"
+    },
+    {
+      "case_id": "trace-1000",
+      "operation": "behavior_search",
+      "stored_events": 1000,
+      "logical_events": 1000,
+      "wall_time_seconds": 19.77587125,
+      "peak_rss_baseline_bytes": 25411584,
+      "peak_rss_bytes": 82771968,
+      "python_peak_allocated_bytes": 10488860,
+      "input_sha256": "af4adb36c18bf8726b259266ae659668c7afec13a00d645272aa01ca8fe38f56",
+      "prepared_input_semantic_sha256": "d99f3960cef11dba75d0363d4eba257b71a3bd058ddd34f1f64f6c2cfba67a5f",
+      "semantic_sha256": "d74ee158648a4490092d8a8ad5eddc864d78092a6c36077c2a861c6ef6378b4f"
+    }
+  ]
+}
