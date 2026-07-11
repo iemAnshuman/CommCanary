@@ -74,11 +74,31 @@ nothing below implies any cluster execution.
 - A `git archive HEAD` checkout of that commit passed all 699 tests in a fresh
   virtualenv against the exact tested wheel, and `commcanary --version`
   reports the full format capability matrix.
-- The wheel commit and SHA-256 are bound in
-  `experiments/rostam/constraints/environment-contract.json` under
-  `commcanary_wheel`; the contract status remains `pending-rostam-resolution`
-  until the site evidence below is collected, and the Rostam-side rebuild must
-  reproduce the recorded hash before any submission.
+### Rostam rebuild and rebinding (2026-07-11, later the same day)
+
+Running the same gate on rostam1 (CPython 3.12.3, linux x86_64, setuptools
+80.10.2, source commit `1bc688f4898cfe1d4ab0e20d15086493bb61549a`) passed end
+to end — 700 tests, all floors, two fixed-epoch builds byte-identical on that
+machine — and produced a wheel whose zip container bytes differ from the
+macOS build:
+
+- `commcanary-0.3.0-py3-none-any.whl`
+  `sha256:1fe7fa8e61731df41129ee012b8cb260ecfbee76448f83f08c2bf9cb5f4c484d`
+
+Byte-identical rebuilds hold per machine and toolchain; the zip container is
+not byte-stable across platforms/interpreters. The per-member contents are
+what must agree. Sorted member content digest (sha256 over
+`sha256(name + bytes)` per member) of both wheels:
+`f70471f981614673bf34f1cdecb9f2955103d0dcc483fd7d92b8959f09e601f6`.
+
+The environment contract's `commcanary_wheel` binds the **Rostam-built**
+wheel above — it was produced by the full canonical gate on the target
+platform, which is the strongest provenance for the bytes that will actually
+be installed there. The macOS wheel (`416dbea6…`) and sdist remain retained
+as the cross-platform cross-check. The contract status remains
+`pending-rostam-resolution` until the site evidence below is collected; the
+member content digest of the bound wheel must equal the recorded value
+before any submission.
 
 ## Inputs that remain site-observed
 

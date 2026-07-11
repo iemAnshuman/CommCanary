@@ -40,13 +40,19 @@ history rather than merging two unrelated lines.
   fixed-epoch builds, and installed-wheel tests outside the checkout.
 - A `git archive HEAD` checkout passed all 699 tests in a fresh virtualenv
   against the exact tested wheel.
-- Exact artifacts (hashes also in `release-metadata/SHA256SUMS`, inventory,
-  and SPDX SBOM): `commcanary-0.3.0-py3-none-any.whl`
+- Exact macOS artifacts (hashes also in `release-metadata/SHA256SUMS`,
+  inventory, and SPDX SBOM): `commcanary-0.3.0-py3-none-any.whl`
   `416dbea60943cf5ff93282547b1c350edb8880e0cc3e719bf6d1aef794a6738e`;
   `commcanary-0.3.0.tar.gz`
-  `49443d276dea934e06494a30159ff247a53d461bf048febe095da667e2058014`.
-  Both are bound to source commit `521b8fb7909933c29d73fb820bbae4015eb30ff4`
-  in `experiments/rostam/constraints/environment-contract.json`.
+  `49443d276dea934e06494a30159ff247a53d461bf048febe095da667e2058014`,
+  built from `521b8fb7909933c29d73fb820bbae4015eb30ff4`.
+- The same gate later passed end to end on rostam1 (CPython 3.12.3, linux
+  x86_64) at `1bc688f4898cfe1d4ab0e20d15086493bb61549a`. Wheel zip container
+  bytes are toolchain-dependent, so the environment contract binds the
+  Rostam-built wheel
+  (`1fe7fa8e61731df41129ee012b8cb260ecfbee76448f83f08c2bf9cb5f4c484d`), with
+  member-content-digest equality against the macOS build as the recorded
+  cross-check (`docs/artifact-evaluation.md`).
 
 ### Remaining order before Rostam
 

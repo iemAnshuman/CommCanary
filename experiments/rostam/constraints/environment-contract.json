@@ -55,14 +55,14 @@
   ],
   "commcanary_wheel": {
     "filename": "commcanary-0.3.0-py3-none-any.whl",
-    "sha256": "416dbea60943cf5ff93282547b1c350edb8880e0cc3e719bf6d1aef794a6738e",
-    "repository_commit": "521b8fb7909933c29d73fb820bbae4015eb30ff4"
+    "sha256": "1fe7fa8e61731df41129ee012b8cb260ecfbee76448f83f08c2bf9cb5f4c484d",
+    "repository_commit": "1bc688f4898cfe1d4ab0e20d15086493bb61549a"
   },
   "collection_required": [
     "Resolve both environments with the target python/3.12.3 module on Rostam.",
     "Record sysconfig platform/ABI tags and pip --report output.",
     "Hash every downloaded wheel and both complete --require-hashes locks.",
     "Install in disposable venvs, capture pip freeze --all, and review runtime imports.",
-    "Rebuild the CommCanary wheel from the recorded repository commit and verify it matches the recorded SHA-256."
+    "Verify the bound Rostam-built wheel's sorted member content digest equals the recorded cross-platform value before installation."
   ]
 }
