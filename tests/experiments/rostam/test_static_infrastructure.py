@@ -536,14 +536,16 @@ def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> N
     for name in wrappers:
         path = EXPERIMENT_DIRECTORY / name
         text = path.read_text(encoding="utf-8")
-        assert path.stat().st_mode & 0o111 == 0o111
+        # Owner-execute only: git tracks a single executable bit, and checkouts
+        # under a restrictive site umask (e.g. 077) drop group/other bits.
+        assert path.stat().st_mode & 0o100 == 0o100
         assert len([line for line in text.splitlines() if line.strip()]) <= 5
         assert "lib/common.sh" in text
         assert all(token not in text for token in forbidden)
     for name in ("run_matrix.sh", "run_shared_matrix.sh"):
         path = EXPERIMENT_DIRECTORY / name
         text = path.read_text(encoding="utf-8")
-        assert path.stat().st_mode & 0o111 == 0o111
+        assert path.stat().st_mode & 0o100 == 0o100
         assert "experiments.rostam.lib.submission" in text
         assert "sbatch --parsable" not in text
         assert "results/shared" not in text
@@ -553,8 +555,8 @@ def test_setup_is_hash_locked_wheel_only_and_has_no_mutating_source_shortcuts() 
     setup = EXPERIMENT_DIRECTORY / "setup.sh"
     common = EXPERIMENT_DIRECTORY / "lib" / "common.sh"
     text = setup.read_text(encoding="utf-8")
-    assert setup.stat().st_mode & 0o111 == 0o111
-    assert common.stat().st_mode & 0o111 == 0o111
+    assert setup.stat().st_mode & 0o100 == 0o100
+    assert common.stat().st_mode & 0o100 == 0o100
     assert "--no-deps --require-hashes" in text
     assert "verify-param-preimage" in text
     assert "verify-param-postimage" in text
