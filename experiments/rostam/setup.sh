@@ -39,6 +39,7 @@ create_reviewed_venv() {
   local venv="$VENVS_DIR/$environment_id"
   local python="$venv/bin/python"
   local freeze_file
+  local wheel_digest
 
   "$PYTHON_BIN" -m venv "$venv"
   # The complete lock enumerates every transitive wheel. --no-deps is required
@@ -46,6 +47,16 @@ create_reviewed_venv() {
   # prevents an index or cache from silently changing any artifact.
   "$python" -m pip install --no-deps --require-hashes -r "$lock"
   "$python" -m pip install --no-deps "$COMMCANARY_WHEEL"
+
+  # Record which wheel this venv actually holds so the cell entrypoint can
+  # refuse a stale venv whose install predates the manifest-bound wheel. The
+  # digest is recomputed at install time and must still match the reviewed one.
+  wheel_digest="$(sha256sum "$COMMCANARY_WHEEL" | awk '{print $1}')"
+  if [[ "$wheel_digest" != "$COMMCANARY_WHEEL_SHA256" ]]; then
+    echo "CommCanary wheel changed after verify-ready; refusing to record a stale binding" >&2
+    exit 1
+  fi
+  printf '%s\n' "$wheel_digest" >"$venv/commcanary-wheel.sha256"
 
   freeze_file="$(mktemp "${TMPDIR:-/tmp}/commcanary-${environment_id}-freeze.XXXXXX")"
   trap 'rm -f "$freeze_file"' RETURN

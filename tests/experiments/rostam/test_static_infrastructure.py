@@ -567,6 +567,10 @@ def test_setup_is_hash_locked_wheel_only_and_has_no_mutating_source_shortcuts() 
     assert "pip install -e" not in text
     assert "--unidiff-zero" not in text
     assert 'git -C "$PARAM_DIR" apply --check "$PATCH_PATH"' in text
+    # Each venv must record the digest of the wheel it actually installed; the
+    # cell entrypoint refuses venvs without this marker (or with a stale one).
+    assert '>"$venv/commcanary-wheel.sha256"' in text
+    assert "refusing to record a stale binding" in text
 
 
 def test_design_marks_historical_evidence_and_the_exact_precluster_boundary() -> None:

@@ -80,6 +80,9 @@ _MAX_GPU_COUNT = 64
 _MAX_OBSERVED_TEXT_BYTES = 4096
 _MAX_CPU_AFFINITY_ENTRIES = 4096
 _OUTPUT_LIMIT_EXIT_CODE = 125
+_WHEEL_INPUT_ID = "commcanary-wheel"
+_WHEEL_MARKER_FILENAME = "commcanary-wheel.sha256"
+_WHEEL_MARKER_MAX_BYTES = 256
 
 
 class CellEntrypointError(ContractError):
@@ -190,6 +193,26 @@ def _verify_inputs(manifest: Any) -> Dict[str, Path]:
             raise CellEntrypointError(f"manifest input {input_id!r} is stale")
         result[input_id] = path.resolve()
     return result
+
+
+def _verify_venv_wheel_binding(venv_directory: Path, manifest: Any) -> None:
+    artifacts = {artifact.id: artifact for artifact in manifest.campaign.inputs}
+    bound = artifacts.get(_WHEEL_INPUT_ID)
+    if bound is None:
+        return
+    marker = venv_directory / _WHEEL_MARKER_FILENAME
+    if marker.is_symlink() or not marker.is_file():
+        raise CellEntrypointError(
+            "reviewed venv does not record its installed CommCanary wheel; archive it and rerun setup.sh"
+        )
+    recorded = read_bounded_text(marker, max_bytes=_WHEEL_MARKER_MAX_BYTES, field="venv wheel marker").strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", recorded):
+        raise CellEntrypointError("venv wheel marker is not a sha256 digest")
+    if recorded != bound.sha256:
+        raise CellEntrypointError(
+            f"venv holds CommCanary wheel {recorded}, but the manifest binds {bound.sha256}; "
+            "archive the venvs and rerun setup.sh with the manifest-bound wheel"
+        )
 
 
 def _verify_execution_scripts(manifest: Any, experiment_directory: Path) -> None:
@@ -1007,6 +1030,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     configured_python = venv_directory / "bin" / "python"
     if not configured_python.exists() or Path(sys.prefix).resolve() != venv_directory:
         raise CellEntrypointError("cell entrypoint is not running from the manifest-selected venv")
+    _verify_venv_wheel_binding(venv_directory, manifest)
     resolution = {
         "workspace": workspace,
         "experiment_directory": experiment_directory,

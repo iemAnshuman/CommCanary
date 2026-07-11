@@ -63,6 +63,30 @@ calibrate GEMM, capture the shared trace, then plan and submit campaigns
 through the fail-closed harness. Tagging and publishing 0.3.0 remain
 deliberate later release actions.
 
+### Campaign execution addendum — 2026-07-11 (Rostam)
+
+Environment evidence (locks, resolver report, freezes, reviewed contract) was
+collected on rostam1 and the core campaign was submitted twice; both runs are
+retained as abandoned evidence, not deleted:
+
+- `core-20260711-r1`: every trace-build cell failed closed on CommCanary's own
+  64 MiB `max_input_bytes` policy rejecting the >64 MiB Kineto profile. The
+  physical pipeline itself was proven (torchrun tp8 on 4×A100, clean timings).
+  Fix: `import-kineto --max-input-bytes` CLI override plus a 1 GiB budget at
+  the three catalog call sites (`c3785ed`).
+- `core-20260711-r2`: the same failure signature, because the execution venvs
+  still held the pre-fix wheel — setup.sh had refused to rerun (existing
+  venvs, already-patched PARAM) and nothing verified venv contents against the
+  manifest-bound wheel. The manifest bound the new wheel while cells executed
+  the old one, so r2 was cancelled rather than salvaged with mixed provenance.
+
+The gap is now closed structurally: setup.sh records the digest of the wheel
+it installs into each venv (`<venv>/commcanary-wheel.sha256`, recomputed at
+install time and cross-checked against the reviewed digest), and the cell
+entrypoint refuses to execute any cell whose venv lacks that marker or whose
+marker differs from the manifest-bound `commcanary-wheel` input. A stale venv
+can no longer produce evidence under an unreviewed wheel.
+
 _Original roadmap re-audited 2026-07-10. Its baseline observations below are
 historical; the live implementation status is the checkpoint above._
 
