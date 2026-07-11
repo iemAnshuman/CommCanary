@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tarfile
 import tempfile
 import venv
@@ -266,7 +267,9 @@ def _validate_repository_hygiene() -> None:
     git = shutil.which("git")
     if git is None:
         raise VerificationError("git disappeared after tool preflight")
-    _run("whitespace and conflict-marker check", (git, "diff", "--check", "HEAD", "--", "."))
+    # core.pager=cat: on a dumb interactive terminal git may otherwise page and
+    # stall the gate waiting for a keypress.
+    _run("whitespace and conflict-marker check", (git, "-c", "core.pager=cat", "diff", "--check", "HEAD", "--", "."))
 
     tracked = _capture((git, "ls-files", "-z")).split("\0")
     forbidden: List[str] = []
@@ -883,7 +886,9 @@ def _test_installed_wheel_typing(python: Path, workspace: Path) -> None:
 
 def _test_installed_wheel(wheel: Path, workspace: Path) -> None:
     environment = workspace / "venv"
-    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(environment)
+    # No system site-packages: a base interpreter that happens to carry test
+    # tools (or another commcanary) must not be able to mask a broken wheel.
+    venv.EnvBuilder(with_pip=True).create(environment)
     python = _venv_python(environment)
     clean_env = ("PYTHONHOME", "PYTHONPATH", "MYPYPATH")
     _run(
@@ -892,11 +897,23 @@ def _test_installed_wheel(wheel: Path, workspace: Path) -> None:
         cwd=workspace,
         unset_env=clean_env,
     )
+    # The test toolchain (pytest, jsonschema, ...) is the gate environment's
+    # own reviewed toolchain, linked in via a .pth rather than resolved from
+    # the network or inherited from the base interpreter. The .pth path sorts
+    # after the scratch site-packages, so the wheel-installed commcanary wins;
+    # the import-source assertion below proves it.
+    gate_purelib = Path(sysconfig.get_paths()["purelib"]).resolve()
+    scratch_purelib = Path(
+        _capture((str(python), "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])")).strip()
+    )
+    (scratch_purelib / "commcanary-gate-toolchain.pth").write_text(f"{gate_purelib}\n", encoding="utf-8")
     assertion = (
         "from pathlib import Path; import commcanary; "
         f"checkout=Path({str(ROOT)!r}).resolve(); "
+        f"gate=Path({str(gate_purelib)!r}).resolve(); "
         "loaded=Path(commcanary.__file__).resolve(); "
-        "assert checkout not in loaded.parents, (checkout, loaded); print(loaded)"
+        "assert checkout not in loaded.parents, (checkout, loaded); "
+        "assert gate not in loaded.parents, (gate, loaded); print(loaded)"
     )
     _run(
         "prove imports come from installed wheel",
