@@ -146,7 +146,7 @@ def _validate_site(manifest: Any) -> Dict[str, str]:
     partition = os.environ.get("SLURM_JOB_PARTITION")
     if not job_id:
         raise CellEntrypointError("SLURM_JOB_ID is absent; refusing to run a physical cell outside its allocation")
-    if partition != site.partition:
+    if partition is None or partition != site.partition:
         raise CellEntrypointError(f"SLURM partition mismatch: expected {site.partition!r}, observed {partition!r}")
     raw_nodes = os.environ.get("SLURM_JOB_NUM_NODES", os.environ.get("SLURM_NNODES"))
     try:
