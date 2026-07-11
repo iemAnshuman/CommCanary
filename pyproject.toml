@@ -49,7 +49,9 @@ dev = [
   "mypy>=1.18,<2",
   "pytest>=8,<9",
   "ruff>=0.14,<0.15",
-  "setuptools>=65,<81",
+  # >=70.1 builds wheels without the separate "wheel" package, which the
+  # no-isolation release build never installs.
+  "setuptools>=70.1,<81",
   "shellcheck-py>=0.10,<1",
   "twine>=5,<7",
 ]
