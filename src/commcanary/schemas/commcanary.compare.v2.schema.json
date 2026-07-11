@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.compare.v2.schema.json",
+  "title": "CommCanary comparison v2",
+  "description": "Portable shape for commcanary.compare.v2. Metric deltas, compatibility, policy evaluations, and the derived verdict require runtime validation.",
+  "type": "object",
+  "required": [
+    "format",
+    "verdict",
+    "derived_verdict",
+    "reasons",
+    "thresholds",
+    "compatibility",
+    "baseline",
+    "candidate",
+    "delta",
+    "breakdown_delta",
+    "evaluations"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.compare.v2"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "verdict": {
+      "$ref": "#/$defs/verdict"
+    },
+    "derived_verdict": {
+      "$ref": "#/$defs/verdict"
+    },
+    "reasons": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+      }
+    },
+    "thresholds": {
+      "$ref": "#/$defs/thresholds"
+    },
+    "compatibility": {
+      "$ref": "#/$defs/compatibility"
+    },
+    "uncertainty": {
+      "$ref": "#/$defs/uncertainty"
+    },
+    "baseline": {
+      "$ref": "#/$defs/side"
+    },
+    "candidate": {
+      "$ref": "#/$defs/side"
+    },
+    "delta": {
+      "$ref": "#/$defs/delta"
+    },
+    "breakdown_delta": {
+      "type": "object",
+      "required": [
+        "by_phase",
+        "by_op"
+      ],
+      "properties": {
+        "by_phase": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/breakdownDelta"
+          }
+        },
+        "by_op": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/breakdownDelta"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "evaluations": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "$ref": "#/$defs/evaluation"
+      }
+    },
+    "worst_regressions": {
+      "type": "object",
+      "properties": {
+        "phase": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/breakdownDelta"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/breakdownDelta"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "breakdownDelta": {
+      "type": "object",
+      "required": [
+        "name",
+        "baseline_count",
+        "candidate_count",
+        "status",
+        "baseline_median_us",
+        "candidate_median_us",
+        "median_pct",
+        "median_relative_status",
+        "median_absolute_us",
+        "baseline_p95_us",
+        "candidate_p95_us",
+        "p95_pct",
+        "p95_relative_status",
+        "p95_absolute_us",
+        "baseline_p99_us",
+        "candidate_p99_us",
+        "p99_pct",
+        "p99_relative_status",
+        "p99_absolute_us"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "baseline_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "candidate_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "status": {
+          "enum": [
+            "matched",
+            "added",
+            "removed"
+          ]
+        },
+        "baseline_median_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "candidate_median_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "baseline_p95_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "candidate_p95_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "baseline_p99_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "candidate_p99_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "median_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p99_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "median_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "p95_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "p99_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "median_absolute_us": {
+          "type": "number"
+        },
+        "p95_absolute_us": {
+          "type": "number"
+        },
+        "p99_absolute_us": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "compatibility": {
+      "type": "object",
+      "required": [
+        "compatible",
+        "reasons"
+      ],
+      "properties": {
+        "compatible": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+          }
+        },
+        "baseline_canary_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_canary_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_execution_semantic_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_execution_semantic_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_scheduler_execution_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_scheduler_execution_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_simulation_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_simulation_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "baseline_replay_protocol_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidate_replay_protocol_sha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "delta": {
+      "type": "object",
+      "required": [
+        "median_pct",
+        "median_relative_status",
+        "p95_pct",
+        "p95_relative_status",
+        "p99_pct",
+        "p99_relative_status",
+        "median_absolute_us",
+        "p95_absolute_us",
+        "p99_absolute_us",
+        "communication_hidden_pct_points"
+      ],
+      "properties": {
+        "median_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p95_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "p99_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "median_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "p95_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "p99_relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "median_absolute_us": {
+          "type": "number"
+        },
+        "p95_absolute_us": {
+          "type": "number"
+        },
+        "p99_absolute_us": {
+          "type": "number"
+        },
+        "communication_hidden_pct_points": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": true
+    },
+    "evaluation": {
+      "type": "object",
+      "required": [
+        "metric",
+        "threshold_result"
+      ],
+      "properties": {
+        "metric": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "threshold_result": {
+          "$ref": "#/$defs/verdict"
+        },
+        "relative_status": {
+          "$ref": "#/$defs/relativeStatus"
+        },
+        "relative_delta_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        }
+      },
+      "additionalProperties": true
+    },
+    "relativeStatus": {
+      "enum": [
+        "finite",
+        "both_zero",
+        "new_nonzero_regression",
+        "undefined"
+      ]
+    },
+    "side": {
+      "type": "object",
+      "required": [
+        "backend",
+        "metrics"
+      ],
+      "properties": {
+        "backend": {
+          "type": "object"
+        },
+        "metrics": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/reportMetrics"
+        }
+      },
+      "additionalProperties": true
+    },
+    "thresholds": {
+      "type": "object",
+      "required": [
+        "p99_threshold_pct",
+        "p95_threshold_pct",
+        "median_threshold_pct",
+        "p99_absolute_threshold_us",
+        "p95_absolute_threshold_us",
+        "median_absolute_threshold_us",
+        "hidden_drop_threshold_points",
+        "breakdown_threshold_pct",
+        "breakdown_absolute_threshold_us"
+      ],
+      "properties": {
+        "p99_threshold_pct": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p95_threshold_pct": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "median_threshold_pct": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p99_absolute_threshold_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p95_absolute_threshold_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "median_absolute_threshold_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "hidden_drop_threshold_points": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "breakdown_threshold_pct": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "breakdown_absolute_threshold_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "uncertainty": {
+      "type": "object",
+      "properties": {
+        "baseline_compute_fields_uncertain_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "candidate_compute_fields_uncertain_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        }
+      },
+      "additionalProperties": true
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "warn",
+        "fail"
+      ]
+    }
+  }
+}

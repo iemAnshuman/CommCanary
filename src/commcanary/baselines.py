@@ -3,13 +3,10 @@ from __future__ import annotations
 import copy
 import random
 from collections import defaultdict
-from statistics import median as statistics_median
 from typing import Any, Dict, List, Mapping, Sequence, Tuple
 
-from .schema import (
-    TRACE_FORMAT,
+from .artifacts import (
     JsonDict,
-    SchemaError,
     arrival_skew_us,
     as_float,
     as_int,
@@ -17,7 +14,10 @@ from .schema import (
     normalize_ranks,
     validate_trace,
 )
-
+from .errors import SchemaError
+from .formats import TRACE_FORMAT
+from .operation_identity import OperationIdentity
+from .statistics import median
 
 _EVENT_COPY_FIELDS = (
     "phase",
@@ -54,7 +54,7 @@ def isolated_collective_baseline_trace(trace: Mapping[str, Any]) -> JsonDict:
     events = list(trace.get("events", []))
     representatives: Dict[Tuple[Any, ...], Mapping[str, Any]] = {}
     for event in events:
-        representatives.setdefault(_operation_signature(event, include_phase=False), event)
+        representatives.setdefault(OperationIdentity.from_mapping(event).isolated_baseline_shape_key(), event)
 
     baseline_events: List[JsonDict] = []
     for index, event in enumerate(representatives.values()):
@@ -132,14 +132,13 @@ def frequency_representative_baseline_trace(trace: Mapping[str, Any]) -> JsonDic
         raise SchemaError("cannot build a frequency baseline from an empty trace")
     groups: Dict[Tuple[Any, ...], List[Tuple[int, Mapping[str, Any]]]] = defaultdict(list)
     for index, event in enumerate(events):
-        groups[_operation_signature(event, include_phase=True)].append((index, event))
+        groups[OperationIdentity.from_mapping(event).baseline_shape_key()].append((index, event))
     representatives = {
-        key: _representative_event([event for _index, event in grouped])
-        for key, grouped in groups.items()
+        key: _representative_event([event for _index, event in grouped]) for key, grouped in groups.items()
     }
     baseline_events: List[JsonDict] = []
     for index, event in enumerate(events):
-        key = _operation_signature(event, include_phase=True)
+        key = OperationIdentity.from_mapping(event).baseline_shape_key()
         representative = representatives[key]
         record = _shape_event(representative, f"frequency-representative-{index:06d}")
         record["gap_us"] = _source_gap_us(representative)
@@ -175,7 +174,7 @@ def clustering_representative_baseline_trace(
 
     groups: Dict[Tuple[Any, ...], List[Tuple[int, Mapping[str, Any]]]] = defaultdict(list)
     for index, event in enumerate(events):
-        groups[_operation_signature(event, include_phase=True)].append((index, event))
+        groups[OperationIdentity.from_mapping(event).baseline_shape_key()].append((index, event))
     representatives = {
         key: _cluster_representatives([event for _index, event in grouped], parsed_cluster_count)
         for key, grouped in groups.items()
@@ -183,7 +182,7 @@ def clustering_representative_baseline_trace(
 
     baseline_events: List[JsonDict] = []
     for index, event in enumerate(events):
-        key = _operation_signature(event, include_phase=True)
+        key = OperationIdentity.from_mapping(event).baseline_shape_key()
         reps = representatives[key]
         representative, representative_index = _nearest_representative(event, reps)
         record = _shape_event(representative, f"cluster-representative-{index:06d}")
@@ -229,7 +228,7 @@ def stratified_sampling_baseline_trace(
 
     groups: Dict[Tuple[Any, ...], List[Tuple[int, Mapping[str, Any]]]] = defaultdict(list)
     for index, event in enumerate(events):
-        groups[_operation_signature(event, include_phase=True)].append((index, event))
+        groups[OperationIdentity.from_mapping(event).baseline_shape_key()].append((index, event))
 
     sample_by_source_index: Dict[int, Tuple[Mapping[str, Any], int]] = {}
     for grouped in groups.values():
@@ -276,22 +275,6 @@ def _baseline_trace(trace: Mapping[str, Any], method: str, events: Sequence[Json
     }
 
 
-def _operation_signature(event: Mapping[str, Any], *, include_phase: bool) -> Tuple[Any, ...]:
-    ranks = tuple(normalize_ranks(event.get("ranks")))
-    phase = str(event.get("phase", "unknown")) if include_phase else "*"
-    return (
-        phase,
-        str(event.get("op")),
-        as_int(event.get("bytes")),
-        ranks,
-        str(event.get("group", "default")),
-        event.get("sender_rank"),
-        event.get("receiver_rank"),
-        event.get("tag"),
-        event.get("channel"),
-    )
-
-
 def _shape_event(event: Mapping[str, Any], event_id: str) -> JsonDict:
     record: JsonDict = {"id": event_id}
     for key in _EVENT_COPY_FIELDS:
@@ -315,7 +298,7 @@ def _representative_event(events: Sequence[Mapping[str, Any]]) -> Mapping[str, A
     if len(events) == 1:
         return events[0]
     features = [_features(event) for event in events]
-    centers = [statistics_median(values) for values in zip(*features)]
+    centers = [median(values) for values in zip(*features)]
     scales = [max(1.0, max(abs(row[index]) for row in features)) for index in range(len(centers))]
 
     def distance(item: Tuple[int, Mapping[str, Any]]) -> Tuple[float, int]:

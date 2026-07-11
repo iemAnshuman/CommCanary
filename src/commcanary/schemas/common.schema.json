@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/common.schema.json",
+  "title": "CommCanary shared wire definitions",
+  "description": "Portable JSON shapes shared by versioned CommCanary artifacts. These definitions do not express cross-field semantic consistency.",
+  "$defs": {
+    "assuranceState": {
+      "enum": [
+        "structurally_valid",
+        "internally_consistent",
+        "source_corresponding",
+        "model_recomputed",
+        "behaviorally_verified"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "required": [
+        "name",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": true
+    },
+    "latencySummary": {
+      "type": "object",
+      "required": [
+        "count",
+        "median_us",
+        "p95_us",
+        "p99_us",
+        "max_us",
+        "mean_us"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "median_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "p95_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "p99_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "max_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "mean_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "nonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9223372036854775807
+    },
+    "ranks": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 65536,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/nonNegativeInteger"
+          }
+        }
+      ]
+    },
+    "reportMetrics": {
+      "type": "object",
+      "required": [
+        "count",
+        "median_us",
+        "p95_us",
+        "p99_us",
+        "max_us",
+        "mean_us",
+        "arrival_skew_median_us",
+        "arrival_skew_p95_us",
+        "arrival_skew_max_us",
+        "avg_rank_wait_median_us",
+        "communication_hidden_pct"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/nonNegativeInteger"
+        },
+        "median_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "p95_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "p99_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "max_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "mean_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "arrival_skew_median_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "arrival_skew_p95_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "arrival_skew_max_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "avg_rank_wait_median_us": {
+          "$ref": "#/$defs/nonNegativeNumber"
+        },
+        "communication_hidden_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": true
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

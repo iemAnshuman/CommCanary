@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.behavior_verification.v1.schema.json",
+  "title": "CommCanary behavior verification v1",
+  "description": "Portable output shape for behavioral verification. Rankings, tolerance calculations, source-verification nesting, and aggregate status agreement require producer/runtime semantics.",
+  "type": "object",
+  "required": [
+    "format",
+    "status",
+    "assurance_state",
+    "representation_fidelity_status",
+    "source_verified_status",
+    "source_coverage_status",
+    "behavioral_fidelity_status",
+    "configuration_ranking_status",
+    "source_events",
+    "relative_tolerance_pct",
+    "absolute_tolerance_us",
+    "hidden_tolerance_points",
+    "tail_recall_threshold",
+    "ranking_tie_tolerance_us",
+    "capture_uncertainty",
+    "source_verification",
+    "configurations",
+    "ranking"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.behavior_verification.v1"
+    },
+    "status": {
+      "enum": [
+        "behaviorally_verified",
+        "behaviorally_unverified",
+        "failed"
+      ]
+    },
+    "assurance_state": {
+      "enum": [
+        "behaviorally_verified",
+        "source_corresponding",
+        "internally_consistent"
+      ]
+    },
+    "representation_fidelity_status": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "source_verified_status": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "source_coverage_status": {
+      "enum": [
+        "full_source",
+        "partial_source"
+      ]
+    },
+    "behavioral_fidelity_status": {
+      "$ref": "#/$defs/passFail"
+    },
+    "configuration_ranking_status": {
+      "$ref": "#/$defs/passFail"
+    },
+    "source_events": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+    },
+    "relative_tolerance_pct": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+    },
+    "absolute_tolerance_us": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+    },
+    "hidden_tolerance_points": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+    },
+    "tail_recall_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "ranking_tie_tolerance_us": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+    },
+    "capture_uncertainty": {
+      "$ref": "#/$defs/captureUncertainty"
+    },
+    "source_verification": {
+      "$ref": "#/$defs/sourceVerification"
+    },
+    "configurations": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "$ref": "#/$defs/configuration"
+      }
+    },
+    "ranking": {
+      "$ref": "#/$defs/ranking"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "captureUncertainty": {
+      "type": "object",
+      "required": [
+        "status",
+        "compute_fields_uncertain_events"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "certain",
+            "rank_local_compute_uncertain"
+          ]
+        },
+        "compute_fields_uncertain_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        }
+      },
+      "additionalProperties": true
+    },
+    "configuration": {
+      "type": "object",
+      "required": [
+        "name",
+        "status",
+        "source_metrics",
+        "canary_metrics",
+        "source_queue_wait_metrics",
+        "canary_queue_wait_metrics",
+        "checks",
+        "queue_wait_checks",
+        "phase_checks",
+        "op_checks",
+        "tail_event_recall"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/passFail"
+        },
+        "source_metrics": {
+          "$ref": "#/$defs/behaviorMetrics"
+        },
+        "canary_metrics": {
+          "$ref": "#/$defs/behaviorMetrics"
+        },
+        "source_queue_wait_metrics": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/latencySummary"
+        },
+        "canary_queue_wait_metrics": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/latencySummary"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metricCheck"
+          }
+        },
+        "queue_wait_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metricCheck"
+          }
+        },
+        "phase_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metricCheck"
+          }
+        },
+        "op_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/metricCheck"
+          }
+        },
+        "tail_event_recall": {
+          "$ref": "#/$defs/tailRecall"
+        }
+      },
+      "additionalProperties": true
+    },
+    "behaviorMetrics": {
+      "type": "object",
+      "required": [
+        "median_us",
+        "p95_us",
+        "p99_us",
+        "max_us",
+        "mean_us",
+        "communication_hidden_pct"
+      ],
+      "properties": {
+        "median_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p95_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p99_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "mean_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "communication_hidden_pct": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": true
+    },
+    "metricCheck": {
+      "type": "object",
+      "required": [
+        "metric",
+        "status"
+      ],
+      "properties": {
+        "metric": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/passFail"
+        },
+        "scope": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "relative_delta_pct": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "passFail": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    },
+    "ranking": {
+      "type": "object",
+      "required": [
+        "metric",
+        "status",
+        "agreement",
+        "passed_pairs",
+        "total_pairs",
+        "tie_tolerance_us",
+        "orders",
+        "pairwise"
+      ],
+      "properties": {
+        "metric": {
+          "const": "pairwise_latency_metrics"
+        },
+        "status": {
+          "$ref": "#/$defs/passFail"
+        },
+        "agreement": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "passed_pairs": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "total_pairs": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "tie_tolerance_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "orders": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "source_order",
+              "canary_order"
+            ],
+            "properties": {
+              "source_order": {
+                "type": "array",
+                "items": {
+                  "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+                }
+              },
+              "canary_order": {
+                "type": "array",
+                "items": {
+                  "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+                }
+              }
+            }
+          }
+        },
+        "pairwise": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rankingPair"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "rankingPair": {
+      "type": "object",
+      "required": [
+        "metric",
+        "left",
+        "right",
+        "status",
+        "source_relation",
+        "canary_relation",
+        "source_left",
+        "source_right",
+        "canary_left",
+        "canary_right"
+      ],
+      "properties": {
+        "metric": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "left": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "right": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/passFail"
+        },
+        "source_relation": {
+          "$ref": "#/$defs/relation"
+        },
+        "canary_relation": {
+          "$ref": "#/$defs/relation"
+        },
+        "source_left": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "source_right": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "canary_left": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "canary_right": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "relation": {
+      "enum": [
+        "tie",
+        "left_better",
+        "right_better"
+      ]
+    },
+    "sourceVerification": {
+      "type": "object",
+      "required": [
+        "format",
+        "status",
+        "assurance_state",
+        "checks"
+      ],
+      "properties": {
+        "format": {
+          "const": "commcanary.fidelity_verification.v1"
+        },
+        "status": {
+          "enum": [
+            "source_verified",
+            "failed"
+          ]
+        },
+        "assurance_state": {
+          "enum": [
+            "source_corresponding",
+            "internally_consistent"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/check"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "tailRecall": {
+      "type": "object",
+      "required": [
+        "status",
+        "checks"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/passFail"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "quantile",
+              "status",
+              "source_tail_count",
+              "recall"
+            ],
+            "properties": {
+              "quantile": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "status": {
+                "$ref": "#/$defs/passFail"
+              },
+              "source_tail_count": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+              },
+              "recall": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

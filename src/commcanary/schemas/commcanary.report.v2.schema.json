@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.report.v2.schema.json",
+  "title": "CommCanary report v2",
+  "description": "Portable shape for commcanary.report.v2. Protocol digests, metric reconciliation, quantile ordering, sample scheduling, and canary correspondence require runtime validation.",
+  "type": "object",
+  "required": [
+    "format",
+    "metrics",
+    "canary",
+    "simulation_model",
+    "replay_protocol"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.report.v2"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "workload": {
+      "type": "object"
+    },
+    "system": {
+      "type": "object"
+    },
+    "host": {
+      "type": "object"
+    },
+    "canary_summary": {
+      "type": "object"
+    },
+    "metrics": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/reportMetrics"
+    },
+    "canary": {
+      "$ref": "#/$defs/canaryReference"
+    },
+    "simulation_model": {
+      "$ref": "#/$defs/simulationModel"
+    },
+    "replay_protocol": {
+      "$ref": "#/$defs/replayProtocol"
+    },
+    "backend": {
+      "$ref": "#/$defs/backend"
+    },
+    "by_phase": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/breakdown"
+      }
+    },
+    "by_op": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/breakdown"
+      }
+    },
+    "calibration": {
+      "$ref": "#/$defs/calibration"
+    },
+    "samples": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sample"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "backend": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "mode": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "bandwidth_gbps": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "latency_floor_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "compute_pressure": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "overlap_efficiency": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "iterations": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "bandwidth_unit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "ablations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "breakdown": {
+      "allOf": [
+        {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/latencySummary"
+        },
+        {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+            }
+          }
+        }
+      ]
+    },
+    "calibration": {
+      "type": "object",
+      "required": [
+        "signal",
+        "count",
+        "mean_absolute_error_us",
+        "median_absolute_error_us",
+        "p95_absolute_error_us",
+        "max_absolute_error_us",
+        "mean_bias_us",
+        "mean_absolute_percentage_error_pct",
+        "percentage_count"
+      ],
+      "properties": {
+        "signal": {
+          "const": "observed_exposed_us"
+        },
+        "count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "percentage_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "mean_absolute_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "median_absolute_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "p95_absolute_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_absolute_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "mean_bias_us": {
+          "type": "number"
+        },
+        "mean_absolute_percentage_error_pct": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "canaryReference": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "source_events"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "source_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "format": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "execution_semantic_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "scheduler_execution_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "calibration_evaluation_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        }
+      },
+      "additionalProperties": true
+    },
+    "replayProtocol": {
+      "type": "object",
+      "required": [
+        "model_name",
+        "model_version",
+        "seed",
+        "iterations",
+        "quantile_method",
+        "bandwidth_unit",
+        "sha256"
+      ],
+      "properties": {
+        "model_name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "model_version": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "iterations": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "quantile_method": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "bandwidth_unit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "max_replay_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "ablations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+          }
+        },
+        "sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        }
+      },
+      "additionalProperties": true
+    },
+    "sample": {
+      "type": "object",
+      "required": [
+        "index",
+        "iteration",
+        "phase",
+        "op",
+        "group",
+        "first_arrival_us",
+        "last_arrival_us",
+        "collective_start_us",
+        "completion_us",
+        "total_us",
+        "hidden_us",
+        "exposed_us",
+        "arrival_skew_us",
+        "avg_rank_wait_us",
+        "compute_overlap_us",
+        "collective_us",
+        "queue_wait_us"
+      ],
+      "properties": {
+        "index": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "iteration": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "phase": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "op": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "group": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "scheduler_resource": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "first_arrival_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "last_arrival_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "collective_start_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "completion_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "total_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "hidden_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "exposed_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "arrival_skew_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "avg_rank_wait_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "compute_overlap_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "collective_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "queue_wait_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "observed_exposed_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "simulationModel": {
+      "type": "object",
+      "required": [
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

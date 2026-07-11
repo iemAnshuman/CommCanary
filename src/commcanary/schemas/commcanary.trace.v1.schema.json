@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.trace.v1.schema.json",
+  "title": "CommCanary trace v1",
+  "description": "Portable shape for commcanary.trace.v1. Rank membership, arrival-key coverage, point-to-point endpoints, and derived timing relationships require runtime validation.",
+  "type": "object",
+  "required": [
+    "format",
+    "events"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.trace.v1"
+    },
+    "workload": {
+      "type": "object"
+    },
+    "system": {
+      "type": "object"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "event": {
+      "type": "object",
+      "required": [
+        "op",
+        "bytes",
+        "ranks"
+      ],
+      "properties": {
+        "op": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "custom_op": {
+          "type": "boolean"
+        },
+        "bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "ranks": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/ranks"
+        },
+        "rank_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "phase": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "group": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "rank_arrival_us": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+              }
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[0-9]+$"
+              },
+              "additionalProperties": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+              }
+            }
+          ]
+        },
+        "partial_rank_arrival": {
+          "type": "boolean"
+        },
+        "arrival_skew_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "start_us": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "gap_us": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "compute_before_us": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "compute_overlap_us": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "compute_pressure": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "observed_exposed_us": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000
+        },
+        "concurrent_groups": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "sender_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "receiver_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "message_sequence": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "tag": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "channel": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

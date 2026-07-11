@@ -1,0 +1,583 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.canary.v2.schema.json",
+  "title": "CommCanary canary v2",
+  "description": "Portable shape for a profiled commcanary.canary.v2 artifact. Digest recomputation, source correspondence, motif expansion, interval coverage, counts, and timing relationships require runtime validation.",
+  "type": "object",
+  "required": [
+    "format",
+    "source_format",
+    "compiler",
+    "events"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.canary.v2"
+    },
+    "source_format": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "workload": {
+      "type": "object"
+    },
+    "system": {
+      "type": "object"
+    },
+    "compiler": {
+      "$ref": "#/$defs/compiler"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/leafEvent"
+          },
+          {
+            "$ref": "#/$defs/sequenceMotif"
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "compiler": {
+      "type": "object",
+      "required": [
+        "integrity_profile",
+        "artifact_provenance_algorithm",
+        "source_events",
+        "source_trace_sha256",
+        "source_normalized_sha256",
+        "execution_semantic_sha256",
+        "scheduler_execution_sha256",
+        "calibration_evaluation_sha256",
+        "artifact_provenance_sha256"
+      ],
+      "properties": {
+        "integrity_profile": {
+          "const": "commcanary.canary-integrity.v1"
+        },
+        "artifact_provenance_algorithm": {
+          "const": "commcanary.artifact-provenance.v2"
+        },
+        "source_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "canary_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "expanded_canary_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "source_bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "canary_bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "timing_sample_limit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "timing_group_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "sequence_motif_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "recursive_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "approximate_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "stored_recursive_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "stored_approximate_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "source_trace_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "source_normalized_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "execution_semantic_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "scheduler_execution_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "calibration_evaluation_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "artifact_provenance_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "timing_sample_limit_mode": {
+          "enum": [
+            "uniform",
+            "per_group"
+          ]
+        },
+        "timing_sample_limits_by_group": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 9223372036854775807
+          }
+        },
+        "fidelity": {
+          "$ref": "#/$defs/fidelity"
+        },
+        "fidelity_budget": {
+          "$ref": "#/$defs/fidelityBudget"
+        },
+        "capture_uncertainty": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+            },
+            "compute_fields_uncertain_events": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+            }
+          },
+          "additionalProperties": true
+        },
+        "tail_signal": {
+          "enum": [
+            "observed_exposed_us",
+            "structural-proxy"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "errorVector": {
+      "type": "object",
+      "properties": {
+        "max_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_skew_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_arrival_offset_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_compute_before_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_overlap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_pressure_error": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_observed_exposed_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "representative_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_prefix_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fidelity": {
+      "type": "object",
+      "required": [
+        "mode",
+        "max_gap_error_us",
+        "max_skew_error_us",
+        "max_arrival_offset_error_us",
+        "max_compute_before_error_us",
+        "max_overlap_error_us",
+        "max_pressure_error",
+        "max_observed_exposed_error_us",
+        "max_prefix_gap_error_us"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "lossless_timing",
+            "bounded_approximate"
+          ]
+        },
+        "approximate_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "max_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_skew_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_arrival_offset_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_compute_before_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_overlap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_pressure_error": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_observed_exposed_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_prefix_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "source_gap_total_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "encoded_gap_total_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "total_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fidelityBudget": {
+      "type": "object",
+      "properties": {
+        "max_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_skew_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_arrival_offset_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_compute_before_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_overlap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_pressure_error": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_observed_exposed_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_prefix_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "additionalProperties": false
+    },
+    "leafEvent": {
+      "type": "object",
+      "required": [
+        "op",
+        "bytes",
+        "ranks",
+        "repeat",
+        "phase",
+        "group",
+        "source",
+        "timing_samples"
+      ],
+      "properties": {
+        "program": {
+          "not": {
+            "const": "sequence_motif"
+          }
+        },
+        "op": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "custom_op": {
+          "type": "boolean"
+        },
+        "bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "ranks": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/ranks"
+        },
+        "rank_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "repeat": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "phase": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "group": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceBlock"
+        },
+        "timing_samples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/timingRecord"
+          }
+        },
+        "arrival_offsets_us": {
+          "type": "array",
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+          }
+        },
+        "rank_arrival_us": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+          }
+        },
+        "partial_rank_arrival": {
+          "type": "boolean"
+        },
+        "arrival_skew_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "concurrent_groups": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "execution_occurrence_base": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "execution_occurrence_stride": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "sender_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "receiver_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "message_sequence": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "tag": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "channel": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": true
+    },
+    "sequenceMotif": {
+      "type": "object",
+      "required": [
+        "program",
+        "program_repeats",
+        "source",
+        "events"
+      ],
+      "properties": {
+        "program": {
+          "const": "sequence_motif"
+        },
+        "motif_id": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "program_repeats": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceBlock"
+        },
+        "events": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/$defs/leafEvent"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "sourceBlock": {
+      "type": "object",
+      "required": [
+        "count",
+        "first_id",
+        "last_id",
+        "digest"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "first_id": true,
+        "last_id": true,
+        "digest": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "sampled_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        }
+      },
+      "additionalProperties": true
+    },
+    "timingRecord": {
+      "type": "object",
+      "required": [
+        "arrival_offsets_us"
+      ],
+      "properties": {
+        "arrival_offsets_us": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+          }
+        },
+        "arrival_skew_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "gap_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "gap_sum_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "compute_before_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "compute_overlap_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "compute_pressure": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "observed_exposed_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "source_index": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "source_start": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "source_end": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "weight": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "pattern_repeats": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "timing_pattern": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/timingLeaf"
+          }
+        },
+        "approximation": {
+          "const": "bounded_interval"
+        },
+        "source_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "representative_source_index": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "source_segment_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "source_gap_sum_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "representative_selection_method": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "error_vector": {
+          "$ref": "#/$defs/errorVector"
+        },
+        "compute_fields_uncertain": {
+          "type": "boolean"
+        },
+        "uncertain_weight": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "max_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_skew_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_arrival_offset_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_compute_before_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_overlap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_pressure_error": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_observed_exposed_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "representative_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        },
+        "max_prefix_gap_error_us": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "source_index"
+          ]
+        },
+        {
+          "required": [
+            "source_start",
+            "source_end"
+          ]
+        }
+      ],
+      "additionalProperties": true
+    },
+    "timingLeaf": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/timingRecord"
+        },
+        {
+          "not": {
+            "required": [
+              "timing_pattern"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

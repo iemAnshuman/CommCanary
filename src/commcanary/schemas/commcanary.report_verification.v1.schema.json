@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.report_verification.v1.schema.json",
+  "title": "CommCanary report verification v1",
+  "description": "Portable output shape for report recomputation. Agreement between the aggregate status, assurance state, and individual checks is not expressed by this schema.",
+  "type": "object",
+  "required": [
+    "format",
+    "status",
+    "assurance_state",
+    "checks"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.report_verification.v1"
+    },
+    "status": {
+      "enum": [
+        "model_recomputed",
+        "failed"
+      ]
+    },
+    "assurance_state": {
+      "enum": [
+        "model_recomputed",
+        "structurally_valid"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/check"
+      }
+    }
+  },
+  "additionalProperties": true
+}
