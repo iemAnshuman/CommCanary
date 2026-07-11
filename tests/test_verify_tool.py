@@ -675,3 +675,23 @@ def test_reproducible_package_gate_builds_twice_without_finalizing_changelog(
     )
 
     assert len(builds) == 2
+
+
+def test_validation_walks_prune_cluster_side_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(verify, "ROOT", tmp_path)
+    experiment = tmp_path / "experiments" / "rostam"
+    (experiment / "constraints").mkdir(parents=True)
+    (experiment / "constraints" / "kept.json").write_text("{}", encoding="utf-8")
+    for state in ("results", "third_party", "venvs"):
+        directory = experiment / state / "nested"
+        directory.mkdir(parents=True)
+        (directory / "skipped.json").write_text("{}", encoding="utf-8")
+        (directory / "skipped.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    (experiment / "third_party" / "loop").symlink_to(experiment / "third_party")
+
+    walked = list(verify._iter_files((tmp_path / "experiments",)))
+
+    assert walked == [experiment / "constraints" / "kept.json"]

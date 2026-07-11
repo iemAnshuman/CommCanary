@@ -257,9 +257,22 @@ def _iter_files(paths: Iterable[Path]) -> Iterable[Path]:
             continue
         if not root.exists():
             continue
-        for path in sorted(root.rglob("*")):
-            if path.is_file():
-                yield path
+        collected: List[Path] = []
+        stack = [root]
+        while stack:
+            for path in stack.pop().iterdir():
+                # Prune generated and vendored trees at the directory level so
+                # a cluster checkout (results, third_party, venvs) is neither
+                # validated nor walked.
+                if _forbidden_tracked_path(path.relative_to(ROOT)):
+                    continue
+                if path.is_symlink():
+                    continue
+                if path.is_dir():
+                    stack.append(path)
+                elif path.is_file():
+                    collected.append(path)
+        yield from sorted(collected)
 
 
 def _validate_repository_hygiene() -> None:
