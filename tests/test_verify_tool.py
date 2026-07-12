@@ -695,3 +695,36 @@ def test_validation_walks_prune_cluster_side_state(
     walked = list(verify._iter_files((tmp_path / "experiments",)))
 
     assert walked == [experiment / "constraints" / "kept.json"]
+
+
+def test_package_gate_refuses_occupied_destinations_before_building(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:  # pragma: no cover - proves the preflight is first
+        raise AssertionError("no build may start with occupied destinations")
+
+    monkeypatch.setattr(verify, "_build_artifacts", forbidden)
+    metadata = tmp_path / "release-metadata"
+    metadata.mkdir()
+    (metadata / "SHA256SUMS").write_text("stale\n", encoding="utf-8")
+    with pytest.raises(verify.VerificationError, match="not empty"):
+        verify._package_gate(
+            release=False,
+            reproducible=True,
+            artifact_dir=tmp_path / "dist",
+            metadata_dir=metadata,
+            expected_version=None,
+        )
+
+    artifacts = tmp_path / "dist"
+    artifacts.mkdir()
+    (artifacts / "commcanary-0.0.0-py3-none-any.whl").write_bytes(b"stale")
+    with pytest.raises(verify.VerificationError, match="already contains release artifacts"):
+        verify._package_gate(
+            release=False,
+            reproducible=True,
+            artifact_dir=artifacts,
+            metadata_dir=tmp_path / "fresh-metadata",
+            expected_version=None,
+        )

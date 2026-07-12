@@ -87,6 +87,35 @@ entrypoint refuses to execute any cell whose venv lacks that marker or whose
 marker differs from the manifest-bound `commcanary-wheel` input. A stale venv
 can no longer produce evidence under an unreviewed wheel.
 
+### Campaign execution addendum — 2026-07-13 (r3/r4 forensics, r5 live)
+
+Deeper forensics corrected the r2 theory: the post-fix wheel had never
+actually been rebuilt on Rostam — the contract, the on-disk `dist/` wheel,
+and the r2/r3 manifests all still bound the pre-fix wheel, so r3 was
+unrunnable by construction (its catalog passes a flag its bound wheel cannot
+parse) and its guard-refusal ledger is retained as evidence the venv binding
+works. The first full gate run on a live cluster checkout then surfaced and
+fixed four latent gaps (mypy over vendored `third_party/`, release staging
+refusing cluster symlinks, a test pinning the pre-cluster contract status,
+validation walks crawling venvs/results). The post-fix wheel was rebuilt by
+the canonical gate on Rostam (`11c2aa5d…`, member content digest equal to the
+macOS reference `c7bd9411…`), the contract rebound, and — the load-bearing
+lesson — the per-environment `freeze_sha256` evidence embeds the wheel hash
+via pip's direct-URL freeze format, so every wheel rebind requires probe-venv
+freeze re-capture (`docs/artifact-evaluation.md`).
+
+r4 was frozen correctly but scancelled before any attempt ran (zero attempts;
+superseded, not tainted) for an operational constraint now treated as
+standing: campaigns are submitted in low-footprint chunks. `submission plan
+--max-cells N` schedules at most N cells in canonical order and defers the
+tail to the next `--resume` invocation; a submittable plan also verifies each
+configuration venv's interpreter and wheel marker before any `sbatch`, and
+the cell entrypoint verifies the PARAM checkout against the reviewed
+postimage at runtime. `core-20260713-r5` is live under this regime (chunks of
+24; first chunk submitted 2026-07-13). Still deferred until after the
+campaign: pyproject license-format modernization (changes wheel METADATA and
+therefore forces a rebind plus freeze re-capture).
+
 _Original roadmap re-audited 2026-07-10. Its baseline observations below are
 historical; the live implementation status is the checkpoint above._
 

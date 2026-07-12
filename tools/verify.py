@@ -1022,6 +1022,18 @@ def _package_gate(
     metadata_dir: Optional[Path],
     expected_version: Optional[str],
 ) -> None:
+    # Refuse occupied output destinations before the expensive build phases, so
+    # a stale dist/ or release-metadata/ fails the gate in milliseconds rather
+    # than after a full green run.
+    if metadata_dir is not None:
+        if artifact_dir is not None and metadata_dir == artifact_dir:
+            raise VerificationError("--metadata-dir and --artifact-dir must be different directories")
+        if metadata_dir.exists() and any(metadata_dir.iterdir()):
+            raise VerificationError(f"metadata output destination is not empty: {metadata_dir}")
+    if artifact_dir is not None and artifact_dir.exists():
+        existing = sorted((*artifact_dir.glob("*.whl"), *artifact_dir.glob("*.tar.gz")))
+        if existing:
+            raise VerificationError(f"artifact output directory {artifact_dir} already contains release artifacts")
     if release:
         _verify_release_changelog(expected_version or _project_version())
         _validate_release_source_state()

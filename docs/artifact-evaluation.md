@@ -92,13 +92,34 @@ what must agree. Sorted member content digest (sha256 over
 `f70471f981614673bf34f1cdecb9f2955103d0dcc483fd7d92b8959f09e601f6`.
 
 The environment contract's `commcanary_wheel` binds the **Rostam-built**
-wheel above — it was produced by the full canonical gate on the target
-platform, which is the strongest provenance for the bytes that will actually
-be installed there. The macOS wheel (`416dbea6…`) and sdist remain retained
-as the cross-platform cross-check. The contract status remains
-`pending-rostam-resolution` until the site evidence below is collected; the
-member content digest of the bound wheel must equal the recorded value
+wheel — produced by the full canonical gate on the target platform, which is
+the strongest provenance for the bytes that will actually be installed there.
+The macOS wheel and sdist remain retained as the cross-platform cross-check.
+The member content digest of the bound wheel must equal the recorded value
 before any submission.
+
+### Post-fix rebind (2026-07-12, after the import-budget fix)
+
+The first physical campaign exposed a source fix (`import-kineto
+--max-input-bytes`), so the wheel above is superseded. The current bindings,
+each produced by a full green gate run on its platform:
+
+- macOS reference: `commcanary-0.3.0-py3-none-any.whl`
+  `sha256:0baa371773cd21674ff6e2ed1f2713d54a48a0cc953b6b4873c19f178bbbcc42`
+- Rostam-built, contract-bound: `commcanary-0.3.0-py3-none-any.whl`
+  `sha256:11c2aa5d2d505dcc6e2ceccc600a6b00949a0b83f55368ed4c1042b46b63563e`
+- Sorted member content digest of both (the cross-platform equality check,
+  iterated in sorted-name order, updating with
+  `sha256(name + bytes)` raw digests per member):
+  `c7bd941142e4a4617c1f85daa212cd9ede4905479f152945b39147b8b9a5ec48`
+
+Rebinding lesson recorded for future wheel changes: `pip freeze --all`
+records direct-URL installs as `commcanary @ file:///…whl#sha256=<wheel
+hash>` (pip ≥ 24.x reads PEP 610 `direct_url.json`), so the contract's
+per-environment `freeze_sha256` evidence **embeds the wheel hash**. Any wheel
+rebind therefore requires re-capturing freeze evidence from disposable probe
+venvs before `setup.sh` can certify the rebuilt environments — the freeze
+check refusing after a rebind is the contract working, not an error.
 
 ## Inputs that remain site-observed
 

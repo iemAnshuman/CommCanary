@@ -36,6 +36,7 @@ from ..harness import (
     load_cell_result,
     load_frozen_run,
     read_bounded_text,
+    strict_json_loads,
     utc_timestamp,
     verify_artifact_reference,
     verify_attempt_artifacts,
@@ -83,6 +84,8 @@ _OUTPUT_LIMIT_EXIT_CODE = 125
 _WHEEL_INPUT_ID = "commcanary-wheel"
 _WHEEL_MARKER_FILENAME = "commcanary-wheel.sha256"
 _WHEEL_MARKER_MAX_BYTES = 256
+_PARAM_CONTRACT_INPUT_ID = "param-patch-contract"
+_PARAM_CONTRACT_MAX_BYTES = 1_048_576
 
 
 class CellEntrypointError(ContractError):
@@ -212,6 +215,34 @@ def _verify_venv_wheel_binding(venv_directory: Path, manifest: Any) -> None:
         raise CellEntrypointError(
             f"venv holds CommCanary wheel {recorded}, but the manifest binds {bound.sha256}; "
             "archive the venvs and rerun setup.sh with the manifest-bound wheel"
+        )
+
+
+def _verify_param_postimage(experiment_directory: Path, input_paths: Mapping[str, Path]) -> None:
+    """Refuse to execute in a PARAM checkout that is not at the reviewed postimage."""
+
+    contract_path = input_paths.get(_PARAM_CONTRACT_INPUT_ID)
+    if contract_path is None:
+        return
+    raw = read_bounded_text(contract_path, max_bytes=_PARAM_CONTRACT_MAX_BYTES, field="PARAM patch contract")
+    contract = _object(strict_json_loads(raw), "PARAM patch contract")
+    target = _object(contract.get("target"), "PARAM patch contract.target")
+    relative_raw = target.get("path")
+    postimage = target.get("postimage_sha256")
+    if (
+        not isinstance(relative_raw, str)
+        or Path(relative_raw).is_absolute()
+        or ".." in Path(relative_raw).parts
+        or not isinstance(postimage, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", postimage)
+    ):
+        raise CellEntrypointError("PARAM patch contract target binding is malformed or unsafe")
+    patched = experiment_directory / "third_party" / "param" / relative_raw
+    if patched.is_symlink() or not patched.is_file():
+        raise CellEntrypointError("reviewed PARAM checkout is missing its patched target; rerun setup.sh")
+    if file_sha256(patched) != postimage:
+        raise CellEntrypointError(
+            "PARAM target does not match the reviewed postimage; the patch is not applied — rerun setup.sh"
         )
 
 
@@ -1021,6 +1052,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     dependency_paths, dependency_evidence = _dependency_artifacts(manifest, frozen.directory, cell, dependencies)
     experiment_directory = Path(os.environ["COMMCANARY_EXPERIMENT_DIR"]).resolve()
     _verify_execution_scripts(manifest, experiment_directory)
+    _verify_param_postimage(experiment_directory, input_paths)
     repository_root = experiment_directory.parent.parent
     configuration_parameters = _object(configuration.parameters.to_value(), "configuration.parameters")
     venv_raw = configuration_parameters.get("venv")
