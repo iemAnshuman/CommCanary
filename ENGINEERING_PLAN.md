@@ -1,5 +1,36 @@
 # CommCanary Engineering Plan
 
+## Active checkpoint — 2026-07-13 (r5 failed closed; r6 repair locally verified)
+
+Repository phases 0–6 and 8 are complete, phase 7's fail-closed experiment
+machinery is complete, and phase 9 remains complete up to the deliberate
+release boundary. The remaining critical path is physical evidence collection
+on Rostam.
+
+`core-20260713-r5` is now retained as failed evidence rather than retried. Its
+first 24-job chunk produced 8 successful independent cells and 8 deterministic
+`trace-build` failures; the 8 downstream `canary-param` jobs were cancelled
+after SLURM marked them `DependencyNeverSatisfied`. Both NCCL environments
+failed at the same importer boundary: their approximately 86.7 MiB Kineto
+profiles fit the explicit 1 GiB byte budget but contained more than the default
+2,000,000 JSON items. A constant-memory structural scan of the largest profile
+measured exactly 5,685,910 items.
+
+The r6 repair adds an explicit per-invocation `import-kineto
+--max-json-items` override and binds 12,000,000 items at all three Rostam
+trace-import call sites. The local canonical fast gate is green with **726
+tests**, 90.6494% statement coverage, every branch floor, whole-tree strict
+mypy, Ruff, import boundaries, JSON/schema, shell/workflow, and documentation
+checks. The reproducible macOS reference wheel is
+`d1c2919af3157a6d76abe278ac76e7dbb6fdf03d005d418fcef54c1a423b44f4`;
+its sorted member-content digest is
+`2189f3dda9a484952a798a6ada156fc3c65abdb644f18829f72e28d953d4fedf`.
+What remains is to transfer the reviewed patch to Rostam, rebuild and rebind
+the target wheel, re-capture the two freeze hashes, certify the venvs, freeze
+`core-20260713-r6`, and run it in 16–24 job chunks before final
+selection/completeness/analysis. GEMM calibration and the overlap/shared
+campaigns remain deferred until core completes.
+
 ## Implementation checkpoint — 2026-07-11 (evening; supersedes the morning entry)
 
 This live checkpoint is still before any Rostam login, setup, scheduler,
@@ -87,7 +118,7 @@ entrypoint refuses to execute any cell whose venv lacks that marker or whose
 marker differs from the manifest-bound `commcanary-wheel` input. A stale venv
 can no longer produce evidence under an unreviewed wheel.
 
-### Campaign execution addendum — 2026-07-13 (r3/r4 forensics, r5 live)
+### Campaign execution addendum — 2026-07-13 (r3–r5 forensics; r6 pending)
 
 Deeper forensics corrected the r2 theory: the post-fix wheel had never
 actually been rebuilt on Rostam — the contract, the on-disk `dist/` wheel,
@@ -111,10 +142,20 @@ standing: campaigns are submitted in low-footprint chunks. `submission plan
 tail to the next `--resume` invocation; a submittable plan also verifies each
 configuration venv's interpreter and wheel marker before any `sbatch`, and
 the cell entrypoint verifies the PARAM checkout against the reviewed
-postimage at runtime. `core-20260713-r5` is live under this regime (chunks of
-24; first chunk submitted 2026-07-13). Still deferred until after the
-campaign: pyproject license-format modernization (changes wheel METADATA and
-therefore forces a rebind plus freeze re-capture).
+postimage at runtime.
+
+r5 exercised that regime, but its first chunk failed closed at the second
+bounded-JSON dimension: all 8 `trace-build` attempts exceeded the default
+2,000,000-item ceiling after their approximately 86.7 MiB profiles passed the
+explicit 1 GiB byte ceiling. The largest preserved profile contains exactly
+5,685,910 structural items. Its 8 dependency-blocked `canary-param` jobs were
+cancelled with no attempt records, the queue drained to zero, and r5 is
+superseded rather than retried under a known-insufficient policy. The r6
+repair exposes `import-kineto --max-json-items` and binds a measured
+12,000,000-item ceiling at the core, overlap, and shared import call sites.
+Still deferred until after the campaign: pyproject license-format
+modernization (changes wheel METADATA and therefore forces a rebind plus
+freeze re-capture).
 
 _Original roadmap re-audited 2026-07-10. Its baseline observations below are
 historical; the live implementation status is the checkpoint above._

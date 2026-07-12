@@ -63,6 +63,7 @@ def _copy_experiment_sources(destination: Path) -> None:
 
 CATALOG_PATH = EXPERIMENT_DIRECTORY / "configs.json"
 PENDING_GEMM_CALIBRATION = "PENDING_ROSTAM_GEMM_CALIBRATION_US"
+KINETO_JSON_ITEM_BUDGET = "12000000"
 
 
 def test_catalog_plan_and_environment_loaders_apply_shared_byte_caps(
@@ -198,6 +199,15 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     unsupported["workloads"][0]["parameters"]["global_ranks"] = [0, 2, 1, 3]
     with pytest.raises(CatalogValidationError, match="dense world"):
         Catalog.from_dict(unsupported)
+
+
+def test_trace_imports_bind_the_observed_rostam_json_item_budget() -> None:
+    raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+    workloads = {workload["id"]: workload for workload in raw["workloads"]}
+    for workload_id in ("trace-build", "overlap-trace-build", "shared-trace-capture"):
+        command = workloads[workload_id]["parameters"]["transform_commands"][0]
+        assert command[command.index("--max-input-bytes") + 1] == "1073741824"
+        assert command[command.index("--max-json-items") + 1] == KINETO_JSON_ITEM_BUDGET
 
 
 def test_physical_adapters_emit_distinct_strict_measurements() -> None:

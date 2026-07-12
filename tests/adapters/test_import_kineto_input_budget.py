@@ -1,8 +1,9 @@
-"""CLI override of the bounded-JSON input budget for Kineto imports.
+"""CLI overrides of bounded-JSON budgets for Kineto imports.
 
 A real multi-rank profiler trace legitimately exceeds the default
-``max_input_bytes``; the operator raises the budget explicitly per invocation
-instead of the tool silently accepting unbounded input.
+``max_input_bytes`` and ``max_json_items`` limits; the operator raises each
+budget explicitly per invocation instead of the tool silently accepting
+unbounded input.
 """
 
 from __future__ import annotations
@@ -89,6 +90,43 @@ class ImportKinetoInputBudgetTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue(os.path.exists(output))
 
+    def test_explicit_item_budget_rejects_oversized_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = self._write_profile(tmp)
+            output = os.path.join(tmp, "trace.json")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = cli_main(
+                    [
+                        "import-kineto",
+                        profile,
+                        "--max-json-items",
+                        "1",
+                        "--output",
+                        output,
+                    ]
+                )
+            self.assertEqual(exit_code, 3)
+            self.assertIn("max_json_items=1", stderr.getvalue())
+            self.assertFalse(os.path.exists(output))
+
+    def test_raised_item_budget_accepts_the_same_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = self._write_profile(tmp)
+            output = os.path.join(tmp, "trace.json")
+            exit_code = cli_main(
+                [
+                    "import-kineto",
+                    profile,
+                    "--max-json-items",
+                    "1000",
+                    "--output",
+                    output,
+                ]
+            )
+            self.assertEqual(exit_code, 0)
+            self.assertTrue(os.path.exists(output))
+
     def test_non_positive_budget_is_an_application_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             profile = self._write_profile(tmp)
@@ -98,6 +136,16 @@ class ImportKinetoInputBudgetTests(unittest.TestCase):
                 exit_code = cli_main(["import-kineto", profile, "--max-input-bytes", "0", "--output", output])
             self.assertEqual(exit_code, 3)
             self.assertIn("positive", stderr.getvalue())
+
+    def test_non_positive_item_budget_is_an_application_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = self._write_profile(tmp)
+            output = os.path.join(tmp, "trace.json")
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                exit_code = cli_main(["import-kineto", profile, "--max-json-items", "0", "--output", output])
+            self.assertEqual(exit_code, 3)
+            self.assertIn("--max-json-items must be a positive integer", stderr.getvalue())
 
 
 if __name__ == "__main__":

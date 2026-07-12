@@ -121,6 +121,32 @@ rebind therefore requires re-capturing freeze evidence from disposable probe
 venvs before `setup.sh` can certify the rebuilt environments — the freeze
 check refusing after a rebind is the contract working, not an error.
 
+### Post-item-budget rebind (2026-07-13, r6 pending)
+
+The first r5 chunk exposed the independent structural JSON ceiling after the
+byte-budget repair: every trace-build importer rejected its approximately
+86.7 MiB Kineto profile at the default `max_json_items=2,000,000`. A
+constant-memory structural scan of the largest retained profile measured
+5,685,910 object members plus array elements. The reviewed repair adds
+`import-kineto --max-json-items` as another explicit, per-invocation override
+for trusted local profiles and binds 12,000,000 at the core, overlap, and
+shared Rostam call sites. Defaults remain unchanged and fail closed.
+
+Because this changes both wheel contents and the manifest-bound Rostam
+catalog, r5 is retained as failed evidence and cannot be repaired in place.
+Before r6 submission the operator must rebuild the target wheel, rebind its
+digest, re-capture both wheel-embedding freeze hashes, rebuild/certify the two
+venvs, and freeze a new manifest. The reproducible macOS reference package
+gate produced:
+
+- wheel SHA-256:
+  `d1c2919af3157a6d76abe278ac76e7dbb6fdf03d005d418fcef54c1a423b44f4`
+- sorted member-content digest:
+  `2189f3dda9a484952a798a6ada156fc3c65abdb644f18829f72e28d953d4fedf`
+
+The Rostam-built container digest remains pending; its member-content digest
+must equal the reference above before the environment contract is rebound.
+
 ## Inputs that remain site-observed
 
 Before a Rostam submission, the operator must replace or record every unresolved

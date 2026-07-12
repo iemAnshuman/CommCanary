@@ -114,6 +114,9 @@
 ### Ecosystem interop
 
 - Added `commcanary import-kineto`: single-rank observational import of `record_param_comms` collective metadata (op, dtype, element counts, process-group ranks, timestamps) from PyTorch profiler traces (torch >= 2.2); timestamps are rebased to the trace start, truncated non-uniform rank lists fail closed instead of fabricating membership, unmapped collectives become `custom_op` events, control ops are skipped and counted, and no cross-rank skew or overlap is invented.
+- Added per-invocation `import-kineto --max-input-bytes` and
+  `--max-json-items` overrides for trusted local profiler output while keeping
+  both bounded defaults fail-closed for untrusted input.
 - Added `commcanary export-param`: expands a canary's full event program (motifs, patterns, run-length weights) into a PARAM comms-replay "basic" JSON trace with element counts, PARAM's asymmetric size conventions for `all_gather`/`reduce_scatter`, process-group ids, matched send/recv entry pairs (with `src_rank`/`dst_rank`) per point-to-point transfer, and cumulative `startTime_ns` timestamps for `--use-timestamp` replay — a physical NCCL execution path for minimized canaries.
 - Tightened `verify-behavior` so it replays the full normalized source trace by default and marks prefix/subset canaries as partial-source rather than behaviorally verified.
 - Added simulator ablation controls for skew, overlap, ordering, rare tails, queue-reset gaps, pressure, and observed exposed latency.

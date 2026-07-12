@@ -201,6 +201,12 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         default=None,
         help="raise the bounded-JSON input budget for a trusted, locally produced profile",
     )
+    import_parser.add_argument(
+        "--max-json-items",
+        type=int,
+        default=None,
+        help="raise the bounded-JSON structural item budget for a trusted, locally produced profile",
+    )
     import_parser.set_defaults(func=handlers.import_kineto)
 
     export_parser = sub.add_parser(

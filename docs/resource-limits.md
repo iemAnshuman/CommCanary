@@ -95,10 +95,11 @@ canary = compile_trace(trace, limits=service_limits)
 ```
 
 On the command line, `commcanary import-kineto` accepts
-`--max-input-bytes BYTES` because real multi-rank profiler traces routinely
-exceed the default input budget; the raised budget applies to that one
-invocation and every other limit keeps its default. The flag exists for
-trusted, locally produced profiles — hostile input should keep the default.
+`--max-input-bytes BYTES` and `--max-json-items ITEMS` because real multi-rank
+profiler traces can exceed both default input budgets. Each explicit override
+applies only to that invocation and leaves every other limit unchanged. The
+flags exist for trusted, locally produced profiles — hostile input should keep
+the defaults.
 
 Use the same object for a complete pipeline:
 

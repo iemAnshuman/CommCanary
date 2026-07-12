@@ -238,6 +238,10 @@ def import_kineto_command(args: Any) -> int:
         if args.max_input_bytes < 1:
             raise CommCanaryError("--max-input-bytes must be a positive integer")
         limits = replace(limits, max_input_bytes=args.max_input_bytes)
+    if args.max_json_items is not None:
+        if args.max_json_items < 1:
+            raise CommCanaryError("--max-json-items must be a positive integer")
+        limits = replace(limits, max_json_items=args.max_json_items)
     kineto = load_kineto_trace(args.kineto_trace, limits=limits)
     trace = kineto_trace_to_commcanary_trace(
         kineto,
