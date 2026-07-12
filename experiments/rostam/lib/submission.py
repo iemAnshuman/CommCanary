@@ -301,6 +301,37 @@ def _attempt_action(
     raise SubmissionPlanError("existing attempts require --resume, --only-missing, or --retry-failed")
 
 
+_VENV_WHEEL_MARKER = "commcanary-wheel.sha256"
+
+
+def _verify_configuration_venvs(manifest: Any, experiment_dir: Path) -> None:
+    """Refuse to plan a submittable run against venvs setup.sh has not certified."""
+
+    artifacts = {artifact.id: artifact for artifact in manifest.campaign.inputs}
+    wheel = artifacts.get("commcanary-wheel")
+    repository_root = experiment_dir.parent.parent
+    for configuration in manifest.campaign.configurations:
+        venv = _configuration_venv(repository_root, configuration)
+        if not (venv / "bin" / "python").exists():
+            raise SubmissionPlanError(
+                f"configuration {configuration.id!r} venv has no interpreter; run setup.sh before planning"
+            )
+        if wheel is None:
+            continue
+        marker = venv / _VENV_WHEEL_MARKER
+        if marker.is_symlink() or not marker.is_file():
+            raise SubmissionPlanError(
+                f"configuration {configuration.id!r} venv does not record its installed "
+                "CommCanary wheel; archive it and rerun setup.sh"
+            )
+        recorded = read_bounded_text(marker, max_bytes=256, field="venv wheel marker").strip()
+        if recorded != wheel.sha256:
+            raise SubmissionPlanError(
+                f"configuration {configuration.id!r} venv holds CommCanary wheel {recorded}, "
+                f"but the manifest binds {wheel.sha256}; rerun setup.sh with the reviewed wheel"
+            )
+
+
 def _configuration_venv(repository_root: Path, configuration: Any) -> Path:
     parameters = _object(configuration.parameters.to_value(), "configuration.parameters")
     if set(parameters) != {"venv"} or not isinstance(parameters["venv"], str):
@@ -384,6 +415,7 @@ def build_submission_plan(
     only_missing: bool = False,
     retry_failed: bool = False,
     dry_run: bool = False,
+    max_cells: Optional[int] = None,
 ) -> SubmissionPlan:
     """Validate the full matrix and decide every owner before any ``sbatch``."""
 
@@ -395,6 +427,8 @@ def build_submission_plan(
     ):
         if not isinstance(value, bool):
             raise SubmissionPlanError(f"{name} must be boolean")
+    if max_cells is not None and (isinstance(max_cells, bool) or not isinstance(max_cells, int) or max_cells < 1):
+        raise SubmissionPlanError("max_cells must be a positive integer")
     if only_missing and (resume or retry_failed):
         raise SubmissionPlanError("--only-missing cannot be combined with --resume or --retry-failed")
     manifest, frozen = load_frozen_run(run_directory)
@@ -404,11 +438,14 @@ def build_submission_plan(
     if not experiment_dir.is_dir():
         raise SubmissionPlanError("experiment_directory must exist")
     input_hashes = _verify_bound_inputs(manifest, experiment_dir)
+    if not dry_run:
+        _verify_configuration_venvs(manifest, experiment_dir)
     configurations = {item.id: item for item in manifest.campaign.configurations}
     workloads = {item.id: item for item in manifest.campaign.workloads}
     ordered = _ordered_cells(manifest)
     decisions: Dict[str, Dict[str, Any]] = {}
     planned: List[PlannedCell] = []
+    scheduled = 0
     for sequence, cell in enumerate(ordered):
         configuration = configurations[cell.configuration_id]
         workload = workloads[cell.workload_id]
@@ -432,6 +469,12 @@ def build_submission_plan(
             only_missing=only_missing,
             retry_failed=retry_failed,
         )
+        if action == "run" and max_cells is not None and scheduled >= max_cells:
+            # Low-footprint chunking for a shared cluster: the deferred tail is
+            # replanned by the next --resume invocation once this chunk drains.
+            action = "skip"
+            attempt_id = None
+            reason = "max-cells defers this cell to a later submission"
         dependency_attempts: List[Tuple[str, str]] = []
         scheduler_dependencies: List[str] = []
         for dependency_cell_id in cell.dependencies:
@@ -466,6 +509,8 @@ def build_submission_plan(
             )
         else:
             sbatch_argv = ()
+        if action == "run":
+            scheduled += 1
         decision = {
             "action": action,
             "attempt_id": attempt_id,
@@ -761,6 +806,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--only-missing", action="store_true")
     plan.add_argument("--retry-failed", action="store_true")
     plan.add_argument("--dry-run", action="store_true")
+    plan.add_argument(
+        "--max-cells",
+        type=int,
+        default=None,
+        help="schedule at most this many cells and defer the rest to a later submission",
+    )
     submit = subparsers.add_parser("submit")
     submit.add_argument("--plan", type=Path, required=True)
     submit.add_argument("--execute", action="store_true")
@@ -778,6 +829,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 only_missing=args.only_missing,
                 retry_failed=args.retry_failed,
                 dry_run=args.dry_run,
+                max_cells=args.max_cells,
             )
             path = freeze_submission_plan(plan)
             result = {

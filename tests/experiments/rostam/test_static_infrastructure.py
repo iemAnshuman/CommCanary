@@ -556,6 +556,70 @@ def test_submission_plan_precomputes_unique_owners_dependencies_and_exact_argv(t
         submit_frozen_plan(plan, execute=False)
 
 
+def test_submission_plan_max_cells_defers_the_tail_for_low_footprint_chunks(tmp_path: Path, monkeypatch) -> None:
+    frozen = _frozen_core(tmp_path, reviewed=True)
+
+    def forbidden(*args, **kwargs):  # pragma: no cover - proves planner/guard stay static
+        raise AssertionError("subprocess must not run while planning")
+
+    monkeypatch.setattr("experiments.rostam.lib.submission.subprocess.run", forbidden)
+    plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True, max_cells=5)
+    assert len(plan.cells) == 32
+    run_cells = [cell for cell in plan.cells if cell.action == "run"]
+    assert len(run_cells) == 5
+    # The scheduled cells are a prefix of the canonical order, so a dependent
+    # is never scheduled ahead of its producer across chunks.
+    assert [cell.sequence for cell in run_cells] == list(range(5))
+    deferred = [cell for cell in plan.cells if cell.reason and "max-cells defers" in cell.reason]
+    assert deferred and all(cell.action == "skip" and not cell.sbatch_argv for cell in deferred)
+    assert all(cell.action in {"skip", "blocked"} for cell in plan.cells[5:])
+
+    with pytest.raises(SubmissionPlanError, match="positive integer"):
+        build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True, max_cells=0)
+
+
+def test_submittable_plans_require_setup_certified_venvs(tmp_path: Path, monkeypatch) -> None:
+    frozen = _frozen_core(tmp_path, reviewed=True)
+    experiment = tmp_path / "experiments" / "rostam"
+    _copy_experiment_sources(experiment)
+
+    def forbidden(*args, **kwargs):  # pragma: no cover - proves planner/guard stay static
+        raise AssertionError("subprocess must not run while planning")
+
+    monkeypatch.setattr("experiments.rostam.lib.submission.subprocess.run", forbidden)
+    with pytest.raises(SubmissionPlanError, match="no interpreter"):
+        build_submission_plan(frozen.directory, experiment)
+
+    catalog = load_catalog(CATALOG_PATH)
+    venvs = {
+        _object_venv(configuration)
+        for configuration in json.loads(CATALOG_PATH.read_text(encoding="utf-8"))["configurations"]
+    }
+    del catalog
+    for relative in venvs:
+        (tmp_path / relative / "bin").mkdir(parents=True)
+        (tmp_path / relative / "bin" / "python").write_text("", encoding="utf-8")
+    with pytest.raises(SubmissionPlanError, match="does not record its installed"):
+        build_submission_plan(frozen.directory, experiment)
+
+    for relative in venvs:
+        (tmp_path / relative / "commcanary-wheel.sha256").write_text("0" * 64 + "\n", encoding="ascii")
+    with pytest.raises(SubmissionPlanError, match="rerun setup.sh with the reviewed wheel"):
+        build_submission_plan(frozen.directory, experiment)
+
+    wheel_sha = hashlib.sha256(b"reviewed-wheel-fixture").hexdigest()
+    for relative in venvs:
+        (tmp_path / relative / "commcanary-wheel.sha256").write_text(wheel_sha + "\n", encoding="ascii")
+    plan = build_submission_plan(frozen.directory, experiment)
+    assert sum(cell.action == "run" for cell in plan.cells) == 32
+
+
+def _object_venv(configuration: dict[str, Any]) -> str:
+    venv = configuration["venv"]
+    assert isinstance(venv, str)
+    return venv
+
+
 def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> None:
     wrappers = [
         "capture_shared_trace.sbatch",
