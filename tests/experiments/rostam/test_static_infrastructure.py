@@ -370,7 +370,13 @@ def test_static_contract_audit_is_coherent_on_both_sides_of_the_cluster_boundary
     assert "@@ -742,7 +742,7 @@" in patch_text
     assert "--unidiff-zero" not in patch_text
     assert any(line.startswith(" ") for line in patch_text.splitlines())
-    with pytest.raises(EnvironmentContractError, match="environment contract is not reviewed"):
+    # Install readiness must refuse in either state: pending because evidence
+    # is missing, reviewed because the probe wheel hash is not the bound one.
+    if audit["environment_status"] == "reviewed":
+        expected_refusal = "not the reviewed hash"
+    else:
+        expected_refusal = "environment contract is not reviewed"
+    with pytest.raises(EnvironmentContractError, match=expected_refusal):
         verify_ready_for_install(
             EXPERIMENT_DIRECTORY,
             wheel_path=tmp_path / "not-used.whl",
