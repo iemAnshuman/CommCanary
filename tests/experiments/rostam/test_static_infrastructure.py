@@ -633,6 +633,36 @@ def test_submission_plan_precomputes_unique_owners_dependencies_and_exact_argv(t
         submit_frozen_plan(plan, execute=False)
 
 
+def test_submission_plan_shared_input_inventory_survives_canonical_round_trip(tmp_path: Path) -> None:
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    shared_trace = tmp_path / "shared-param-trace.json"
+    shared_trace.write_bytes(b'[{"comms":"init"}]\n')
+    inputs["shared-param-trace"] = shared_trace
+    campaign = build_campaign(
+        catalog=load_catalog(CATALOG_PATH),
+        catalog_path=CATALOG_PATH,
+        profile_id="shared-replay",
+        run_id="rostam-shared-replay-static-fixture",
+        repetitions=1,
+        repository_commit="1" * 40,
+        repository_dirty=False,
+        repository_patch_sha256=None,
+        source_archive_sha256="2" * 64,
+        inputs=inputs,
+    )
+    frozen = freeze_campaign(campaign, tmp_path / "results-shared-replay")
+    plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True, max_cells=1)
+    plan_path = submission_module.freeze_submission_plan(plan)
+    loaded = load_submission_plan(plan_path)
+
+    assert plan.input_hashes == tuple(sorted(plan.input_hashes))
+    assert loaded.input_hashes == plan.input_hashes
+    assert submission_module._verify_bound_inputs(
+        build_run_manifest(campaign),
+        EXPERIMENT_DIRECTORY,
+    ) == loaded.input_hashes
+
+
 def test_submission_plan_max_cells_defers_the_tail_for_low_footprint_chunks(tmp_path: Path, monkeypatch) -> None:
     frozen = _frozen_core(tmp_path, reviewed=True)
 

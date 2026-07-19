@@ -224,7 +224,11 @@ def _verify_bound_inputs(manifest: Any, experiment_directory: Optional[Path] = N
         if path.is_symlink() or not path.is_file() or file_sha256(path) != expected:
             raise SubmissionPlanError(f"manifest execution script is missing or stale: {relative}")
         hashes.append((f"script:{relative}", expected))
-    return tuple(hashes)
+    # Keep the in-memory inventory in the same canonical key order used when
+    # plans are serialized and loaded.  A campaign input may sort after the
+    # ``script:`` namespace (for example ``shared-param-trace``), so appending
+    # script bindings after input bindings is not itself a canonical order.
+    return tuple(sorted(hashes))
 
 
 def _topological_workloads(workloads: Sequence[Any]) -> Tuple[str, ...]:
