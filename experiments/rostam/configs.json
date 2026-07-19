@@ -305,11 +305,19 @@
           "--profile",
           "{workspace}/profile.json"
         ],
-        "readiness": "requires-rostam-gemm-calibration",
+        "gemm_calibration": {
+          "dtype": "bfloat16",
+          "input_id": "gemm-calibration",
+          "matrix_dimension": 1024,
+          "recommended_us_per_gemm": 19.08992,
+          "schema": "commcanary.rostam.gemm-calibration.v1",
+          "selection_rule": "median of the four per-GPU medians"
+        },
+        "readiness": "ready",
         "transform_commands": [
           ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-overlap"],
           ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
-          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "PENDING_ROSTAM_GEMM_CALIBRATION_US", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
+          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
         "world_size": 4
       },
@@ -374,11 +382,19 @@
           "--profile",
           "{workspace}/profile.json"
         ],
-        "readiness": "requires-rostam-gemm-calibration",
+        "gemm_calibration": {
+          "dtype": "bfloat16",
+          "input_id": "gemm-calibration",
+          "matrix_dimension": 1024,
+          "recommended_us_per_gemm": 19.08992,
+          "schema": "commcanary.rostam.gemm-calibration.v1",
+          "selection_rule": "median of the four per-GPU medians"
+        },
+        "readiness": "ready",
         "transform_commands": [
           ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-shared"],
           ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
-          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "PENDING_ROSTAM_GEMM_CALIBRATION_US", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
+          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
         "world_size": 4
       },
@@ -411,12 +427,12 @@
     },
     "overlap": {
       "configuration_ids": ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "param-patch-contract", "rostam-catalog"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "param-patch-contract", "rostam-catalog"],
       "workload_ids": ["overlap-trace-build", "canary-overlap"]
     },
     "shared-capture": {
       "configuration_ids": ["nccl-2.20.5-default"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "param-patch-contract", "rostam-catalog"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "param-patch-contract", "rostam-catalog"],
       "workload_ids": ["shared-trace-capture"]
     },
     "shared-replay": {

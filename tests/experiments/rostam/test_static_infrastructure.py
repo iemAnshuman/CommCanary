@@ -17,7 +17,7 @@ from experiments.rostam.harness import JSONResourceLimits, build_run_manifest, f
 from experiments.rostam.lib import catalog as catalog_module
 from experiments.rostam.lib import environment_contract as environment_contract_module
 from experiments.rostam.lib import submission as submission_module
-from experiments.rostam.lib.campaign import build_campaign
+from experiments.rostam.lib.campaign import CampaignPreparationError, build_campaign
 from experiments.rostam.lib.catalog import Catalog, CatalogValidationError, load_catalog
 from experiments.rostam.lib.environment_contract import (
     EnvironmentContractError,
@@ -62,7 +62,8 @@ def _copy_experiment_sources(destination: Path) -> None:
 
 
 CATALOG_PATH = EXPERIMENT_DIRECTORY / "configs.json"
-PENDING_GEMM_CALIBRATION = "PENDING_ROSTAM_GEMM_CALIBRATION_US"
+GEMM_CALIBRATION_US = "19.08992"
+GEMM_CALIBRATION_SCHEMA = "commcanary.rostam.gemm-calibration.v1"
 KINETO_JSON_ITEM_BUDGET = "12000000"
 
 
@@ -171,11 +172,19 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     overlap_workloads = {workload.id: workload for workload in catalog.selected_workloads(overlap)}
     overlap_capture = overlap_workloads["overlap-trace-build"]
     overlap_capture_parameters = overlap_capture.parameters.to_value()
-    assert overlap_capture_parameters["readiness"] == "requires-rostam-gemm-calibration"
+    assert overlap_capture_parameters["readiness"] == "ready"
+    assert overlap_capture_parameters["gemm_calibration"] == {
+        "dtype": "bfloat16",
+        "input_id": "gemm-calibration",
+        "matrix_dimension": 1024,
+        "recommended_us_per_gemm": 19.08992,
+        "schema": GEMM_CALIBRATION_SCHEMA,
+        "selection_rule": "median of the four per-GPU medians",
+    }
     assert overlap_capture_parameters["outputs"]["param_trace"] == "{workspace}/param_trace_overlap.json"
     overlap_export = overlap_capture_parameters["transform_commands"][-1]
     assert "--overlap-structure" in overlap_export
-    assert overlap_export[overlap_export.index("--compute-fill-us-per-gemm") + 1] == PENDING_GEMM_CALIBRATION
+    assert overlap_export[overlap_export.index("--compute-fill-us-per-gemm") + 1] == GEMM_CALIBRATION_US
     overlap_replay = overlap_workloads["canary-overlap"]
     assert overlap_replay.depends_on == ("overlap-trace-build",)
     assert "{dependency:overlap-trace-build:param_trace}" in overlap_replay.parameters.to_value()["command"]
@@ -183,12 +192,13 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     shared_capture = catalog.profile("shared-capture")
     workload = catalog.selected_workloads(shared_capture)[0]
     shared_parameters = workload.parameters.to_value()
-    assert shared_parameters["readiness"] == "requires-rostam-gemm-calibration"
+    assert shared_parameters["readiness"] == "ready"
+    assert shared_parameters["gemm_calibration"] == overlap_capture_parameters["gemm_calibration"]
     assert shared_parameters["profile_command"][-2:] == ["--profile", "{workspace}/profile.json"]
     assert shared_parameters["outputs"]["param_trace"] == "{workspace}/param_trace_overlap.json"
     shared_export = shared_parameters["transform_commands"][-1]
     assert "--overlap-structure" in shared_export
-    assert shared_export[shared_export.index("--compute-fill-us-per-gemm") + 1] == PENDING_GEMM_CALIBRATION
+    assert shared_export[shared_export.index("--compute-fill-us-per-gemm") + 1] == GEMM_CALIBRATION_US
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     forged = copy.deepcopy(raw)
@@ -500,13 +510,26 @@ def _frozen_core(tmp_path: Path, *, reviewed: bool):
     ("profile_id", "expected_cells"),
     (("overlap", 16), ("shared-capture", 1)),
 )
-def test_overlap_capture_profiles_are_structurally_complete_but_calibration_blocked(
+def test_overlap_capture_profiles_bind_reviewed_calibration_and_are_submittable(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
     profile_id: str,
     expected_cells: int,
 ) -> None:
     catalog = load_catalog(CATALOG_PATH)
+    calibration = _write_json(
+        tmp_path / "gemm-calibration.json",
+        {
+            "schema": GEMM_CALIBRATION_SCHEMA,
+            "calibration": {
+                "dimension": 1024,
+                "dtype": "bfloat16",
+                "recommended_us_per_gemm": 19.08992,
+                "selection_rule": "median of the four per-GPU medians",
+            },
+        },
+    )
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs["gemm-calibration"] = calibration
     campaign = build_campaign(
         catalog=catalog,
         catalog_path=CATALOG_PATH,
@@ -517,18 +540,62 @@ def test_overlap_capture_profiles_are_structurally_complete_but_calibration_bloc
         repository_dirty=False,
         repository_patch_sha256=None,
         source_archive_sha256="2" * 64,
-        inputs=_campaign_inputs(tmp_path, reviewed=True),
+        inputs=inputs,
     )
     manifest = build_run_manifest(campaign)
     assert len(manifest.cells) == expected_cells
+    calibration_input = next(item for item in manifest.campaign.inputs if item.id == "gemm-calibration")
+    assert calibration_input.sha256 == hashlib.sha256(calibration.read_bytes()).hexdigest()
     frozen = freeze_campaign(campaign, tmp_path / f"results-{profile_id}")
+    plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True)
+    assert sum(cell.action == "run" for cell in plan.cells) == expected_cells
 
-    def forbidden(*args, **kwargs):  # pragma: no cover - proves no scheduler boundary is crossed
-        raise AssertionError("subprocess must not run while calibration is unresolved")
 
-    monkeypatch.setattr("experiments.rostam.lib.submission.subprocess.run", forbidden)
-    with pytest.raises(SubmissionPlanError, match="requires-rostam-gemm-calibration"):
-        build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True)
+@pytest.mark.parametrize("profile_id", ("overlap", "shared-capture"))
+def test_overlap_capture_profiles_refuse_missing_calibration_input(tmp_path: Path, profile_id: str) -> None:
+    with pytest.raises(CampaignPreparationError, match=r"missing=\['gemm-calibration'\]"):
+        build_campaign(
+            catalog=load_catalog(CATALOG_PATH),
+            catalog_path=CATALOG_PATH,
+            profile_id=profile_id,
+            run_id=f"rostam-{profile_id}-missing-calibration",
+            repetitions=1,
+            repository_commit="1" * 40,
+            repository_dirty=False,
+            repository_patch_sha256=None,
+            source_archive_sha256="2" * 64,
+            inputs=_campaign_inputs(tmp_path, reviewed=True),
+        )
+
+
+def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Path) -> None:
+    calibration = _write_json(
+        tmp_path / "wrong-gemm-calibration.json",
+        {
+            "schema": GEMM_CALIBRATION_SCHEMA,
+            "calibration": {
+                "dimension": 1024,
+                "dtype": "bfloat16",
+                "recommended_us_per_gemm": 19.0,
+                "selection_rule": "median of the four per-GPU medians",
+            },
+        },
+    )
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs["gemm-calibration"] = calibration
+    with pytest.raises(CampaignPreparationError, match="recommended_us_per_gemm"):
+        build_campaign(
+            catalog=load_catalog(CATALOG_PATH),
+            catalog_path=CATALOG_PATH,
+            profile_id="overlap",
+            run_id="rostam-overlap-wrong-calibration",
+            repetitions=1,
+            repository_commit="1" * 40,
+            repository_dirty=False,
+            repository_patch_sha256=None,
+            source_archive_sha256="2" * 64,
+            inputs=inputs,
+        )
 
 
 def test_submission_planner_fails_before_scheduler_for_unreviewed_inputs(tmp_path: Path, monkeypatch) -> None:

@@ -10,11 +10,15 @@ from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 from ..harness import (
     CAMPAIGN_SCHEMA,
+    DEFAULT_JSON_LIMITS,
     CampaignSpec,
+    CanonicalJSONError,
     ContractError,
     canonical_json_bytes,
     file_sha256,
     freeze_campaign,
+    read_bounded_bytes,
+    strict_json_loads,
 )
 from .catalog import Catalog, CatalogValidationError, load_catalog
 
@@ -58,6 +62,66 @@ def _artifact(input_id: str, path: Path) -> Dict[str, Any]:
     return {"id": input_id, "sha256": file_sha256(path), "size_bytes": path.stat().st_size}
 
 
+def _verify_gemm_calibration_binding(
+    *, catalog: Catalog, profile_id: str, inputs: Mapping[str, Path]
+) -> None:
+    """Bind the reviewed target record to every calibrated capture recipe."""
+
+    profile = catalog.profile(profile_id)
+    declarations = []
+    for workload in catalog.selected_workloads(profile):
+        parameters = workload.parameters.to_value()
+        declaration = parameters.get("gemm_calibration")
+        if declaration is not None:
+            if not isinstance(declaration, Mapping):
+                raise CampaignPreparationError(f"workload {workload.id!r} GEMM calibration must be an object")
+            declarations.append((workload.id, dict(declaration)))
+    if not declarations:
+        return
+    first_workload, expected = declarations[0]
+    for workload_id, declaration in declarations[1:]:
+        if declaration != expected:
+            raise CampaignPreparationError(
+                f"workloads {first_workload!r} and {workload_id!r} bind different GEMM calibrations"
+            )
+    input_id = expected.get("input_id")
+    if not isinstance(input_id, str) or input_id not in inputs:
+        raise CampaignPreparationError("calibrated capture profile is missing its declared GEMM calibration input")
+    path = inputs[input_id]
+    if path.is_symlink() or not path.is_file():
+        raise CampaignPreparationError(f"GEMM calibration input must be a real regular file: {path}")
+    try:
+        raw = strict_json_loads(
+            read_bounded_bytes(
+                path,
+                max_bytes=DEFAULT_JSON_LIMITS.max_document_bytes,
+                field="GEMM calibration input",
+            )
+        )
+    except (CanonicalJSONError, OSError, UnicodeError) as exc:
+        raise CampaignPreparationError(f"cannot read GEMM calibration input: {exc}") from exc
+    if not isinstance(raw, Mapping):
+        raise CampaignPreparationError("GEMM calibration input must be an object")
+    observed = raw.get("calibration")
+    if not isinstance(observed, Mapping):
+        raise CampaignPreparationError("GEMM calibration input.calibration must be an object")
+    comparisons = {
+        "schema": (raw.get("schema"), expected.get("schema")),
+        "dtype": (observed.get("dtype"), expected.get("dtype")),
+        "dimension": (observed.get("dimension"), expected.get("matrix_dimension")),
+        "recommended_us_per_gemm": (
+            observed.get("recommended_us_per_gemm"),
+            expected.get("recommended_us_per_gemm"),
+        ),
+        "selection_rule": (observed.get("selection_rule"), expected.get("selection_rule")),
+    }
+    mismatches = [field for field, (actual, declared) in comparisons.items() if actual != declared]
+    if mismatches:
+        raise CampaignPreparationError(
+            f"GEMM calibration input does not match the catalog declaration: {mismatches!r}"
+        )
+
+
 def build_campaign(
     *,
     catalog: Catalog,
@@ -92,6 +156,7 @@ def build_campaign(
         raise CampaignPreparationError(
             f"profile input ownership mismatch: missing={missing!r}, unexpected={unexpected!r}"
         )
+    _verify_gemm_calibration_binding(catalog=catalog, profile_id=profile_id, inputs=bound_inputs)
     artifacts = [_artifact(input_id, path) for input_id, path in sorted(bound_inputs.items())]
     configurations = []
     for configuration in catalog.selected_configurations(profile):
