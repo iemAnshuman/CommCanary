@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=65,<81"]
+requires = ["setuptools>=65,<84"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -36,22 +36,22 @@ dependencies = []
 [project.optional-dependencies]
 test = [
   "coverage[toml]>=7.6,<8",
-  "pytest>=8,<9",
+  "pytest>=8,<10",
 ]
 experiment = [
-  "pytest>=8,<9",
+  "pytest>=8,<10",
 ]
 dev = [
   "actionlint-py>=1.7,<2",
   "build>=1.2,<2",
   "coverage[toml]>=7.6,<8",
   "jsonschema>=4.23,<5",
-  "mypy>=1.18,<2",
-  "pytest>=8,<9",
-  "ruff>=0.14,<0.15",
+  "mypy>=1.18,<3",
+  "pytest>=8,<10",
+  "ruff>=0.14,<0.16",
   # >=70.1 builds wheels without the separate "wheel" package, which the
   # no-isolation release build never installs.
-  "setuptools>=70.1,<81",
+  "setuptools>=70.1,<84",
   "shellcheck-py>=0.10,<1",
   "twine>=5,<7",
 ]
