@@ -18,6 +18,36 @@ cluster. CommCanary occupies the space between: a minutes-scale artifact
 distilled from *your* workload's trace, carrying no weights and no prompts,
 replayable against a candidate config before rollout.
 
+## Why the gate is the whole product
+
+A generic delta-debugging reducer, handed an oracle that only has to preserve
+*the decision*, deletes 99 of 100 events from our adversarial trace in six
+oracle calls — and every pairwise configuration ranking still holds:
+
+```console
+$ python examples/research_scaffolding.py          # writes out/research_scaffold/
+$ commcanary reduce out/research_scaffold/adversarial_decode.trace.json \
+    -o out/reduced.trace.json
+ddmin reduced 100 -> 1 events in 6 oracle calls
+
+$ commcanary compile out/reduced.trace.json -o out/reduced.canary.json
+$ commcanary verify-behavior out/research_scaffold/adversarial_decode.trace.json \
+    out/reduced.canary.json -o out/reduced.behavior.json
+behavior verification: failed
+- representation fidelity: lossless_timing
+- source verified: failed
+- behavioral fidelity: fail
+- configuration ranking: pass        # <- the ranking survived. Nothing else did.
+```
+
+A ranking is a projection. Five backend configurations give ten pairs, scored
+on four latency metrics — forty bits of agreement that one well-placed event
+can carry on its own. Minimize against that alone and you get an artifact with
+almost nothing in common with the workload it came from.
+
+CommCanary ships that reducer as a baseline and builds everything else around
+refusing its answer.
+
 What makes it different:
 
 - **Decision-preserving reduction.** Minimization is gated on a fail-closed
@@ -49,20 +79,33 @@ capture / import-kineto        compile                replay              compar
                                               export-param ────▶ physical NCCL replay
 ```
 
-The bundled replay engine is a **deterministic simulator**, not a physical
-NCCL executor — useful for validating trace compression, testing regression
-logic, and designing experiments. Physical execution goes through the PARAM
-export; claims about real hardware require that path plus cross-system
-evaluation. The research contract, including what is deliberately *not*
+### What this is not
+
+- **Not a physical NCCL executor.** The bundled replay engine is a
+  deterministic simulator. Its reports are claims about a model of contention
+  and overlap, not measurements of silicon.
+- **Not a source of hardware numbers.** Physical execution goes through the
+  PARAM export onto real GPUs. Claims about real hardware require that path
+  plus cross-system evaluation.
+- **Not yet validated against a multi-node cluster.** That campaign is
+  specified in [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md)
+  and has not run.
+
+What the simulator *does* buy you is determinism, which is what makes the
+verification story checkable at all: `verify-report` recomputes a report
+bit-identically, so an edited number fails validation instead of surviving as
+a screenshot. The research contract, including what is deliberately *not*
 claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
 
 ## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
+pip install commcanary
+```
 
+Then, from a clone of this repository (for the bundled example traces):
+
+```bash
 commcanary compile examples/traces/llama70b_tp8_trace.json \
   --output out/workload.canary.json
 commcanary replay out/workload.canary.json \
@@ -74,8 +117,28 @@ commcanary compare out/baseline.report.json out/candidate.report.json \
   --output out/comparison.json --html out/comparison.html
 ```
 
+What that prints:
+
+```console
+compiled 10 trace events into 5 canary events; event ratio=2.0x, byte ratio=0.474x, timing=lossless_timing
+replayed 10 events: median=91.977 us p95=107.746 us p99=108.321 us hidden=16.27%
+replayed 10 events: median=121.409 us p95=146.616 us p99=152.095 us hidden=13.25%
+comparison verdict: fail
+- p99 regression 40.4% exceeds 15.0%
+- p95 regression 36.1% exceeds 10.0%
+- median regression 32.0% exceeds 8.0%
+- phase 'decode' p99 regression 41.5% exceeds 15.0%
+- phase 'prefill' p99 regression 16.8% exceeds 15.0%
+- operation 'all_reduce' p99 regression 40.4% exceeds 15.0%
+```
+
 The comparison command exits with status 1 when configured regression
-thresholds are exceeded.
+thresholds are exceeded, which is the whole point of putting it in CI.
+
+Note the two compression numbers in the first line. Event ratio and byte ratio
+are reported separately because a canary with fewer events than its source can
+still serialize to more bytes — as it does here on a ten-event toy trace.
+Calling that "compression" would be a lie with units.
 
 ## Fidelity-first compilation
 
