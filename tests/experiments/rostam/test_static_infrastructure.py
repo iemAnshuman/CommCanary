@@ -657,10 +657,13 @@ def test_submission_plan_shared_input_inventory_survives_canonical_round_trip(tm
 
     assert plan.input_hashes == tuple(sorted(plan.input_hashes))
     assert loaded.input_hashes == plan.input_hashes
-    assert submission_module._verify_bound_inputs(
-        build_run_manifest(campaign),
-        EXPERIMENT_DIRECTORY,
-    ) == loaded.input_hashes
+    assert (
+        submission_module._verify_bound_inputs(
+            build_run_manifest(campaign),
+            EXPERIMENT_DIRECTORY,
+        )
+        == loaded.input_hashes
+    )
 
 
 def test_submission_plan_max_cells_defers_the_tail_for_low_footprint_chunks(tmp_path: Path, monkeypatch) -> None:

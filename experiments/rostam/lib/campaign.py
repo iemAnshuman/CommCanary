@@ -62,9 +62,7 @@ def _artifact(input_id: str, path: Path) -> Dict[str, Any]:
     return {"id": input_id, "sha256": file_sha256(path), "size_bytes": path.stat().st_size}
 
 
-def _verify_gemm_calibration_binding(
-    *, catalog: Catalog, profile_id: str, inputs: Mapping[str, Path]
-) -> None:
+def _verify_gemm_calibration_binding(*, catalog: Catalog, profile_id: str, inputs: Mapping[str, Path]) -> None:
     """Bind the reviewed target record to every calibrated capture recipe."""
 
     profile = catalog.profile(profile_id)
@@ -117,9 +115,7 @@ def _verify_gemm_calibration_binding(
     }
     mismatches = [field for field, (actual, declared) in comparisons.items() if actual != declared]
     if mismatches:
-        raise CampaignPreparationError(
-            f"GEMM calibration input does not match the catalog declaration: {mismatches!r}"
-        )
+        raise CampaignPreparationError(f"GEMM calibration input does not match the catalog declaration: {mismatches!r}")
 
 
 def build_campaign(
