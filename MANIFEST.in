@@ -1,6 +1,7 @@
 include CHANGELOG.md
 include CONTRIBUTING.md
 include LICENSE
+include NOTICE
 include README.md
 include RESEARCH_SPEC.md
 include SECURITY.md

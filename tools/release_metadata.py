@@ -613,7 +613,7 @@ def write_release_metadata(
     version: str,
     source_date_epoch: str,
     requires_python: str = ">=3.9",
-    license_id: str = "MIT",
+    license_id: str = "Apache-2.0",
     repository_url: str = "https://github.com/iemAnshuman/commcanary",
     expected_sha256: Optional[Mapping[str, str]] = None,
 ) -> ReleaseMetadataFiles:

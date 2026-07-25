@@ -24,6 +24,9 @@
 
 ### Contracts and API
 
+- Relicensed from MIT to Apache License 2.0 for its express patent grant and
+  mandatory attribution, added a `NOTICE` file that ships in the wheel and
+  sdist, and reserved the CommCanary name under section 6. See ADR 0009.
 - Published Draft 2020-12 schemas, literal canonical/hash vectors,
   compatibility/unknown-field/coercion decisions, equivalence/determinism
   characterization, and exact comparison boundary fixtures for every supported

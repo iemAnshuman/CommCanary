@@ -71,6 +71,7 @@ RELEASE_ROOT_FILES = (
     "CHANGELOG.md",
     "CONTRIBUTING.md",
     "LICENSE",
+    "NOTICE",
     "MANIFEST.in",
     "README.md",
     "RESEARCH_SPEC.md",

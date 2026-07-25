@@ -15,3 +15,4 @@ schemas.
 | [0006](0006-experiment-boundary.md) | Accepted | Separate immutable planned inputs from append-only observed execution evidence |
 | [0007](0007-platform-support.md) | Accepted | Claim only the platforms exercised by the supported verification matrix |
 | [0008](0008-paper-publication-boundary.md) | Accepted | Keep the historical draft outside product distributions until validated evidence regenerates it |
+| [0009](0009-license-and-attribution.md) | Accepted | License under Apache 2.0 for the patent grant and mandatory attribution, and reserve the project name |

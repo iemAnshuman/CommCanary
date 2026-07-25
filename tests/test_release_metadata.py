@@ -25,7 +25,7 @@ def _metadata(*, version: str = VERSION, runtime_requirement: Optional[str] = No
         "Metadata-Version: 2.4",
         f"Name: {PROJECT}",
         f"Version: {version}",
-        "License: MIT",
+        "License: Apache-2.0",
         "Requires-Python: >=3.9",
         "Provides-Extra: test",
         'Requires-Dist: pytest>=8; extra == "test"',

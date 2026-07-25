@@ -3,7 +3,7 @@
 [![CI](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml/badge.svg)](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/commcanary)](https://pypi.org/project/commcanary/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 **Distill a distributed-LLM communication trace into a small, model-free
 regression canary — and prove the distillation didn't change the answer.**
