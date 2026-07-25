@@ -61,6 +61,7 @@ PUBLICATION_FILENAMES = (
 )
 
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
+_PER_CAMPAIGN_POLICY_FIELDS = frozenset({"catalog_profile", "input_paths"})
 _CSV_FIELDS = (
     "record_kind",
     "completeness",
@@ -700,6 +701,22 @@ def _completeness_payload(evidences: Sequence[_LoadedEvidence]) -> Dict[str, Any
     }
 
 
+def _joinable_policy(campaign: Any) -> Dict[str, Any]:
+    """Return the policy fields whose agreement a trusted join actually requires.
+
+    ``catalog_profile`` names the campaign's own recipe and ``input_paths``
+    records where its inputs happened to live on the producing host.  Both
+    differ by construction between campaigns of different profiles, so
+    comparing them would make every cross-profile join impossible while
+    proving nothing: input identity is enforced separately, and by digest.
+    """
+
+    policy = campaign.policy.to_value()
+    if not isinstance(policy, Mapping):
+        raise AnalysisValidationError("campaign policy must be an object")
+    return {key: value for key, value in policy.items() if key not in _PER_CAMPAIGN_POLICY_FIELDS}
+
+
 def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
     if not evidences:
         raise AnalysisValidationError("trusted analysis requires at least one campaign")
@@ -708,7 +725,7 @@ def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
         raise AnalysisValidationError("trusted campaign join repeats a frozen manifest")
     repository = evidences[0].manifest.campaign.repository.to_dict()
     expected_site = evidences[0].manifest.campaign.expected_site.to_dict()
-    policy = evidences[0].manifest.campaign.policy.to_value()
+    policy = _joinable_policy(evidences[0].manifest.campaign)
     configurations: Dict[str, str] = {}
     workloads: Dict[str, str] = {}
     inputs: Dict[str, Tuple[str, int]] = {}
@@ -723,7 +740,7 @@ def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
             raise AnalysisValidationError("trusted campaign join mixes repository identities")
         if campaign.expected_site.to_dict() != expected_site:
             raise AnalysisValidationError("trusted campaign join mixes expected site contracts")
-        if campaign.policy.to_value() != policy:
+        if _joinable_policy(campaign) != policy:
             raise AnalysisValidationError("trusted campaign join mixes analysis policies")
         for configuration in campaign.configurations:
             digest = canonical_sha256(configuration.to_dict())

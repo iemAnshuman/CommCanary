@@ -456,6 +456,81 @@ def test_complete_core_and_shared_join_generates_claims_without_private_executio
     assert all("binding_sha256" in row for row in publication.aggregate["selected_cells"])
 
 
+def _with_policy(campaign: CampaignSpec, policy: Mapping[str, Any]) -> CampaignSpec:
+    return CampaignSpec.from_dict({**campaign.to_dict(), "policy": dict(policy)})
+
+
+def test_trusted_join_accepts_per_campaign_catalog_profile_and_input_paths(tmp_path: Path) -> None:
+    """Different profiles bind different recipes and input locations by construction."""
+
+    core = _freeze_physical_campaign(
+        _with_policy(
+            _core_campaign("core-profile-run"),
+            {
+                "aggregation": "median-of-cell-medians",
+                "catalog_profile": "core",
+                "input_paths": {"rostam-catalog": "/site/core/configs.json"},
+            },
+        ),
+        tmp_path / "core",
+    )
+    shared_trace = b"fixed shared trace"
+    shared_sha = hashlib.sha256(shared_trace).hexdigest()
+    shared = _freeze_physical_campaign(
+        _with_policy(
+            _shared_campaign("shared-profile-run", shared_sha, len(shared_trace)),
+            {
+                "aggregation": "median-of-cell-medians",
+                "catalog_profile": "shared-replay",
+                "input_paths": {"shared-param-trace": "/site/shared/param_trace_overlap.json"},
+            },
+        ),
+        tmp_path / "shared",
+    )
+    publication = verify_regenerate_compare(
+        core.frozen.directory,
+        core.selection.selection_id,
+        core.verdict_sha256,
+        tmp_path / "publication",
+        regeneration_command="python -m experiments.rostam.analyze verify --profile-join-fixture",
+        joined_evidence=(CampaignEvidence(shared.frozen.directory, "primary", shared.verdict_sha256),),
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+    )
+    assert len(publication.aggregate["provenance"]["campaigns"]) == 2
+    assert publication.aggregate["claims"]["status"] == "supported-by-complete-selected-evidence"
+
+
+def test_trusted_join_still_rejects_divergent_analysis_policy(tmp_path: Path) -> None:
+    """Only the per-campaign fields are exempt; analysis semantics stay strict."""
+
+    core = _freeze_physical_campaign(
+        _with_policy(
+            _core_campaign("core-policy-run"),
+            {"aggregation": "median-of-cell-medians", "catalog_profile": "core"},
+        ),
+        tmp_path / "core",
+    )
+    shared_trace = b"fixed shared trace"
+    shared_sha = hashlib.sha256(shared_trace).hexdigest()
+    shared = _freeze_physical_campaign(
+        _with_policy(
+            _shared_campaign("shared-policy-run", shared_sha, len(shared_trace)),
+            {"aggregation": "mean-of-cell-means", "catalog_profile": "shared-replay"},
+        ),
+        tmp_path / "shared",
+    )
+    with pytest.raises(AnalysisValidationError, match="mixes analysis policies"):
+        verify_regenerate_compare(
+            core.frozen.directory,
+            core.selection.selection_id,
+            core.verdict_sha256,
+            tmp_path / "publication",
+            regeneration_command="python -m experiments.rostam.analyze verify --policy-conflict-fixture",
+            joined_evidence=(CampaignEvidence(shared.frozen.directory, "primary", shared.verdict_sha256),),
+        )
+
+
 def test_physical_runtime_nullables_and_replay_enums_match_committed_schema() -> None:
     measurement = _base_measurement("a-000001", 10.0)
     measurement["runtime"] = {**_runtime(), "job_id": "", "torch_cuda_version": ""}

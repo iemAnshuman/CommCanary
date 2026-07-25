@@ -88,6 +88,11 @@
   contextual patch, and preimage/postimage hash contract; overlap/shared
   catalogs remain fail-closed until their Rostam-only GEMM calibration is
   supplied.
+- Fixed the trusted-join guard so campaigns of different catalog profiles can
+  be joined: it compares the analysis-relevant policy subset instead of whole
+  policy documents, whose `catalog_profile` and `input_paths` differ by
+  construction. Input identity is still enforced by `(sha256, size_bytes)` per
+  input id, and divergent analysis semantics still fail closed.
 
 - Added `--overlap-structure` to `export-param`: collectives are emitted for asynchronous issue with explicit `wait` entries placed after the next gap's gemm entries, reconstructing compute/communication concurrency; issue entries carry an `issue` marker so parsers separate issue lines from completion-bearing wait lines.
 - Added compute-fill mode to `export-param` (`--compute-fill-us-per-gemm`, `--compute-fill-gemm-dim`): inter-collective gaps export as PARAM `{"compute": "gemm"}` entries instead of idle timestamps, so physical replay reproduces compute/communication interference. Replay compute-filled traces without `--use-timestamp`.
