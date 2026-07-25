@@ -531,6 +531,27 @@ def test_trusted_join_still_rejects_divergent_analysis_policy(tmp_path: Path) ->
         )
 
 
+def test_publication_serializer_uses_an_explicit_budget_above_the_shared_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A joined publication outgrew the default item budget; the override must be explicit."""
+
+    from experiments.rostam.analysis import pipeline
+    from experiments.rostam.harness import DEFAULT_JSON_LIMITS
+
+    assert pipeline._PUBLICATION_JSON_LIMITS.max_items > DEFAULT_JSON_LIMITS.max_items
+
+    seen: Dict[str, Any] = {}
+
+    def _record(value: Any, *, limits: Any) -> bytes:
+        seen["limits"] = limits
+        return b"{}"
+
+    monkeypatch.setattr(pipeline, "canonical_json_bytes", _record)
+    monkeypatch.setattr(pipeline, "_csv_bytes", lambda aggregate: b"csv")
+    monkeypatch.setattr(pipeline, "_markdown_bytes", lambda aggregate: b"markdown")
+    pipeline._publication_bytes({"schema": pipeline.ANALYSIS_SCHEMA})
+    assert seen["limits"] is pipeline._PUBLICATION_JSON_LIMITS
+
+
 def test_physical_runtime_nullables_and_replay_enums_match_committed_schema() -> None:
     measurement = _base_measurement("a-000001", 10.0)
     measurement["runtime"] = {**_runtime(), "job_id": "", "torch_cuda_version": ""}

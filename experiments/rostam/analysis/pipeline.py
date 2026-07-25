@@ -16,6 +16,7 @@ from ..harness import (
     ContractError,
     FrozenRun,
     IncompleteCampaignError,
+    JSONResourceLimits,
     RunManifest,
     SelectionSnapshot,
     canonical_json_bytes,
@@ -62,6 +63,11 @@ PUBLICATION_FILENAMES = (
 
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
 _PER_CAMPAIGN_POLICY_FIELDS = frozenset({"catalog_profile", "input_paths"})
+# The publication serializer emits an aggregate this module just built from
+# already-validated evidence, so its budget bounds our own output rather than
+# untrusted input.  A measured 280-cell core/shared/overlap join produced
+# 1,013,696 items in 8,101,263 bytes, just past the 1,000,000-item default.
+_PUBLICATION_JSON_LIMITS = JSONResourceLimits(max_items=4_000_000)
 _CSV_FIELDS = (
     "record_kind",
     "completeness",
@@ -1139,7 +1145,7 @@ def _markdown_bytes(aggregate: Mapping[str, Any]) -> bytes:
 
 def _publication_bytes(aggregate: Mapping[str, Any]) -> Dict[str, bytes]:
     return {
-        AGGREGATE_JSON_FILENAME: canonical_json_bytes(aggregate) + b"\n",
+        AGGREGATE_JSON_FILENAME: canonical_json_bytes(aggregate, limits=_PUBLICATION_JSON_LIMITS) + b"\n",
         AGGREGATE_CSV_FILENAME: _csv_bytes(aggregate),
         PAPER_FRAGMENT_FILENAME: _markdown_bytes(aggregate),
     }
