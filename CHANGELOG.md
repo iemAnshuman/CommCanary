@@ -86,8 +86,13 @@
   explicit unsafe flag and watermarks every JSON/Markdown output.
 - Replaced mutable third-party patching with a reviewed PARAM commit/archive,
   contextual patch, and preimage/postimage hash contract; overlap/shared
-  catalogs remain fail-closed until their Rostam-only GEMM calibration is
-  supplied.
+  catalogs fail closed until their Rostam-only GEMM calibration is supplied
+  and manifest-bound.
+- Executed new manifest-bound core, shared-replay, and explicit-overlap
+  campaigns on Rostam with 160/160, 40/40, and 80/80 selected successful cells
+  respectively, persisted zero-issue completeness verdicts, verified normalized
+  raw archives, and byte-identical regenerated JSON/CSV/Markdown publications.
+  The trusted join over all 280 selected cells also regenerates byte-for-byte.
 - Fixed the trusted-join guard so campaigns of different catalog profiles can
   be joined: it compares the analysis-relevant policy subset instead of whole
   policy documents, whose `catalog_profile` and `input_paths` differ by

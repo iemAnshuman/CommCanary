@@ -1,11 +1,13 @@
-# Artifact evaluation and pre-cluster handoff
+# Artifact evaluation and Rostam evidence
 
 This guide separates repository-local engineering verification from physical
-execution on Rostam. Completing the first section does not imply that any
-cluster command, GPU workload, PARAM replay, or SLURM submission has run.
-The paper and legacy design document report an earlier narrow Rostam campaign;
-its complete raw attempt archive is not tracked here, so this workflow does not
-silently treat those reported numbers as a reproducible current campaign.
+execution on Rostam. Historical pre-cluster sections below describe what had
+not yet run at their recorded checkpoint; they are not claims about the current
+repository state. The paper and legacy design document also report an earlier
+narrow Rostam campaign whose complete raw attempt archive is not tracked here,
+so this workflow does not silently treat those reported numbers as a
+reproducible current campaign. The later verified-evidence section records the
+new manifest-bound campaigns separately.
 
 ## Local reproducibility checks
 
@@ -147,7 +149,7 @@ gate produced:
 The Rostam-built container digest remains pending; its member-content digest
 must equal the reference above before the environment contract is rebound.
 
-## Inputs that remain site-observed
+## Inputs that remained site-observed at the pre-cluster checkpoint
 
 Before a Rostam submission, the operator must replace or record every unresolved
 site value without changing the immutable expected cell matrix:
@@ -175,7 +177,7 @@ on-node measurement and change that capture recipe's readiness value to
 `shared-replay` separately binds the selected capture as the exact
 `shared-param-trace` input.
 
-## Physical execution boundary
+## Historical physical execution boundary
 
 Only after the local gate is green and the site values above have been reviewed
 should an authorized operator run the setup resolver or submission commands on
@@ -187,3 +189,116 @@ Published tables must be regenerated from that validated campaign. If a large
 raw archive is stored externally, record an immutable URI and SHA-256 and use
 the repository verifier before analysis. Never hand-copy headline values into
 the paper.
+
+## Verified physical evidence checkpoint (2026-07-26)
+
+The following newly frozen campaigns were executed on Rostam at clean
+repository commit `2855275288e67a1a2d0bbefff0740841fdf0ecf0`. Their generated
+physical results remain on Rostam; the identities below were read from the
+immutable manifests, selections, completeness verdicts, raw-archive
+descriptors, and byte-regenerated publications rather than copied from
+scheduler output.
+
+### Shared replay
+
+`shared-replay-20260720-r2` has 40/40 selected successful cells and a
+zero-issue completeness verdict:
+
+- manifest SHA-256:
+  `a402a4ec73ea3a182ab6bd5ec92e896600b16510dc4c1621c6defe9382ee149c`
+- selection SHA-256:
+  `a1e876861f7f9a315cb00a11a67414e6125078a68306c0b07a4a5d9f14b98d64`
+- attempt-inventory SHA-256:
+  `850deaf469170ae077a8d9d07656328a1da7375671deeb74a79c9200325057be`
+- completeness-verdict SHA-256:
+  `b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db`
+- raw archive: 1,057,573 bytes, SHA-256
+  `3451ee540b634e1daad0aa49b6b95173fd601f5b6baea04deb6395d8d2c7b273`
+- raw-archive descriptor SHA-256:
+  `1a92668864f90071729b3d91d05d6e0838b72d42315fec8e444e17c8d7ee3d45`
+- regenerated publication SHA-256 values: JSON
+  `8d38b8f221c56e9aff6a3e9a91bc31123a55a864f998e46d76d8e16273a794f6`,
+  CSV
+  `7ac20fc5ca70d142d484e99a00db7e123a3a5caa9d2cc404446aad207012a91c`,
+  Markdown
+  `9a452cac23e4f9dba9a17b7b6fbf44b90d636583a578d19e4689a142471f5d96`
+
+### Explicit overlap
+
+`overlap-20260724-r1` has 80/80 selected successful cells, 400 verified
+attempt artifacts totaling 4,399,697,532 bytes, and a zero-issue completeness
+verdict:
+
+- manifest SHA-256:
+  `5d5eb9f4822e14f86023106742efdd48823b20b6a7cb866c3370367aced31d17`
+- selection SHA-256:
+  `e012e40613f57db8dc38d519dd85b85864f99dd3f95724b8cf0f7c62996239d9`
+- attempt-inventory SHA-256:
+  `6063afdeeb2d11eea0abd2b1f9b7fdf13a4f24e151d682cfa5c45a451611b2c2`
+- completeness-verdict SHA-256:
+  `5b153d0452df5033261d81f01db74211a0cb87015694b25190d8aa69650507fd`
+- raw archive: 255,845,992 bytes, SHA-256
+  `8c1f23012197fc55d59f1a5ec1c0d3518d4839403da7f15cc60498a801e02632`
+- raw-archive descriptor SHA-256:
+  `1b57eb8c1e3920563da37e95468c927b503fd68ac2f7601e4cdb00a3fda81afd`
+- regenerated publication SHA-256 values: JSON
+  `1de5266798ca361dce54107bcef993cfd403f28ee6c600784088feb3b3c391e9`,
+  CSV
+  `bb9acbce014d87621db61c596e0c7614b4ea96f5549d68aba9449abc011a6bfc`,
+  Markdown
+  `f3610943c71e07ce5e5c26b0eb6624f43d2b1faa8e0d7c04d1e805a25a0d8c65`
+
+Each publication was regenerated a second time and compared byte-for-byte.
+The overlap archive contains 1,164 normalized members and expands to
+4,401,048,795 bytes; its published aggregate contains 16 rows and reports no
+regression verdicts. These are observations from verified evidence, not
+portable performance guarantees.
+
+### Identity-aligned core
+
+`core-20260724-r7` replaces `core-20260713-r6` for join purposes only; r6
+remains valid evidence at its own older commit. It has 160/160 selected
+successful cells, 640 verified attempt artifacts totalling 4,921,885,442
+bytes, and a zero-issue completeness verdict:
+
+- manifest SHA-256:
+  `3bd321ec960c2bce0e6c0ff9aba8bb2be89cb19bdb99011a838cbd79068835b8`
+- selection SHA-256:
+  `d01db822c8e909fe2dbfac157bf62eeeb370a3eef45168f4eb1ff5023fbd4e3a`
+- attempt-inventory SHA-256:
+  `f6d1aa41199138347409fe4f791b49f46853154e7e74f54875656328f0425d40`
+- completeness-verdict SHA-256:
+  `46d8012b3594c18c96ee1a3f1e063ceeaf5642068c6a6aa895e655bcfb257bdd`
+- raw archive: 272,033,323 bytes, 2,128 normalized members, SHA-256
+  `c03e69fe41fb89431edbc9f8b95974d28d3c5055eee750bf07eb2c49625dd771`
+- raw-archive descriptor SHA-256:
+  `0a66df0863a6b359156bd43c28aa8086a8d5b7309ad5b2c20b5ffab0015e886d`
+- regenerated publication SHA-256 values: JSON
+  `6bb0f94637d40787f7f59fabce0627a5952d42936b1a90f30763db0a13b1fb65`,
+  CSV
+  `4e49c2cc91110c60ef1fc22ff20c00d14a4ccfb0a818b21d1cac800e45893d9f`,
+  Markdown
+  `2df1344cbaebbd767275a37fbca75251187ce83a611dabc7af270b436fb07c9d`
+
+### Trusted three-campaign join
+
+The join over core r7, shared replay r2, and overlap r1 covers all 280 selected
+cells, reports `supported-by-complete-selected-evidence`, and was regenerated a
+second time with the recorded regeneration command for a byte comparison:
+
+- JSON `7a43e57ec4576f2f67e74d419bd793b6c639eccaec01fbdf769bdc0946220e2f`
+- CSV `b5ff79a23abaf8bb5c5260c9c30ddef88858c82ce47c859d623d50f911af1257`
+- Markdown `a53451c780b57b3d9fe3b49549f200c048a34e54b74ef99584490cb0c5e2c57d`
+
+Two analyzer repairs were required and are covered by regression tests. The
+join guard previously compared whole `campaign.policy` documents, so campaigns
+of different catalog profiles could never join; it now compares the
+analysis-relevant subset while input identity remains enforced by digest. The
+publication serializer previously used the shared 1,000,000-item JSON budget;
+the measured joined aggregate is 1,013,696 items in 8,101,263 bytes, so that
+one call site now takes an explicit 4,000,000-item budget for output the
+pipeline itself produced from validated evidence.
+
+Reproducing the join requires the recorded regeneration command verbatim,
+including argument order, because that string is embedded in the aggregate and
+therefore in its hash.

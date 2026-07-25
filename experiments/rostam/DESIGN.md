@@ -1,16 +1,85 @@
 # Rostam physical experiment — design
 
-> **Evidence status (2026-07-11):** this document records the design and
-> observations from a historical campaign. The complete raw attempt archive is
-> absent from the repository, so its numeric results are not independently
-> regenerable from this checkout. Treat the site facts below as prior
-> observations to re-verify, and use the immutable manifest/attempt/completeness
-> workflow for the next publication-grade run.
+> **Evidence status (updated 2026-07-26):** the narrative results later in this
+> document remain historical because their complete raw attempt archive is
+> absent from the repository. Three new campaigns (core, shared replay, and
+> explicit overlap) have now completed the immutable
+> manifest/attempt/selection/completeness/archive/publication workflow at one
+> repository identity, and the trusted join over all 280 cells regenerates
+> byte-for-byte. Their exact identities and the joined findings are recorded
+> below and in `docs/artifact-evaluation.md`; generated physical bytes remain
+> on Rostam.
 
 Goal: physical evidence for the paper's central claim. Does a minimized,
 behavior-verified canary preserve the *decision* (configuration ranking and
 regression verdict) that the full workload exhibits on real hardware — in a
 setting where an isolated collective microbenchmark misleads?
+
+## New publication-grade evidence checkpoint
+
+All new evidence in this checkpoint binds clean repository commit
+`2855275288e67a1a2d0bbefff0740841fdf0ecf0`.
+
+- `shared-replay-20260720-r2`: 40/40 selected successful cells, manifest
+  `a402a4ec73ea3a182ab6bd5ec92e896600b16510dc4c1621c6defe9382ee149c`,
+  selection
+  `a1e876861f7f9a315cb00a11a67414e6125078a68306c0b07a4a5d9f14b98d64`,
+  verdict
+  `b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db`,
+  and raw-archive SHA-256
+  `3451ee540b634e1daad0aa49b6b95173fd601f5b6baea04deb6395d8d2c7b273`.
+- `overlap-20260724-r1`: 80/80 selected successful cells, manifest
+  `5d5eb9f4822e14f86023106742efdd48823b20b6a7cb866c3370367aced31d17`,
+  selection
+  `e012e40613f57db8dc38d519dd85b85864f99dd3f95724b8cf0f7c62996239d9`,
+  verdict
+  `5b153d0452df5033261d81f01db74211a0cb87015694b25190d8aa69650507fd`,
+  and raw-archive SHA-256
+  `8c1f23012197fc55d59f1a5ec1c0d3518d4839403da7f15cc60498a801e02632`.
+
+- `core-20260724-r7`: 160/160 selected successful cells, manifest
+  `3bd321ec960c2bce0e6c0ff9aba8bb2be89cb19bdb99011a838cbd79068835b8`,
+  selection
+  `d01db822c8e909fe2dbfac157bf62eeeb370a3eef45168f4eb1ff5023fbd4e3a`,
+  verdict
+  `46d8012b3594c18c96ee1a3f1e063ceeaf5642068c6a6aa895e655bcfb257bdd`,
+  and raw-archive SHA-256
+  `c03e69fe41fb89431edbc9f8b95974d28d3c5055eee750bf07eb2c49625dd771`.
+
+All three completeness verdicts have zero issues, their declared attempt
+artifacts were independently rehashed, and every publication was regenerated
+twice with byte-identical results. The trusted join over all 280 selected
+cells reports `supported-by-complete-selected-evidence` with JSON
+`7a43e57ec4576f2f67e74d419bd793b6c639eccaec01fbdf769bdc0946220e2f`.
+
+## What the joined evidence answers
+
+Measured against `W-full` across 28 configuration pairs:
+
+| Proxy | Pairwise agreement | Kendall tau |
+|---|---:|---:|
+| `W-shared-overlap` (shared-trace overlap replay) | 71.4% | 0.708 |
+| `W-micro` (isolated microbenchmark) | 64.3% | 0.490 |
+| `W-canary` (faithful communication-only replay) | 57.1% | 0.204 |
+| `W-canary-overlap` (per-configuration overlap replay) | 53.6% | 0.677 |
+
+The design question at the top of this document asked whether a minimized,
+behavior-verified canary preserves the decision. On this workload it does not.
+Faithful communication-only replay scores *below* an isolated microbenchmark
+and ranks `nccl-2.20.5-tree-ll`, the full workload's worst configuration at
++38% against the best, as second best. Only overlap-bearing replay beats the
+microbenchmark, and it still disagrees on 8 of 28 pairs.
+
+Two further honest limits of this campaign. The regression 2x2 for
+`nccl-2.19.3-default` against `nccl-2.20.5-default` is all true negatives, so
+no regression verdict was available to preserve or miss. Median per-cell wall
+time is 7.9 s for the full workload against 17.2 s for communication-only
+replay and 11.4 s for overlap replay, so the proxies are not cheaper at this
+workload size. The supported result is a decomposition of which trace
+properties carry the ranking decision, not decision preservation and not a cost
+argument. `W-canary-overlap`'s low agreement is partly a tie artifact: its
+medians span 144 to 178 microseconds, producing 13 policy ties that the
+agreement metric counts as disagreement while Kendall tau does not.
 
 ## July 2026 reproducibility boundary and pre-cluster handoff
 
@@ -356,7 +425,7 @@ The historical glob-based analyzer is outside this trust boundary. It runs
 only after the operator supplies `--unsafe-legacy-glob-analysis`; its JSON and
 Markdown are watermarked as unsafe, unverified, and unsuitable for publication.
 
-## Pre-cluster handoff: deliberately unresolved evidence
+## Pre-cluster handoff: deliberately unresolved evidence (historical checkpoint)
 
 The repository-local work stops here. The following values require observation
 or artifact collection on Rostam and are intentionally `null`, pending, or
