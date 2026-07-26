@@ -18,6 +18,14 @@ cluster. CommCanary occupies the space between: a minutes-scale artifact
 distilled from *your* workload's trace, carrying no weights and no prompts,
 replayable against a candidate config before rollout.
 
+![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
+table, the threshold reasons that tripped, and per-phase and per-operation regression
+breakdowns](docs/images/comparison-report.png)
+
+*`commcanary compare` on the bundled example trace. Exits 1, names the phase and the
+operation, and ships as standalone HTML next to the JSON. Reproduce it with the
+[Quick start](#quick-start) below.*
+
 ## Why the gate is the whole product
 
 A generic delta-debugging reducer, handed an oracle that only has to preserve
