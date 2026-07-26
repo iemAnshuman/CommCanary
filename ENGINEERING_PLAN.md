@@ -1,6 +1,73 @@
 # CommCanary Engineering Plan
 
-## Active checkpoint — 2026-07-26 (trusted three-campaign join complete)
+## Active checkpoint — 2026-07-26 (engineering plan verified complete; the binding constraint is now product, not code)
+
+Independently re-verified at `118ad77` on macOS 15.7.7 / arm64 / Python 3.14.6.
+Every command below was run, not inferred:
+
+| Check | Command | Result |
+|---|---|---|
+| Tests | `python -m pytest -q` | **733 passed** in 17.42 s |
+| Lint | `ruff check .` | All checks passed |
+| Format | `ruff format --check .` | 182 files already formatted |
+| Types | `mypy src/commcanary` | no issues in 72 source files |
+| Dependency DAG | `python tools/import_boundaries.py` | import boundary policy passed |
+| Canonical gate | `python -m tools.verify --fast` | **exit 0**, "verification complete" |
+
+Phases 0 through 9 are substantively delivered. ADRs 0001–0009 exist, eight
+JSON Schemas are published, the benchmark subsystem exists, and the gate
+validates shell scripts, workflow action pinning, README links, and command
+examples in one command as Phase 2 required.
+
+**The engineering plan is no longer the constraint.** It set out to produce an
+elegant, verifiable artifact and it did. What it never contained is a claim that
+anyone should *use* the result, and the physical evidence recorded in the
+checkpoint below says the headline configuration does not yet earn that. The
+successor document is `STRATEGY.md`, which owns the product question. This file
+stays the authority for code, contracts, and the release gate only.
+
+### Open items owned by this file
+
+1. **0.3.0 remains unreleased and untagged** by deliberate decision. The release
+   gate (`python -m tools.verify --release`) has not been run against finalized
+   release identity.
+2. **Refresh derived documentation from the joined evidence bytes**, not from
+   prose summaries.
+3. **Cross-commit compatibility contract**, so future code changes do not force
+   a re-run of 280 cells. The strict join output is the ground truth any relaxed
+   contract must reproduce byte-for-byte.
+4. **The two Rostam-side analyzer repairs remain uncommitted** on that checkout
+   (patch at `/tmp/join-fix.patch`). The local equivalents have since landed on
+   `main`. The Rostam branch is intentionally divergent; do not pull or rebase.
+
+### New defect found 2026-07-26 — unknown overlap silently becomes zero
+
+This is a Phase 1 regression against this plan's own assurance ladder, found
+while scoping the product pivot.
+
+The plan's stated rule, and the one the compiler enforces for cross-rank skew,
+is that an absent measurement must not be rounded to a value: zero skew is a
+strong physical claim and absence of evidence is not evidence for it.
+
+That rule is not enforced for compute/communication overlap.
+`src/commcanary/baselines.py:372` reads
+`as_float(event.get("compute_overlap_us"), 0.0)`, and
+`schemas/commcanary.trace.v1.schema.json` requires only `op`, `bytes`, and
+`ranks`. So a trace with no overlap field is treated as having exactly zero
+overlap rather than unknown overlap.
+
+This is not cosmetic. `import-kineto` emits no overlap field at all, so every
+imported real-world trace silently becomes the communication-only configuration
+that the Rostam campaign measured at Kendall tau 0.204, *below* the isolated
+microbenchmark's 0.490, while both overlap-bearing replays reached 0.677 and
+0.708 and correctly ranked `nccl-2.20.5-tree-ll` last.
+
+Required: absent overlap must propagate as unknown and either fail closed or
+downgrade the artifact's claim, exactly as skew does. Mutation-test it the way
+the other integrity claims are tested. This should ship before any derivation
+work, because it converts a silent wrong answer into a visible refusal.
+
+## Superseded checkpoint — 2026-07-26 (trusted three-campaign join complete)
 
 Repository phases 0–6 and 8 are complete, phase 7's fail-closed experiment
 machinery is complete, and phase 9 remains complete up to the deliberate
