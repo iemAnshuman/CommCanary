@@ -190,6 +190,48 @@ raw archive is stored externally, record an immutable URI and SHA-256 and use
 the repository verifier before analysis. Never hand-copy headline values into
 the paper.
 
+### Cross-commit evidence extension
+
+The normal trusted join still requires one repository identity. To extend
+complete historical evidence with a campaign from a later repository state,
+first prepare a non-executable compatibility candidate:
+
+```console
+python -m experiments.rostam.analyze prepare-compatibility \
+  --ground-evidence OLD_RUN OLD_SELECTION OLD_VERDICT_SHA256 \
+  --extension-evidence NEW_RUN NEW_SELECTION NEW_VERDICT_SHA256 \
+  --output compatibility.candidate.json \
+  --regeneration-command 'EXACT OLD REGENERATION COMMAND' \
+  --golden-directory OLD_PUBLICATION
+```
+
+Repeat `--ground-evidence` for every campaign in the historical publication
+and supply its archive descriptor/raw archive when that publication bound one.
+The command revalidates completeness, regenerates all three publication files,
+and byte-compares them before writing anything. Review the candidate's exact
+campaigns, two repository identities, analyzer file inventory, and automatically
+derived policy/input differences. Then repeat the same preparation with a new
+output path and `--reviewed`.
+
+The later trusted join supplies the reviewed contract and the immutable old
+publication again:
+
+```console
+python -m experiments.rostam.analyze verify ... \
+  --cross-commit-contract compatibility.reviewed.json \
+  --compatibility-golden-directory OLD_PUBLICATION
+```
+
+If the old ground truth used a raw archive, also supply
+`--compatibility-archive-descriptor` and `--compatibility-raw-archive`; the
+ordinary archive flags bind the complete new join separately. The verifier
+rejects candidate status, a third repository, omitted old campaigns, changed
+analyzer/harness/schema bytes, an inexact evidence identity, policy changes
+outside `script_hashes`, extra exemptions, and any non-byte-identical ground
+truth. This contract proves consumer compatibility with exact historical
+evidence; it does not claim that arbitrary code versions are semantically
+equivalent.
+
 ## Verified physical evidence checkpoint (2026-07-26)
 
 The following newly frozen campaigns were executed on Rostam at clean

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,9 +9,14 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import pytest  # type: ignore[import-not-found]
 
 from experiments.rostam.analysis import (
+    CROSS_COMMIT_COMPATIBILITY_SCHEMA,
     AnalysisValidationError,
     CampaignEvidence,
+    CrossCommitCompatibilityError,
     MeasurementValidationError,
+    analysis_implementation_record,
+    load_cross_commit_compatibility,
+    prepare_cross_commit_compatibility,
     validate_scalar_measurement,
     verify_regenerate_compare,
 )
@@ -27,6 +33,7 @@ from experiments.rostam.harness import (
     SelectionSnapshot,
     build_run_manifest,
     build_selection_snapshot,
+    canonical_json_bytes,
     canonical_sha256,
     derive_attempt_id,
     evaluate_completeness,
@@ -460,6 +467,67 @@ def _with_policy(campaign: CampaignSpec, policy: Mapping[str, Any]) -> CampaignS
     return CampaignSpec.from_dict({**campaign.to_dict(), "policy": dict(policy)})
 
 
+def _with_repository(campaign: CampaignSpec, character: str) -> CampaignSpec:
+    return CampaignSpec.from_dict(
+        {
+            **campaign.to_dict(),
+            "repository": {
+                "commit": character * 40,
+                "dirty": False,
+                "patch_sha256": None,
+                "source_archive_sha256": character * 64,
+            },
+        }
+    )
+
+
+def _compatibility_binding(fixture: PhysicalFixture) -> Dict[str, Any]:
+    return {
+        "manifest_sha256": fixture.frozen.manifest_sha256,
+        "run_id": fixture.manifest.run_id,
+        "campaign_id": fixture.manifest.campaign.campaign_id,
+        "selection_sha256": fixture.selection.sha256,
+        "verdict_sha256": fixture.verdict_sha256,
+        "repository": fixture.manifest.campaign.repository.to_dict(),
+    }
+
+
+def _write_cross_commit_contract(
+    path: Path,
+    *,
+    ground: PhysicalFixture,
+    extension: PhysicalFixture,
+    publication_sha256: Mapping[str, str],
+    regeneration_command: str,
+) -> Dict[str, Any]:
+    contract: Dict[str, Any] = {
+        "schema": CROSS_COMMIT_COMPATIBILITY_SCHEMA,
+        "status": "reviewed",
+        "analysis_implementation": analysis_implementation_record(),
+        "campaigns": sorted(
+            [_compatibility_binding(ground), _compatibility_binding(extension)],
+            key=lambda item: item["manifest_sha256"],
+        ),
+        "ground_truth": {
+            "manifest_sha256s": [ground.frozen.manifest_sha256],
+            "regeneration_command": regeneration_command,
+            "baseline_config": "nccl-2.19.3-default",
+            "candidate_config": "nccl-2.20.5-default",
+            "relative_threshold_pct": 8.0,
+            "absolute_threshold_us": 1.0,
+            "publication_sha256": dict(publication_sha256),
+            "raw_archive_verified": False,
+        },
+        "allowed_differences": {
+            "analysis_policy_fields": [],
+            "input_ids": [],
+        },
+    }
+    contract["contract_sha256"] = canonical_sha256(contract)
+    path.write_bytes(canonical_json_bytes(contract))
+    return contract
+
+
 def test_trusted_join_accepts_per_campaign_catalog_profile_and_input_paths(tmp_path: Path) -> None:
     """Different profiles bind different recipes and input locations by construction."""
 
@@ -529,6 +597,205 @@ def test_trusted_join_still_rejects_divergent_analysis_policy(tmp_path: Path) ->
             regeneration_command="python -m experiments.rostam.analyze verify --policy-conflict-fixture",
             joined_evidence=(CampaignEvidence(shared.frozen.directory, "primary", shared.verdict_sha256),),
         )
+
+
+def test_reviewed_cross_commit_contract_requires_byte_identical_ground_truth(
+    tmp_path: Path,
+) -> None:
+    ground = _freeze_physical_campaign(
+        _core_campaign("cross-commit-ground"),
+        tmp_path / "ground",
+    )
+    extension = _freeze_physical_campaign(
+        _with_repository(
+            _shared_campaign(
+                "cross-commit-extension",
+                hashlib.sha256(b"extension trace").hexdigest(),
+                len(b"extension trace"),
+            ),
+            "2",
+        ),
+        tmp_path / "extension",
+    )
+    ground_command = "python -m experiments.rostam.analyze verify --cross-commit-ground-truth"
+    golden = verify_regenerate_compare(
+        ground.frozen.directory,
+        ground.selection.selection_id,
+        ground.verdict_sha256,
+        tmp_path / "ground-publication",
+        regeneration_command=ground_command,
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+    )
+    ground_source = CampaignEvidence(
+        ground.frozen.directory,
+        ground.selection.selection_id,
+        ground.verdict_sha256,
+    )
+    extension_source = CampaignEvidence(
+        extension.frozen.directory,
+        extension.selection.selection_id,
+        extension.verdict_sha256,
+    )
+    candidate = prepare_cross_commit_compatibility(
+        (ground_source,),
+        (extension_source,),
+        tmp_path / "cross-commit-candidate.json",
+        regeneration_command=ground_command,
+        golden_directory=golden.output_directory,
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+    )
+    assert candidate.status == "candidate"
+    with pytest.raises(CrossCommitCompatibilityError, match="status='reviewed'"):
+        load_cross_commit_compatibility(candidate.output_path)
+    prepared = prepare_cross_commit_compatibility(
+        (ground_source,),
+        (extension_source,),
+        tmp_path / "cross-commit-contract.json",
+        regeneration_command=ground_command,
+        golden_directory=golden.output_directory,
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+        reviewed=True,
+    )
+    contract_path = prepared.output_path
+
+    with pytest.raises(AnalysisValidationError, match="mixes repository identities"):
+        verify_regenerate_compare(
+            ground.frozen.directory,
+            ground.selection.selection_id,
+            ground.verdict_sha256,
+            tmp_path / "strict-refusal",
+            regeneration_command="python -m experiments.rostam.analyze verify --strict-refusal",
+            joined_evidence=(
+                CampaignEvidence(
+                    extension.frozen.directory,
+                    extension.selection.selection_id,
+                    extension.verdict_sha256,
+                ),
+            ),
+        )
+
+    publication = verify_regenerate_compare(
+        ground.frozen.directory,
+        ground.selection.selection_id,
+        ground.verdict_sha256,
+        tmp_path / "cross-commit-publication",
+        regeneration_command="python -m experiments.rostam.analyze verify --reviewed-cross-commit",
+        joined_evidence=(
+            CampaignEvidence(
+                extension.frozen.directory,
+                extension.selection.selection_id,
+                extension.verdict_sha256,
+            ),
+        ),
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+        cross_commit_contract=contract_path,
+        compatibility_golden_directory=golden.output_directory,
+    )
+    compatibility = publication.aggregate["provenance"]["cross_commit_compatibility"]
+    assert compatibility["contract_sha256"] == prepared.contract_sha256
+    assert compatibility["status"] == "reviewed-byte-identical-ground-truth"
+    assert publication.aggregate["claims"]["status"] == "supported-by-complete-selected-evidence"
+
+    (golden.output_directory / "aggregate.csv").write_bytes(b"tampered")
+    with pytest.raises(AnalysisValidationError, match="differs from golden"):
+        verify_regenerate_compare(
+            ground.frozen.directory,
+            ground.selection.selection_id,
+            ground.verdict_sha256,
+            tmp_path / "tampered-golden-output",
+            regeneration_command="python -m experiments.rostam.analyze verify --tampered-golden",
+            joined_evidence=(
+                CampaignEvidence(
+                    extension.frozen.directory,
+                    extension.selection.selection_id,
+                    extension.verdict_sha256,
+                ),
+            ),
+            cross_commit_contract=contract_path,
+            compatibility_golden_directory=golden.output_directory,
+        )
+
+
+def test_cross_commit_contract_rejects_unreviewed_or_inexact_bindings(tmp_path: Path) -> None:
+    ground = _freeze_physical_campaign(
+        _core_campaign("contract-adversarial-ground"),
+        tmp_path / "ground",
+    )
+    extension = _freeze_physical_campaign(
+        _with_repository(
+            _shared_campaign(
+                "contract-adversarial-extension",
+                hashlib.sha256(b"extension trace").hexdigest(),
+                len(b"extension trace"),
+            ),
+            "2",
+        ),
+        tmp_path / "extension",
+    )
+    ground_command = "python -m experiments.rostam.analyze verify --contract-adversarial-ground"
+    golden = verify_regenerate_compare(
+        ground.frozen.directory,
+        ground.selection.selection_id,
+        ground.verdict_sha256,
+        tmp_path / "golden",
+        regeneration_command=ground_command,
+        baseline_config="nccl-2.19.3-default",
+        candidate_config="nccl-2.20.5-default",
+    )
+    contract_path = tmp_path / "contract.json"
+    contract = _write_cross_commit_contract(
+        contract_path,
+        ground=ground,
+        extension=extension,
+        publication_sha256=golden.output_sha256,
+        regeneration_command=ground_command,
+    )
+
+    for name, mutate, message in (
+        (
+            "unreviewed",
+            lambda value: value.update({"status": "candidate"}),
+            "status='reviewed'",
+        ),
+        (
+            "wrong-selection",
+            lambda value: value["campaigns"][1].update({"selection_sha256": "f" * 64}),
+            "campaign bindings do not exactly match",
+        ),
+        (
+            "unsupported-policy",
+            lambda value: value["allowed_differences"].update({"analysis_policy_fields": ["aggregation"]}),
+            "unsupported cross-commit policy differences",
+        ),
+    ):
+        mutated = copy.deepcopy(contract)
+        mutate(mutated)
+        mutated["contract_sha256"] = canonical_sha256(
+            {key: value for key, value in mutated.items() if key != "contract_sha256"}
+        )
+        mutated_path = tmp_path / f"{name}.json"
+        mutated_path.write_bytes(canonical_json_bytes(mutated))
+        with pytest.raises(CrossCommitCompatibilityError, match=message):
+            verify_regenerate_compare(
+                ground.frozen.directory,
+                ground.selection.selection_id,
+                ground.verdict_sha256,
+                tmp_path / f"{name}-output",
+                regeneration_command=f"python -m experiments.rostam.analyze verify --{name}",
+                joined_evidence=(
+                    CampaignEvidence(
+                        extension.frozen.directory,
+                        extension.selection.selection_id,
+                        extension.verdict_sha256,
+                    ),
+                ),
+                cross_commit_contract=mutated_path,
+                compatibility_golden_directory=golden.output_directory,
+            )
 
 
 def test_publication_serializer_uses_an_explicit_budget_above_the_shared_default(monkeypatch) -> None:  # type: ignore[no-untyped-def]

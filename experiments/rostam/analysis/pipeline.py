@@ -35,6 +35,13 @@ from ..harness import (
 from ..harness.completeness import CompletenessVerdict
 from .archive import verify_archive_descriptor
 from .claims import build_trusted_claims
+from .compatibility import (
+    CROSS_COMMIT_COMPATIBILITY_SCHEMA,
+    CrossCommitCompatibility,
+    CrossCommitCompatibilityError,
+    analysis_implementation_record,
+    load_cross_commit_compatibility,
+)
 from .schemas import (
     LOCAL_CONSUME_MEASUREMENT_SCHEMA,
     LOCAL_FAIL_ONCE_MEASUREMENT_SCHEMA,
@@ -119,6 +126,14 @@ class GeneratedPublication:
     aggregate: Mapping[str, Any]
     output_sha256: Mapping[str, str]
     matched_golden: bool
+
+
+@dataclass(frozen=True)
+class PreparedCrossCommitCompatibility:
+    output_path: Path
+    contract_sha256: str
+    status: str
+    ground_truth_publication_sha256: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -707,7 +722,11 @@ def _completeness_payload(evidences: Sequence[_LoadedEvidence]) -> Dict[str, Any
     }
 
 
-def _joinable_policy(campaign: Any) -> Dict[str, Any]:
+def _joinable_policy(
+    campaign: Any,
+    *,
+    additional_ignored_fields: Sequence[str] = (),
+) -> Dict[str, Any]:
     """Return the policy fields whose agreement a trusted join actually requires.
 
     ``catalog_profile`` names the campaign's own recipe and ``input_paths``
@@ -720,18 +739,69 @@ def _joinable_policy(campaign: Any) -> Dict[str, Any]:
     policy = campaign.policy.to_value()
     if not isinstance(policy, Mapping):
         raise AnalysisValidationError("campaign policy must be an object")
-    return {key: value for key, value in policy.items() if key not in _PER_CAMPAIGN_POLICY_FIELDS}
+    ignored = _PER_CAMPAIGN_POLICY_FIELDS | frozenset(additional_ignored_fields)
+    return {key: value for key, value in policy.items() if key not in ignored}
 
 
-def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
+def _cross_commit_policy_differences(evidences: Sequence[_LoadedEvidence]) -> Tuple[str, ...]:
+    policies = [_joinable_policy(evidence.manifest.campaign) for evidence in evidences]
+    fields = sorted({key for policy in policies for key in policy})
+    missing = object()
+    differences = []
+    for field in fields:
+        values = [policy.get(field, missing) for policy in policies]
+        first = values[0]
+        if any(value != first for value in values[1:]):
+            differences.append(field)
+    return tuple(differences)
+
+
+def _cross_commit_input_differences(evidences: Sequence[_LoadedEvidence]) -> Tuple[str, ...]:
+    identities: Dict[str, set[Tuple[str, int]]] = {}
+    occurrences: Dict[str, int] = {}
+    for evidence in evidences:
+        for artifact in evidence.manifest.campaign.inputs:
+            identities.setdefault(artifact.id, set()).add((artifact.sha256, artifact.size_bytes))
+            occurrences[artifact.id] = occurrences.get(artifact.id, 0) + 1
+    return tuple(
+        sorted(input_id for input_id, observed in identities.items() if occurrences[input_id] > 1 and len(observed) > 1)
+    )
+
+
+def _validate_trusted_join(
+    evidences: Sequence[_LoadedEvidence],
+    *,
+    cross_commit_compatibility: Optional[CrossCommitCompatibility] = None,
+) -> None:
     if not evidences:
         raise AnalysisValidationError("trusted analysis requires at least one campaign")
     manifest_hashes = [evidence.frozen.manifest_sha256 for evidence in evidences]
     if len(set(manifest_hashes)) != len(manifest_hashes):
         raise AnalysisValidationError("trusted campaign join repeats a frozen manifest")
-    repository = evidences[0].manifest.campaign.repository.to_dict()
+    repositories = {canonical_sha256(evidence.manifest.campaign.repository.to_dict()) for evidence in evidences}
+    if len(repositories) > 1 and cross_commit_compatibility is None:
+        raise AnalysisValidationError("trusted campaign join mixes repository identities")
+    if len(repositories) == 1 and cross_commit_compatibility is not None:
+        raise AnalysisValidationError("cross-commit compatibility contract is unnecessary for one repository identity")
+    if cross_commit_compatibility is not None:
+        observed_policy_differences = _cross_commit_policy_differences(evidences)
+        if observed_policy_differences != cross_commit_compatibility.allowed_policy_fields:
+            raise AnalysisValidationError(
+                "cross-commit contract policy differences do not exactly match the joined manifests"
+            )
+        observed_input_differences = _cross_commit_input_differences(evidences)
+        if observed_input_differences != cross_commit_compatibility.allowed_input_ids:
+            raise AnalysisValidationError(
+                "cross-commit contract input differences do not exactly match the joined manifests"
+            )
+    ignored_policy_fields = (
+        cross_commit_compatibility.allowed_policy_fields if cross_commit_compatibility is not None else ()
+    )
     expected_site = evidences[0].manifest.campaign.expected_site.to_dict()
-    policy = _joinable_policy(evidences[0].manifest.campaign)
+    policy = _joinable_policy(
+        evidences[0].manifest.campaign,
+        additional_ignored_fields=ignored_policy_fields,
+    )
     configurations: Dict[str, str] = {}
     workloads: Dict[str, str] = {}
     inputs: Dict[str, Tuple[str, int]] = {}
@@ -742,11 +812,9 @@ def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
         if identity in campaign_identities:
             raise AnalysisValidationError("trusted campaign join repeats a run/campaign identity")
         campaign_identities.add(identity)
-        if campaign.repository.to_dict() != repository:
-            raise AnalysisValidationError("trusted campaign join mixes repository identities")
         if campaign.expected_site.to_dict() != expected_site:
             raise AnalysisValidationError("trusted campaign join mixes expected site contracts")
-        if _joinable_policy(campaign) != policy:
+        if _joinable_policy(campaign, additional_ignored_fields=ignored_policy_fields) != policy:
             raise AnalysisValidationError("trusted campaign join mixes analysis policies")
         for configuration in campaign.configurations:
             digest = canonical_sha256(configuration.to_dict())
@@ -761,7 +829,10 @@ def _validate_trusted_join(evidences: Sequence[_LoadedEvidence]) -> None:
         for artifact in campaign.inputs:
             input_identity = (artifact.sha256, artifact.size_bytes)
             previous_input = inputs.setdefault(artifact.id, input_identity)
-            if previous_input != input_identity:
+            allowed_input_difference = (
+                cross_commit_compatibility is not None and artifact.id in cross_commit_compatibility.allowed_input_ids
+            )
+            if previous_input != input_identity and not allowed_input_difference:
                 raise AnalysisValidationError(f"trusted campaign join disagrees on input {artifact.id!r}")
 
 
@@ -802,6 +873,32 @@ def _evidence_provenance(evidence: _LoadedEvidence) -> Dict[str, Any]:
     }
 
 
+def _compatibility_evidence_binding(evidence: _LoadedEvidence) -> Dict[str, Any]:
+    return {
+        "manifest_sha256": evidence.frozen.manifest_sha256,
+        "run_id": evidence.manifest.run_id,
+        "campaign_id": evidence.manifest.campaign.campaign_id,
+        "selection_sha256": evidence.snapshot.sha256,
+        "verdict_sha256": evidence.verdict.sha256,
+        "repository": evidence.manifest.campaign.repository.to_dict(),
+    }
+
+
+def _archive_bindings(evidences: Sequence[_LoadedEvidence]) -> List[Dict[str, str]]:
+    return [
+        {
+            "run_id": evidence.manifest.run_id,
+            "campaign_id": evidence.manifest.campaign.campaign_id,
+            "repository_commit": evidence.manifest.campaign.repository.commit,
+            "manifest_sha256": evidence.frozen.manifest_sha256,
+            "selection_id": evidence.snapshot.selection_id,
+            "selection_sha256": evidence.snapshot.sha256,
+            "verdict_sha256": evidence.verdict.sha256,
+        }
+        for evidence in evidences
+    ]
+
+
 def _build_aggregate(
     evidences: Sequence[_LoadedEvidence],
     *,
@@ -811,8 +908,12 @@ def _build_aggregate(
     candidate_config: Optional[str],
     relative_threshold_pct: float,
     absolute_threshold_us: float,
+    cross_commit_compatibility: Optional[CrossCommitCompatibility] = None,
 ) -> Dict[str, Any]:
-    _validate_trusted_join(evidences)
+    _validate_trusted_join(
+        evidences,
+        cross_commit_compatibility=cross_commit_compatibility,
+    )
     declared_measurement_schemas = {
         workload.measurement_schema for evidence in evidences for workload in evidence.manifest.campaign.workloads
     }
@@ -831,6 +932,8 @@ def _build_aggregate(
         )
     if raw_archive.get("verified") is True:
         schema_ids.add(RAW_ARCHIVE_DESCRIPTOR_SCHEMA)
+    if cross_commit_compatibility is not None:
+        schema_ids.add(CROSS_COMMIT_COMPATIBILITY_SCHEMA)
     if declared_measurement_schemas & {
         PHYSICAL_MICRO_MEASUREMENT_SCHEMA,
         PHYSICAL_FULL_MEASUREMENT_SCHEMA,
@@ -861,16 +964,19 @@ def _build_aggregate(
     aggregates = _aggregate_rows(rows)
     completeness = _completeness_payload(evidences)
     campaigns = [_evidence_provenance(evidence) for evidence in evidences]
+    provenance: Dict[str, Any] = {
+        "campaigns": campaigns,
+        "trusted_join_sha256": canonical_sha256(campaigns),
+        "schema_documents": list(schema_documents),
+        "raw_archive": dict(raw_archive),
+        "regeneration_command": regeneration_command,
+    }
+    if cross_commit_compatibility is not None:
+        provenance["cross_commit_compatibility"] = cross_commit_compatibility.provenance_summary()
     return {
         "schema": ANALYSIS_SCHEMA,
         "completeness": completeness,
-        "provenance": {
-            "campaigns": campaigns,
-            "trusted_join_sha256": canonical_sha256(campaigns),
-            "schema_documents": list(schema_documents),
-            "raw_archive": dict(raw_archive),
-            "regeneration_command": regeneration_command,
-        },
+        "provenance": provenance,
         "failure_accounting": _combined_attempt_accounting(evidences),
         "selected_cell_count": len(rows),
         "selected_cells": list(sorted(rows, key=lambda row: (row["source_run_id"], row["cell_id"]))),
@@ -1151,6 +1257,189 @@ def _publication_bytes(aggregate: Mapping[str, Any]) -> Dict[str, bytes]:
     }
 
 
+def _verify_cross_commit_ground_truth(
+    contract: CrossCommitCompatibility,
+    evidences: Sequence[_LoadedEvidence],
+    *,
+    golden_directory: PathLike,
+    archive_descriptor: Optional[PathLike],
+    raw_archive: Optional[PathLike],
+) -> None:
+    expected_bindings = sorted(
+        (_compatibility_evidence_binding(evidence) for evidence in evidences),
+        key=lambda item: str(item["manifest_sha256"]),
+    )
+    if expected_bindings != list(contract.campaign_bindings):
+        raise CrossCommitCompatibilityError(
+            "cross-commit contract campaign bindings do not exactly match the requested evidence join"
+        )
+    ground_manifest_set = set(contract.ground_truth_manifest_sha256s)
+    ground_evidences = tuple(
+        evidence for evidence in evidences if evidence.frozen.manifest_sha256 in ground_manifest_set
+    )
+    if {evidence.frozen.manifest_sha256 for evidence in ground_evidences} != ground_manifest_set:
+        raise CrossCommitCompatibilityError("cross-commit contract ground-truth evidence is incomplete")
+    ground_archive = verify_archive_descriptor(
+        _archive_bindings(ground_evidences),
+        archive_descriptor,
+        raw_archive,
+    )
+    if bool(ground_archive.get("verified")) != contract.raw_archive_verified:
+        raise CrossCommitCompatibilityError(
+            "cross-commit ground-truth archive verification state does not match the reviewed contract"
+        )
+    ground_aggregate = _build_aggregate(
+        ground_evidences,
+        regeneration_command=contract.regeneration_command,
+        raw_archive=ground_archive,
+        baseline_config=contract.baseline_config,
+        candidate_config=contract.candidate_config,
+        relative_threshold_pct=contract.relative_threshold_pct,
+        absolute_threshold_us=contract.absolute_threshold_us,
+    )
+    ground_files = _publication_bytes(ground_aggregate)
+    observed_sha256 = {filename: sha256_hex(data) for filename, data in ground_files.items()}
+    if observed_sha256 != dict(contract.publication_sha256):
+        raise CrossCommitCompatibilityError(
+            "current analyzer does not reproduce the contract's ground-truth publication hashes"
+        )
+    compare_publication_to_golden(ground_files, golden_directory)
+
+
+def prepare_cross_commit_compatibility(
+    ground_truth_sources: Sequence[CampaignEvidence],
+    extension_sources: Sequence[CampaignEvidence],
+    output_path: PathLike,
+    *,
+    regeneration_command: str,
+    golden_directory: PathLike,
+    archive_descriptor: Optional[PathLike] = None,
+    raw_archive: Optional[PathLike] = None,
+    baseline_config: Optional[str] = None,
+    candidate_config: Optional[str] = None,
+    relative_threshold_pct: float = 8.0,
+    absolute_threshold_us: float = 1.0,
+    reviewed: bool = False,
+) -> PreparedCrossCommitCompatibility:
+    """Prepare an exact, reviewable bridge after reproducing old golden bytes.
+
+    The default output is a non-executable ``candidate``. Repeating the same
+    command with ``reviewed=True`` is the explicit acknowledgement that the
+    exact manifest and difference inventory has been reviewed.
+    """
+
+    if not isinstance(reviewed, bool):
+        raise AnalysisValidationError("reviewed must be boolean")
+    if not ground_truth_sources:
+        raise AnalysisValidationError("cross-commit preparation requires ground-truth evidence")
+    if not extension_sources:
+        raise AnalysisValidationError("cross-commit preparation requires extension evidence")
+    command = _regeneration_command(regeneration_command)
+    for value, field in (
+        (relative_threshold_pct, "relative_threshold_pct"),
+        (absolute_threshold_us, "absolute_threshold_us"),
+    ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= float(value) < float("inf"):
+            raise AnalysisValidationError(f"{field} must be finite and non-negative")
+
+    ground = tuple(
+        _LoadedEvidence(
+            *_load_fresh_evidence(
+                source.run_directory,
+                source.selection_id,
+                source.verdict_sha256,
+                allow_incomplete=False,
+            )
+        )
+        for source in ground_truth_sources
+    )
+    extensions = tuple(
+        _LoadedEvidence(
+            *_load_fresh_evidence(
+                source.run_directory,
+                source.selection_id,
+                source.verdict_sha256,
+                allow_incomplete=False,
+            )
+        )
+        for source in extension_sources
+    )
+    combined = (*ground, *extensions)
+    ground_archive = verify_archive_descriptor(
+        _archive_bindings(ground),
+        archive_descriptor,
+        raw_archive,
+    )
+    ground_aggregate = _build_aggregate(
+        ground,
+        regeneration_command=command,
+        raw_archive=ground_archive,
+        baseline_config=baseline_config,
+        candidate_config=candidate_config,
+        relative_threshold_pct=float(relative_threshold_pct),
+        absolute_threshold_us=float(absolute_threshold_us),
+    )
+    ground_files = _publication_bytes(ground_aggregate)
+    compare_publication_to_golden(ground_files, golden_directory)
+    publication_sha256 = {filename: sha256_hex(data) for filename, data in sorted(ground_files.items())}
+    campaign_bindings = sorted(
+        (_compatibility_evidence_binding(evidence) for evidence in combined),
+        key=lambda item: str(item["manifest_sha256"]),
+    )
+    contract: Dict[str, Any] = {
+        "schema": CROSS_COMMIT_COMPATIBILITY_SCHEMA,
+        "status": "reviewed",
+        "analysis_implementation": analysis_implementation_record(),
+        "campaigns": campaign_bindings,
+        "ground_truth": {
+            "manifest_sha256s": sorted(evidence.frozen.manifest_sha256 for evidence in ground),
+            "regeneration_command": command,
+            "baseline_config": baseline_config,
+            "candidate_config": candidate_config,
+            "relative_threshold_pct": float(relative_threshold_pct),
+            "absolute_threshold_us": float(absolute_threshold_us),
+            "publication_sha256": publication_sha256,
+            "raw_archive_verified": bool(ground_archive.get("verified")),
+        },
+        "allowed_differences": {
+            "analysis_policy_fields": list(_cross_commit_policy_differences(combined)),
+            "input_ids": list(_cross_commit_input_differences(combined)),
+        },
+    }
+    contract["contract_sha256"] = canonical_sha256(contract)
+    reviewed_contract = CrossCommitCompatibility.from_mapping(contract)
+    _validate_trusted_join(
+        combined,
+        cross_commit_compatibility=reviewed_contract,
+    )
+    if not reviewed:
+        contract["status"] = "candidate"
+        contract["contract_sha256"] = canonical_sha256(
+            {key: value for key, value in contract.items() if key != "contract_sha256"}
+        )
+
+    destination = Path(output_path).expanduser()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.parent.is_symlink() or not destination.parent.is_dir():
+        raise AnalysisValidationError("cross-commit contract output parent must be a real directory")
+    if destination.exists() or destination.is_symlink():
+        raise AnalysisValidationError("cross-commit contract output already exists")
+    encoded = canonical_json_bytes(contract)
+    try:
+        with destination.open("xb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError as exc:
+        raise AnalysisValidationError(f"cannot write cross-commit compatibility contract: {exc}") from exc
+    return PreparedCrossCommitCompatibility(
+        output_path=destination.resolve(),
+        contract_sha256=str(contract["contract_sha256"]),
+        status=str(contract["status"]),
+        ground_truth_publication_sha256=publication_sha256,
+    )
+
+
 def _write_atomic(directory: Path, filename: str, data: bytes) -> Path:
     destination = directory / filename
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{filename}.tmp-", dir=str(directory))
@@ -1232,6 +1521,10 @@ def verify_regenerate_campaigns(
     candidate_config: Optional[str] = None,
     relative_threshold_pct: float = 8.0,
     absolute_threshold_us: float = 1.0,
+    cross_commit_contract: Optional[PathLike] = None,
+    compatibility_golden_directory: Optional[PathLike] = None,
+    compatibility_archive_descriptor: Optional[PathLike] = None,
+    compatibility_raw_archive: Optional[PathLike] = None,
 ) -> GeneratedPublication:
     """Validate one or more complete campaigns before deriving publication claims."""
 
@@ -1257,19 +1550,27 @@ def verify_regenerate_campaigns(
         )
         for source in evidence_sources
     )
-    archive_bindings = [
-        {
-            "run_id": evidence.manifest.run_id,
-            "campaign_id": evidence.manifest.campaign.campaign_id,
-            "repository_commit": evidence.manifest.campaign.repository.commit,
-            "manifest_sha256": evidence.frozen.manifest_sha256,
-            "selection_id": evidence.snapshot.selection_id,
-            "selection_sha256": evidence.snapshot.sha256,
-            "verdict_sha256": evidence.verdict.sha256,
-        }
-        for evidence in loaded
-    ]
-    archive = verify_archive_descriptor(archive_bindings, archive_descriptor, raw_archive)
+    compatibility: Optional[CrossCommitCompatibility] = None
+    compatibility_arguments = (
+        compatibility_golden_directory,
+        compatibility_archive_descriptor,
+        compatibility_raw_archive,
+    )
+    if cross_commit_contract is None:
+        if any(value is not None for value in compatibility_arguments):
+            raise AnalysisValidationError("compatibility ground-truth inputs require cross_commit_contract")
+    else:
+        if compatibility_golden_directory is None:
+            raise AnalysisValidationError("cross_commit_contract requires compatibility_golden_directory")
+        compatibility = load_cross_commit_compatibility(cross_commit_contract)
+        _verify_cross_commit_ground_truth(
+            compatibility,
+            loaded,
+            golden_directory=compatibility_golden_directory,
+            archive_descriptor=compatibility_archive_descriptor,
+            raw_archive=compatibility_raw_archive,
+        )
+    archive = verify_archive_descriptor(_archive_bindings(loaded), archive_descriptor, raw_archive)
     aggregate = _build_aggregate(
         loaded,
         regeneration_command=command,
@@ -1278,6 +1579,7 @@ def verify_regenerate_campaigns(
         candidate_config=candidate_config,
         relative_threshold_pct=float(relative_threshold_pct),
         absolute_threshold_us=float(absolute_threshold_us),
+        cross_commit_compatibility=compatibility,
     )
     for evidence in loaded:
         final_verdict = evaluate_completeness(
@@ -1320,6 +1622,10 @@ def verify_regenerate_compare(
     candidate_config: Optional[str] = None,
     relative_threshold_pct: float = 8.0,
     absolute_threshold_us: float = 1.0,
+    cross_commit_contract: Optional[PathLike] = None,
+    compatibility_golden_directory: Optional[PathLike] = None,
+    compatibility_archive_descriptor: Optional[PathLike] = None,
+    compatibility_raw_archive: Optional[PathLike] = None,
 ) -> GeneratedPublication:
     """Compatibility wrapper for one primary campaign plus explicit trusted joins."""
 
@@ -1335,4 +1641,8 @@ def verify_regenerate_compare(
         candidate_config=candidate_config,
         relative_threshold_pct=relative_threshold_pct,
         absolute_threshold_us=absolute_threshold_us,
+        cross_commit_contract=cross_commit_contract,
+        compatibility_golden_directory=compatibility_golden_directory,
+        compatibility_archive_descriptor=compatibility_archive_descriptor,
+        compatibility_raw_archive=compatibility_raw_archive,
     )

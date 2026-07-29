@@ -1,6 +1,13 @@
 """Completeness-gated local experiment analysis and publication."""
 
 from .archive import ArchiveVerificationError
+from .compatibility import (
+    CROSS_COMMIT_COMPATIBILITY_SCHEMA,
+    CrossCommitCompatibility,
+    CrossCommitCompatibilityError,
+    analysis_implementation_record,
+    load_cross_commit_compatibility,
+)
 from .pipeline import (
     AGGREGATE_CSV_FILENAME,
     AGGREGATE_JSON_FILENAME,
@@ -11,8 +18,10 @@ from .pipeline import (
     CampaignEvidence,
     GeneratedPublication,
     PersistedVerdictStaleError,
+    PreparedCrossCommitCompatibility,
     PublicationMismatchError,
     compare_publication_to_golden,
+    prepare_cross_commit_compatibility,
     verify_regenerate_campaigns,
     verify_regenerate_compare,
 )
@@ -30,6 +39,7 @@ __all__ = [
     "AGGREGATE_CSV_FILENAME",
     "AGGREGATE_JSON_FILENAME",
     "ANALYSIS_SCHEMA",
+    "CROSS_COMMIT_COMPATIBILITY_SCHEMA",
     "LOCAL_CONSUME_MEASUREMENT_SCHEMA",
     "LOCAL_FAIL_ONCE_MEASUREMENT_SCHEMA",
     "LOCAL_PREPARE_MEASUREMENT_SCHEMA",
@@ -38,12 +48,18 @@ __all__ = [
     "AnalysisValidationError",
     "ArchiveVerificationError",
     "CampaignEvidence",
+    "CrossCommitCompatibility",
+    "CrossCommitCompatibilityError",
     "GeneratedPublication",
     "MeasurementValidationError",
     "PersistedVerdictStaleError",
+    "PreparedCrossCommitCompatibility",
     "PublicationMismatchError",
     "ScalarMeasurement",
     "compare_publication_to_golden",
+    "analysis_implementation_record",
+    "load_cross_commit_compatibility",
+    "prepare_cross_commit_compatibility",
     "validate_scalar_measurement",
     "validate_schema_documents",
     "verify_regenerate_compare",

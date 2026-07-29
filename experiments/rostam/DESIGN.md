@@ -265,9 +265,12 @@ driver), and a single node removes cross-node variance from the rankings.
    contention state) and tree-ll stayed top-3 (57.1% agreement, below even
    comm-only). Diagnosis: PARAM replays each entry synchronously, so compute
    next to a collective is still, from the collective's view, an idle GPU.
-   The overlap export (`--overlap-structure`) issues collectives async with
-   explicit waits placed after the NEXT gap's GEMMs — collective k executes
-   while gap k+1's compute occupies the SMs. PARAM's replayer is hardwired
+   The historical campaign's overlap export (`--overlap-structure`) issued
+   collectives async with explicit waits placed after the NEXT gap's GEMMs —
+   collective k executed while gap k+1's compute occupied the SMs. This is a
+   commit-bound historical intervention, not source-derived overlap semantics;
+   the current exporter instead bounds pre-wait compute by
+   `compute_overlap_us` and refuses unrepresented pipelining. PARAM's replayer is hardwired
    blocking (`self.is_blocking = True`), so these variants run under
    `overlap_replay.py`, a ~180-line overlap-aware reference replayer
    consuming the same trace format (locally verified end to end on gloo).
@@ -410,16 +413,30 @@ bytes against the declared hash and size. Local paths and a mutable `file` or
 plain `http` URI are not publication identities.
 
 `--join-evidence` may combine core and shared campaigns without weakening that
-chain. Joined manifests must be distinct and must agree on repository identity
-and expected-site contract; configurations with the same ID must be identical,
-and inputs with the same ID must have identical hashes and sizes. Completeness,
-attempt accounting, selected-cell provenance, and claim generation cover the
-whole trusted join rather than treating a later dataset as an unverified
-append. Public JSON, CSV, and Markdown retain the evidence hashes needed for
-verification but exclude hostnames, job IDs, scheduler/account details,
-physical execution commands, executor metadata, and measurement artifact or
-workspace paths. The exact user-supplied regeneration command remains part of
-the publication provenance.
+chain. By default, joined manifests must be distinct and must agree on
+repository identity and expected-site contract; configurations with the same
+ID must be identical, and inputs with the same ID must have identical hashes
+and sizes.
+
+A cross-repository join is an explicit, narrower exception. Before it can run,
+`prepare-compatibility` must reproduce the complete source-repository
+publication byte-for-byte with the current analyzer. Its canonical contract
+binds exactly two repository identities, every participating manifest,
+selection and verdict, the full analyzer/harness/schema file inventory, and the
+minimal policy/input differences observed in those exact manifests. The first
+output is a non-executable candidate. Only a separately emitted `reviewed`
+contract can authorize the join, and the join repeats the ground-truth
+regeneration and golden comparison. Any changed analyzer byte, evidence
+identity, extra exemption, or stale golden file fails closed. The ordinary
+same-repository path and its publication bytes are unchanged.
+
+Completeness, attempt accounting, selected-cell provenance, and claim
+generation cover the whole trusted join rather than treating a later dataset
+as an unverified append. Public JSON, CSV, and Markdown retain the evidence
+hashes needed for verification but exclude hostnames, job IDs,
+scheduler/account details, physical execution commands, executor metadata, and
+measurement artifact or workspace paths. The exact user-supplied regeneration
+command remains part of the publication provenance.
 
 The historical glob-based analyzer is outside this trust boundary. It runs
 only after the operator supplies `--unsafe-legacy-glob-analysis`; its JSON and
