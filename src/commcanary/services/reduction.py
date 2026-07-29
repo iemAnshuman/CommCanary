@@ -35,7 +35,7 @@ def ddmin_ranking_reduction(
     source-verified and cannot receive a strong behavioral claim.
     """
 
-    validate_trace(trace, limits=limits)
+    validate_trace(trace, require_known_overlap=True, limits=limits)
     events = list(trace.get("events", []))
     if not events:
         raise SchemaError("cannot reduce an empty trace")

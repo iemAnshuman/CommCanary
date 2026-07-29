@@ -13,14 +13,18 @@ from .adapters import interop as _implementation
 from .adapters.interop import (
     canary_to_param_comms_trace,
     kineto_trace_to_commcanary_trace,
+    kineto_traces_to_commcanary_trace,
     load_kineto_trace,
+    load_kineto_trace_with_identity,
     write_param_comms_trace,
 )
 
 __all__ = [
     "canary_to_param_comms_trace",
     "kineto_trace_to_commcanary_trace",
+    "kineto_traces_to_commcanary_trace",
     "load_kineto_trace",
+    "load_kineto_trace_with_identity",
     "write_param_comms_trace",
 ]
 

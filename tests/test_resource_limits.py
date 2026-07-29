@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import copy
 import dataclasses
+import hashlib
 import json
 import math
 import tempfile
@@ -10,7 +12,11 @@ from unittest import mock
 
 from commcanary.capture import merge_trace_shards
 from commcanary.compiler import compile_trace, synthesize_behavioral_canary
-from commcanary.interop import canary_to_param_comms_trace, load_kineto_trace
+from commcanary.interop import (
+    canary_to_param_comms_trace,
+    load_kineto_trace,
+    load_kineto_trace_with_identity,
+)
 from commcanary.reduce import ddmin_ranking_reduction
 from commcanary.replay import replay_canary
 from commcanary.resources import (
@@ -57,6 +63,20 @@ class BoundedJsonLoaderTests(unittest.TestCase):
             ResourceLimits(max_json_string_bytes=-1)
         with self.assertRaisesRegex(ValueError, "max_json_number_chars"):
             ResourceLimits(max_json_number_chars=0)
+        with self.assertRaisesRegex(ValueError, "max_param_compute_operations"):
+            ResourceLimits(max_param_compute_operations=0)
+        with self.assertRaisesRegex(ValueError, "max_param_gemm_dim"):
+            ResourceLimits(max_param_gemm_dim=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_tensor_bytes"):
+            ResourceLimits(max_execution_tensor_bytes=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_total_tensor_bytes"):
+            ResourceLimits(max_execution_total_tensor_bytes=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_compute_operations"):
+            ResourceLimits(max_execution_compute_operations=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_observation_samples"):
+            ResourceLimits(max_execution_observation_samples=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_timeout_seconds"):
+            ResourceLimits(max_execution_timeout_seconds=0)
         with self.assertRaisesRegex(ValueError, "max_behavior_configurations must be at least 2"):
             ResourceLimits(max_behavior_configurations=1)
 
@@ -132,12 +152,14 @@ class BoundedJsonLoaderTests(unittest.TestCase):
                     "bytes": 16,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "op": "all_reduce",
                     "bytes": 32,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -165,6 +187,7 @@ class BoundedJsonLoaderTests(unittest.TestCase):
                     "bytes": 16,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 0.0,
                 }
             ],
         }
@@ -197,13 +220,17 @@ class BoundedJsonLoaderTests(unittest.TestCase):
                     "op": "all_reduce",
                     "bytes": 16,
                     "ranks": [0, 1],
+                    "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "op": "all_reduce",
                     "bytes": 32,
                     "ranks": [0, 1],
+                    "start_us": 4.0,
                     "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -230,6 +257,16 @@ class BoundedJsonLoaderTests(unittest.TestCase):
                     limits=ResourceLimits(max_param_entries=2),
                 )
         expand.assert_not_called()
+
+        with self.assertRaisesRegex(
+            SchemaError,
+            "PARAM compute-fill operations=10 exceeds limit=3",
+        ):
+            canary_to_param_comms_trace(
+                canary,
+                compute_fill_us_per_gemm=1.0,
+                limits=ResourceLimits(max_param_compute_operations=3),
+            )
 
     def test_capture_shard_and_aggregate_limits_precede_merge(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -289,7 +326,8 @@ class BoundedJsonLoaderTests(unittest.TestCase):
 
     def test_standard_loader_requires_object_and_kineto_accepts_object_or_array(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            object_path = self._write(tmp, b'{"traceEvents": []}', "object.json")
+            object_bytes = b'{"traceEvents": []}'
+            object_path = self._write(tmp, object_bytes, "object.json")
             array_path = self._write(tmp, b'[{"name": "event"}]', "array.json")
             scalar_path = self._write(tmp, b"1", "scalar.json")
 
@@ -301,8 +339,83 @@ class BoundedJsonLoaderTests(unittest.TestCase):
                 {"traceEvents": [{"name": "event"}]},
             )
             self.assertEqual(load_kineto_trace(object_path), {"traceEvents": []})
+            self.assertEqual(
+                load_kineto_trace_with_identity(object_path),
+                (
+                    {"traceEvents": []},
+                    {
+                        "sha256": hashlib.sha256(object_bytes).hexdigest(),
+                        "size_bytes": len(object_bytes),
+                    },
+                ),
+            )
             with self.assertRaisesRegex(SchemaError, "object or event array"):
                 load_kineto_trace(scalar_path)
+
+    def test_kineto_source_identity_schema_rejects_malformed_or_path_bearing_records(
+        self,
+    ) -> None:
+        trace = {
+            "format": "commcanary.trace.v1",
+            "system": {
+                "source_format": "pytorch-kineto",
+                "kineto_source_profiles": [
+                    {
+                        "sha256": "0" * 64,
+                        "size_bytes": 2,
+                    }
+                ],
+            },
+            "events": [],
+        }
+        validate_trace(trace)
+        invalid_identities = (
+            {"sha256": "not-a-digest", "size_bytes": 2},
+            {"sha256": "0" * 64, "size_bytes": 0},
+            {"sha256": "0" * 64, "size_bytes": 2, "path": "/private/profile.json"},
+        )
+        for identity in invalid_identities:
+            invalid = dict(trace)
+            invalid["system"] = {
+                "source_format": "pytorch-kineto",
+                "kineto_source_profiles": [identity],
+            }
+            with self.subTest(identity=identity), self.assertRaises(SchemaError):
+                validate_trace(invalid)
+
+    def test_kineto_source_identity_rank_must_match_import_ownership(self) -> None:
+        identity = {"sha256": "0" * 64, "size_bytes": 2, "rank": 0}
+        single = {
+            "format": "commcanary.trace.v1",
+            "system": {
+                "source_format": "pytorch-kineto",
+                "kineto_rank": 0,
+                "kineto_source_profiles": [identity],
+            },
+            "events": [],
+        }
+        validate_trace(single)
+
+        wrong_single = copy.deepcopy(single)
+        wrong_single["system"]["kineto_rank"] = 1
+        with self.assertRaisesRegex(SchemaError, "must match kineto_rank"):
+            validate_trace(wrong_single)
+
+        multi = copy.deepcopy(single)
+        multi["system"].pop("kineto_rank")
+        multi["system"]["kineto_imported_ranks"] = [0, 1]
+        multi["system"]["kineto_source_profiles"].append({"sha256": "1" * 64, "size_bytes": 3, "rank": 1})
+        validate_trace(multi)
+
+        wrong_multi = copy.deepcopy(multi)
+        wrong_multi["system"]["kineto_imported_ranks"] = [0, 2]
+        with self.assertRaisesRegex(SchemaError, "must match kineto_imported_ranks"):
+            validate_trace(wrong_multi)
+
+        duplicate_rank = copy.deepcopy(multi)
+        duplicate_rank["system"]["kineto_source_profiles"][1]["rank"] = 0
+        with self.assertRaisesRegex(SchemaError, "duplicates an earlier source rank"):
+            validate_trace(duplicate_rank)
 
     def test_byte_limit_accepts_exact_boundary_and_rejects_boundary_plus_one(self) -> None:
         payload = b'{"x":1}'

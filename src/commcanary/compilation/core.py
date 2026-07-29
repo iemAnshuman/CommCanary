@@ -82,7 +82,7 @@ def compile_trace_core(
     closed rather than silently exceeding an acceptable error.
     """
 
-    validate_trace(trace, limits=limits)
+    validate_trace(trace, require_known_overlap=True, limits=limits)
     if not isinstance(require_lossless_timing, bool):
         raise SchemaError("require_lossless_timing must be a boolean")
     if not isinstance(allow_empty, bool):

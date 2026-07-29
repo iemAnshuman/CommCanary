@@ -42,6 +42,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             ],
         }
@@ -63,6 +64,7 @@ class ReplayTests(unittest.TestCase):
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
                     "compute_before_us": 100.0,
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -74,6 +76,7 @@ class ReplayTests(unittest.TestCase):
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
                     "compute_before_us": 100.0,
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -92,6 +95,7 @@ class ReplayTests(unittest.TestCase):
                     "bytes": 1024,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -101,6 +105,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
                     "compute_before_us": 1_000_000.0,
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -121,6 +126,7 @@ class ReplayTests(unittest.TestCase):
                     "group": "tp",
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 10.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -131,6 +137,7 @@ class ReplayTests(unittest.TestCase):
                     "group": "tp",
                     "start_us": 5.0,
                     "rank_arrival_us": {"0": 0.0, "1": 10.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -153,6 +160,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -162,6 +170,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [2, 3],
                     "start_us": 0.0,
                     "rank_arrival_us": {"2": 0.0, "3": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -183,6 +192,7 @@ class ReplayTests(unittest.TestCase):
                     "bytes": 262144,
                     "ranks": [0, 1, 2, 3],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             ],
         }
@@ -207,6 +217,7 @@ class ReplayTests(unittest.TestCase):
                     "bytes": 1,
                     "ranks": [0, 1, 2, 3],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0, "2": 0.0, "3": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             ],
         }
@@ -239,6 +250,7 @@ class ReplayTests(unittest.TestCase):
                     "group": "a",
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -249,6 +261,7 @@ class ReplayTests(unittest.TestCase):
                     "group": "b",
                     "start_us": 10.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }
@@ -267,6 +280,7 @@ class ReplayTests(unittest.TestCase):
             "group": "a",
             "start_us": 0.0,
             "rank_arrival_us": {"0": 0.0, "1": 0.0},
+            "compute_overlap_us": 0.0,
         }
         event_b = {
             "id": "b",
@@ -277,6 +291,7 @@ class ReplayTests(unittest.TestCase):
             "group": "b",
             "start_us": 0.0,
             "rank_arrival_us": {"2": 0.0, "3": 0.0},
+            "compute_overlap_us": 0.0,
         }
         with_prefix = {
             "format": TRACE_FORMAT,
@@ -304,6 +319,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             )
         samples = replay_canary(compile_trace(trace), include_samples=True, seed=9)["samples"]
@@ -322,6 +338,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             )
         samples = replay_canary(
@@ -345,6 +362,7 @@ class ReplayTests(unittest.TestCase):
                     "group": "tp",
                     "start_us": 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
                 {
                     "id": "b",
@@ -375,6 +393,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 10_000_000_000.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.1},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace)
@@ -396,6 +415,7 @@ class ReplayTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": float(index % 7),
                     "rank_arrival_us": {"0": 0.0, "1": float(index % 13)},
+                    "compute_overlap_us": 0.0,
                     "observed_exposed_us": 1000.0 if index == 77 else 10.0,
                 }
             )
@@ -457,6 +477,7 @@ class ReplayTests(unittest.TestCase):
             "group": "pp",
             "gap_us": 1.0,
             "rank_arrival_us": {"0": 0.0, "1": 0.0},
+            "compute_overlap_us": 0.0,
             "sender_rank": 0,
             "receiver_rank": 1,
             "tag": "kv",

@@ -30,8 +30,10 @@ _EVENT_COPY_FIELDS = (
     "arrival_skew_us",
     "compute_before_us",
     "compute_overlap_us",
+    "compute_overlap_unknown",
     "compute_pressure",
     "concurrent_groups",
+    "root_rank",
     "sender_rank",
     "receiver_rank",
     "tag",
@@ -65,6 +67,7 @@ def isolated_collective_baseline_trace(trace: Mapping[str, Any]) -> JsonDict:
         record["rank_arrival_us"] = {str(rank): 0.0 for rank in ranks}
         record.pop("arrival_skew_us", None)
         record["compute_before_us"] = 0.0
+        record.pop("compute_overlap_unknown", None)
         record["compute_overlap_us"] = 0.0
         record["compute_pressure"] = 0.5
         record["concurrent_groups"] = 1
@@ -89,7 +92,7 @@ def random_sampling_baseline_trace(
     workload.
     """
 
-    validate_trace(trace)
+    validate_trace(trace, require_known_overlap=True)
     events = list(trace.get("events", []))
     if not events:
         raise SchemaError("cannot build a sampling baseline from an empty trace")
@@ -126,7 +129,7 @@ def frequency_representative_baseline_trace(trace: Mapping[str, Any]) -> JsonDic
     and timing correlations.
     """
 
-    validate_trace(trace)
+    validate_trace(trace, require_known_overlap=True)
     events = list(trace.get("events", []))
     if not events:
         raise SchemaError("cannot build a frequency baseline from an empty trace")
@@ -164,7 +167,7 @@ def clustering_representative_baseline_trace(
     discards exact burst/tail correlations and source commitments.
     """
 
-    validate_trace(trace)
+    validate_trace(trace, require_known_overlap=True)
     events = list(trace.get("events", []))
     if not events:
         raise SchemaError("cannot build a clustering baseline from an empty trace")
@@ -216,7 +219,7 @@ def stratified_sampling_baseline_trace(
     commitments.
     """
 
-    validate_trace(trace)
+    validate_trace(trace, require_known_overlap=True)
     events = list(trace.get("events", []))
     if not events:
         raise SchemaError("cannot build a stratified baseline from an empty trace")

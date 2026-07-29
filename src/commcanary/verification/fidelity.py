@@ -562,10 +562,12 @@ def _event_to_step(
         "_all_timing_samples": [timing_sample],
         "_sample_limit": sample_limit,
     }
-    for integer_key in ("sender_rank", "receiver_rank", "message_sequence"):
+    if "dtype" in event:
+        step["dtype"] = str(event.get("dtype"))
+    for integer_key in ("root_rank", "sender_rank", "receiver_rank", "message_sequence"):
         if integer_key in event:
             step[integer_key] = as_int(event.get(integer_key))
-    for text_key in ("tag", "channel"):
+    for text_key in ("reduction_op", "tag", "channel"):
         if text_key in event:
             step[text_key] = str(event.get(text_key))
     if event.get("custom_op") is True:

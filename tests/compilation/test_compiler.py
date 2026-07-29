@@ -27,6 +27,46 @@ class CompilationTests(unittest.TestCase):
         self.assertLess(len(canary["events"]), len(small_trace()["events"]))
         self.assertEqual(canary["compiler"]["source_events"], 6)
 
+    def test_collective_dtype_is_part_of_compression_and_fidelity_identity(self):
+        trace = small_trace()
+        for index, event in enumerate(trace["events"]):
+            event["dtype"] = "float16" if index < 3 else "float32"
+        canary = compile_trace(trace)
+
+        self.assertEqual([event["dtype"] for event in canary["events"]], ["float16", "float32"])
+        self.assertEqual(verify_canary_fidelity(trace, canary)["status"], "source_verified")
+
+        changed = copy.deepcopy(trace)
+        changed["events"][0]["dtype"] = "float32"
+        verification = verify_canary_fidelity(changed, canary)
+        self.assertNotEqual(verification["status"], "source_verified")
+
+        noncanonical = small_trace()
+        noncanonical["events"][0]["dtype"] = "Float"
+        with self.assertRaisesRegex(SchemaError, "canonical spelling 'float32'"):
+            compile_trace(noncanonical)
+
+    def test_compile_refuses_absent_or_explicitly_unknown_overlap(self):
+        trace = small_trace()
+        trace["events"][0].pop("compute_overlap_us")
+        with self.assertRaisesRegex(SchemaError, "trace event 0 has unknown compute overlap"):
+            compile_trace(trace)
+
+        trace["events"][0]["compute_overlap_unknown"] = True
+        with self.assertRaisesRegex(SchemaError, "trace event 0 has unknown compute overlap"):
+            compile_trace(trace)
+
+        trace["events"][0].pop("compute_overlap_unknown")
+        trace["events"][0]["compute_overlap_us"] = 0.0
+        canary = compile_trace(trace)
+        self.assertEqual(canary["events"][0]["compute_overlap_us"], 15.0)
+
+    def test_trace_rejects_conflicting_overlap_state(self):
+        trace = small_trace()
+        trace["events"][0]["compute_overlap_unknown"] = True
+        with self.assertRaisesRegex(SchemaError, "cannot carry both"):
+            compile_trace(trace)
+
     def test_timing_samples_preserve_joint_correlation_and_are_bounded(self):
         trace = small_trace()
         trace["events"] = []
@@ -119,6 +159,7 @@ class CompilationTests(unittest.TestCase):
                     "bytes": 16,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                     "compute_fields_uncertain": index % 2 == 0,
                 }
             )
@@ -152,6 +193,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "start_us": float(index),
                     "rank_arrival_us": {"0": 0.0, "1": skew},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=8)
@@ -171,6 +213,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 1000.0 if index == 10 else 0.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=5)
@@ -191,6 +234,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "start_us": float(index * 3),
                     "rank_arrival_us": {"0": 0.0, "1": float(index % 37)},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=8)
@@ -215,6 +259,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": gap_us,
                     "rank_arrival_us": {"0": 0.0, "1": skew},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=8)
@@ -248,6 +293,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": gap,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=8)
@@ -270,6 +316,7 @@ class CompilationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": float(index % 17),
                     "rank_arrival_us": {"0": 0.0, "1": float((index % 17) * 2)},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=32)
@@ -285,6 +332,7 @@ class CompilationTests(unittest.TestCase):
             "op": "all_reduce",
             "ranks": [0, 1],
             "rank_arrival_us": {"0": 0.0, "1": 0.0},
+            "compute_overlap_us": 0.0,
         }
         ambiguous = {
             "format": TRACE_FORMAT,

@@ -27,5 +27,5 @@ def compile_and_replay(trace: JsonDict) -> JsonDict:
 trace: JsonDict = {"format": TRACE_FORMAT, "workload": {"name": "typed-example"}, "events": []}
 capabilities: tuple[FormatCapability, ...] = format_capabilities()
 report = compile_and_replay(trace)
-assert len(capabilities) == 7
+assert len(capabilities) == 9
 assert report["metrics"]["count"] == 0

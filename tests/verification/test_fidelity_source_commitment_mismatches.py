@@ -31,6 +31,7 @@ def _identical_event_trace(count: int) -> dict:
                 "group": "tp",
                 "gap_us": 1.0,
                 "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                "compute_overlap_us": 0.0,
             }
         )
     return {"format": TRACE_FORMAT, "workload": {"name": "identical-events"}, "events": events}

@@ -9,7 +9,9 @@ from .canary_expansion import (
     expand_sequence_motif,
     iter_canary_logical_events,
     iter_canary_stored_leaf_events,
+    iter_canary_timing_samples,
     preflight_canary_expansion,
+    timing_sample_offsets,
 )
 from .canary_hashes import (
     CANARY_HASH_FIELD_NAMES,
@@ -32,6 +34,8 @@ __all__ = [
     "expand_sequence_motif",
     "iter_canary_logical_events",
     "iter_canary_stored_leaf_events",
+    "iter_canary_timing_samples",
     "preflight_canary_expansion",
+    "timing_sample_offsets",
     "validate_canary",
 ]

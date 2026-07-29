@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple
 
 from ..errors import SchemaError
 from ..resources import (
@@ -17,6 +17,7 @@ from ..resources import (
     JsonResourceError,
     ResourceLimits,
     load_bounded_json,
+    load_bounded_json_with_identity,
     validate_json_mapping,
 )
 from .io import SENSITIVE_JSON_POLICY, atomic_write_json
@@ -65,6 +66,34 @@ def load_json_document(
         raise SchemaError(f"{path} contains a number that is too large") from exc
     except ValueError as exc:
         raise SchemaError(f"{path} contains non-standard JSON: {exc}") from exc
+
+
+def load_json_document_with_identity(
+    path: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> Tuple[Any, JsonDict]:
+    """Load one bounded document and bind the exact bytes decoded."""
+
+    try:
+        data, sha256, size_bytes = load_bounded_json_with_identity(path, limits=limits)
+    except FileNotFoundError as exc:
+        raise SchemaError(f"{path} does not exist") from exc
+    except UnicodeDecodeError as exc:
+        raise SchemaError(f"{path} is not UTF-8 JSON: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SchemaError(f"{path} is not valid JSON: {exc.msg}") from exc
+    except JsonResourceError as exc:
+        raise SchemaError(f"{path} violates JSON resource constraints: {exc}") from exc
+    except RecursionError as exc:
+        raise SchemaError(f"{path} exceeds the JSON parser nesting capacity") from exc
+    except OSError as exc:
+        raise SchemaError(f"cannot read {path}: {exc}") from exc
+    except OverflowError as exc:
+        raise SchemaError(f"{path} contains a number that is too large") from exc
+    except ValueError as exc:
+        raise SchemaError(f"{path} contains non-standard JSON: {exc}") from exc
+    return data, {"sha256": sha256, "size_bytes": size_bytes}
 
 
 def load_json(
@@ -272,6 +301,38 @@ def validate_point_to_point_metadata(event: Mapping[str, Any], ranks: List[int],
             raise SchemaError(f"{label} {key} must be a non-empty string")
 
 
+def validate_broadcast_metadata(event: Mapping[str, Any], ranks: List[int], label: str) -> None:
+    """Validate an optional source-bound broadcast root without inventing one."""
+
+    root_present = "root_rank" in event
+    if str(event.get("op", "")) != "broadcast":
+        if root_present:
+            raise SchemaError(f"{label} root_rank is only valid for broadcast")
+        return
+    if root_present and as_int(event.get("root_rank")) not in ranks:
+        raise SchemaError(f"{label} root_rank must be one of ranks")
+
+
+SUPPORTED_REDUCTION_OPS = frozenset({"avg", "max", "min", "product", "sum"})
+_REDUCTION_COLLECTIVES = frozenset({"all_reduce", "reduce_scatter"})
+
+
+def validate_reduction_metadata(event: Mapping[str, Any], label: str) -> None:
+    """Validate an optional source-bound reduction operator without guessing."""
+
+    reduction_present = "reduction_op" in event
+    op = str(event.get("op", ""))
+    if op not in _REDUCTION_COLLECTIVES:
+        if reduction_present:
+            raise SchemaError(f"{label} reduction_op is only valid for reduction collectives")
+        return
+    if not reduction_present:
+        return
+    reduction_op = event.get("reduction_op")
+    if not isinstance(reduction_op, str) or reduction_op not in SUPPORTED_REDUCTION_OPS:
+        raise SchemaError(f"{label} reduction_op must be one of {sorted(SUPPORTED_REDUCTION_OPS)!r}")
+
+
 def validate_op(value: Any, label: str, *, custom: bool) -> None:
     if not isinstance(value, str) or not value.strip():
         raise SchemaError(f"{label} op must be a non-empty string")
@@ -318,6 +379,7 @@ __all__ = [
     "MAX_TIME_US",
     "PROTOCOL_FINGERPRINT_EXCLUDE",
     "SUPPORTED_OPS",
+    "SUPPORTED_REDUCTION_OPS",
     "arrival_skew_us",
     "as_float",
     "as_int",
@@ -325,6 +387,7 @@ __all__ = [
     "clean_private_keys",
     "load_json",
     "load_json_document",
+    "load_json_document_with_identity",
     "merge_metadata",
     "normalize_arrival_offsets",
     "normalize_ranks",
@@ -332,9 +395,11 @@ __all__ = [
     "require_format",
     "require_optional_mapping",
     "validate_arrival_keys",
+    "validate_broadcast_metadata",
     "validate_nonempty_string",
     "validate_op",
     "validate_point_to_point_metadata",
+    "validate_reduction_metadata",
     "validate_sha256",
     "validate_skew_matches_offsets",
     "write_json",

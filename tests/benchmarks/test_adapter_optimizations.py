@@ -86,7 +86,11 @@ class ParamExportOptimizationTests(unittest.TestCase):
 
         with (
             mock.patch.object(param_module, "normalize_ranks", wraps=param_module.normalize_ranks) as normalize,
-            mock.patch.object(param_module, "_expanded_gaps_us", wraps=param_module._expanded_gaps_us) as gaps,
+            mock.patch.object(
+                param_module,
+                "_expanded_timing_occurrences",
+                wraps=param_module._expanded_timing_occurrences,
+            ) as timings,
         ):
             cached = param_module.canary_to_param_comms_trace(canary)
 
@@ -100,7 +104,7 @@ class ParamExportOptimizationTests(unittest.TestCase):
 
         logical_count = 64
         self.assertLess(normalize.call_count, logical_count)
-        self.assertLess(gaps.call_count, logical_count)
+        self.assertLess(timings.call_count, logical_count)
         self.assertEqual(cached, uncached)
 
         body = [entry for entry in cached if entry.get("comms") != "init"]

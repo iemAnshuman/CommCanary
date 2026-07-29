@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
+from ..artifacts.dtypes import normalize_dtype
 from ..artifacts.trace import validate_trace
 from ..artifacts.wire import JsonDict, as_float, as_int, load_json, normalize_ranks, write_json
 from ..errors import SchemaError
@@ -116,6 +117,7 @@ class TraceRecorder:
         op: str,
         bytes: int,
         ranks: List[int],
+        dtype: Optional[str] = None,
         phase: str = "unknown",
         group: str = "default",
         start_us: Optional[float] = None,
@@ -148,6 +150,7 @@ class TraceRecorder:
         except (JsonResourceError, TypeError) as exc:
             raise SchemaError(str(exc)) from exc
         parsed_ranks = normalize_ranks(ranks)
+        parsed_dtype = normalize_dtype(dtype) if dtype is not None else None
         parsed_start = self.elapsed_us() if start_us is None else as_float(start_us)
         parsed_before = as_float(compute_before_us)
         parsed_overlap = as_float(compute_overlap_us)
@@ -229,6 +232,8 @@ class TraceRecorder:
                 "compute_pressure": round(parsed_pressure, 6),
                 "concurrent_groups": parsed_groups,
             }
+            if parsed_dtype is not None:
+                event["dtype"] = parsed_dtype
             if collective_id is not None:
                 collective_text = str(collective_id)
                 if not collective_text:
@@ -511,6 +516,7 @@ def record_collective(
     ranks: List[int],
     byte_count: Optional[int] = None,
     bytes: Optional[int] = None,
+    dtype: Optional[str] = None,
     phase: str = "unknown",
     group: str = "default",
     start_us: Optional[float] = None,
@@ -546,6 +552,7 @@ def record_collective(
         op=op,
         bytes=resolved_byte_count,
         ranks=ranks,
+        dtype=dtype,
         phase=phase,
         group=group,
         start_us=start_us,

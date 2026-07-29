@@ -16,6 +16,7 @@ from ..artifacts.canary import (
     preflight_canary_expansion,
     validate_canary,
 )
+from ..artifacts.canary_expansion import iter_canary_timing_samples
 from ..artifacts.json_codec import canonical_json_bytes
 from ..artifacts.report import validate_report
 from ..artifacts.wire import MAX_TIME_US, JsonDict, as_float, as_int, replay_protocol_sha256
@@ -24,7 +25,6 @@ from ..formats import REPORT_FORMAT
 from ..operation_identity import OperationIdentity
 from ..resources import DEFAULT_RESOURCE_LIMITS, JsonResourceError, ResourceLimits, checked_multiply
 from .accumulator import ReplayAccumulator
-from .expansion import _iter_timing_samples
 from .scheduler import _simulate_step
 
 SIMULATION_MODEL_VERSION = "deterministic-scheduler-v4"
@@ -122,7 +122,7 @@ def replay_canary(
         logical_clock_us = 0.0
         group_available_us: Dict[str, float] = {}
         for step in logical_steps:
-            for timing_sample in _iter_timing_samples(step):
+            for timing_sample in iter_canary_timing_samples(step):
                 core = _simulate_step(
                     step,
                     timing_sample=timing_sample,

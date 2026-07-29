@@ -9,6 +9,7 @@ schema-facing adapters can translate these low-level failures into the public
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Mapping as MappingABC
@@ -44,6 +45,13 @@ class ResourceLimits:
     max_expanded_timing_records: int = 2_000_000
     max_replay_events: int = 1_000_000
     max_param_entries: int = 2_000_000
+    max_param_compute_operations: int = 2_000_000
+    max_param_gemm_dim: int = 16_384
+    max_execution_tensor_bytes: int = 2 * 1024 * 1024 * 1024
+    max_execution_total_tensor_bytes: int = 16 * 1024 * 1024 * 1024
+    max_execution_compute_operations: int = 10_000_000
+    max_execution_observation_samples: int = 2_000_000
+    max_execution_timeout_seconds: int = 3_600
     max_capture_shards: int = 65_536
     max_capture_events: int = 1_000_000
     max_behavior_configurations: int = 32
@@ -75,6 +83,13 @@ class ResourceLimits:
             "max_expanded_timing_records",
             "max_replay_events",
             "max_param_entries",
+            "max_param_compute_operations",
+            "max_param_gemm_dim",
+            "max_execution_tensor_bytes",
+            "max_execution_total_tensor_bytes",
+            "max_execution_compute_operations",
+            "max_execution_observation_samples",
+            "max_execution_timeout_seconds",
             "max_capture_shards",
             "max_capture_events",
             "max_behavior_configurations",
@@ -143,11 +158,30 @@ def load_bounded_json(
     verifies that the resulting tree contains only JSON-native values.
     """
 
+    return _decode_bounded_json(_read_bounded_json_bytes(path, limits=limits), limits=limits)
+
+
+def load_bounded_json_with_identity(
+    path: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> Tuple[Any, str, int]:
+    """Decode once and return the exact source-byte SHA-256 and size."""
+
+    raw = _read_bounded_json_bytes(path, limits=limits)
+    data = _decode_bounded_json(raw, limits=limits)
+    return data, hashlib.sha256(raw).hexdigest(), len(raw)
+
+
+def _read_bounded_json_bytes(path: str, *, limits: ResourceLimits) -> bytes:
     with open(path, "rb") as handle:
         raw = handle.read(limits.max_input_bytes + 1)
     if len(raw) > limits.max_input_bytes:
         raise JsonResourceError(f"input exceeds max_input_bytes={limits.max_input_bytes}")
+    return raw
 
+
+def _decode_bounded_json(raw: bytes, *, limits: ResourceLimits) -> Any:
     text = raw.decode("utf-8")
     preflight_json_depth(text, max_depth=limits.max_json_depth)
     data = json.loads(

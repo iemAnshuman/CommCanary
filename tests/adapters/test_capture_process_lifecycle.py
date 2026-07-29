@@ -222,6 +222,13 @@ def test_module_record_collective_accepts_byte_count_and_forwards_it(monkeypatch
     assert isinstance(capture_module._AUTO_RECORDER, capture_module.NullRecorder)
 
 
+def test_recorder_normalizes_optional_collective_dtype(tmp_path) -> None:
+    recorder = TraceRecorder(str(tmp_path / "trace.json"))
+    recorder.record_collective(op="all_reduce", ranks=[0], bytes=16, dtype="Half")
+
+    assert recorder.to_trace()["events"][0]["dtype"] == "float16"
+
+
 def test_rank_filename_component_passes_through_the_unknown_sentinel() -> None:
     assert capture_module._rank_filename_component("unknown") == "unknown"
 

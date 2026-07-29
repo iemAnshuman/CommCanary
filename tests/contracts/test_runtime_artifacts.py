@@ -36,6 +36,42 @@ class RuntimeArtifactTests(unittest.TestCase):
         with self.assertRaises(SchemaError):
             compile_trace(trace)
 
+    def test_broadcast_root_is_preserved_and_semantically_scoped(self):
+        trace = small_trace()
+        trace["events"][0]["op"] = "broadcast"
+        trace["events"][0]["root_rank"] = 2
+        canary = compile_trace(trace)
+        self.assertEqual(canary["events"][0]["root_rank"], 2)
+
+        outside_group = small_trace()
+        outside_group["events"][0]["op"] = "broadcast"
+        outside_group["events"][0]["root_rank"] = 9
+        with self.assertRaisesRegex(SchemaError, "root_rank must be one of ranks"):
+            compile_trace(outside_group)
+
+        nonbroadcast = small_trace()
+        nonbroadcast["events"][0]["root_rank"] = 0
+        with self.assertRaisesRegex(SchemaError, "root_rank is only valid for broadcast"):
+            compile_trace(nonbroadcast)
+
+    def test_reduction_operator_is_preserved_and_semantically_scoped(self):
+        trace = small_trace()
+        trace["events"][0]["reduction_op"] = "sum"
+        canary = compile_trace(trace)
+        self.assertEqual(canary["events"][0]["reduction_op"], "sum")
+
+        unsupported = small_trace()
+        unsupported["events"][0]["reduction_op"] = "premulsum"
+        with self.assertRaisesRegex(SchemaError, "reduction_op must be one of"):
+            compile_trace(unsupported)
+
+        non_reduction = small_trace()
+        non_reduction["events"][0]["op"] = "broadcast"
+        non_reduction["events"][0]["root_rank"] = 0
+        non_reduction["events"][0]["reduction_op"] = "sum"
+        with self.assertRaisesRegex(SchemaError, "only valid for reduction collectives"):
+            compile_trace(non_reduction)
+
     def test_schema_rejects_inconsistent_canaries_and_reports(self):
         canary = compile_trace(small_trace())
         canary["events"][0]["rank_count"] = 100
@@ -296,6 +332,7 @@ class RuntimeArtifactTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 1.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                     "compute_before_us": 1.0,
                 }
             ],
@@ -326,6 +363,7 @@ class RuntimeArtifactTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": 1.0,
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 }
             )
         flat = compile_trace(trace)
@@ -397,6 +435,7 @@ class RuntimeArtifactTests(unittest.TestCase):
                         "bytes": 16,
                         "ranks": [0, 1],
                         "rank_arrival_us": {"0": 0.0, "1": 4.0},
+                        "compute_overlap_us": 0.0,
                     }
                 ],
             }

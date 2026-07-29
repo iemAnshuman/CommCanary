@@ -61,7 +61,7 @@ def synthesize_behavioral_canary(
     speed for a fail-closed behavioral claim.
     """
 
-    validate_trace(trace, limits=limits)
+    validate_trace(trace, require_known_overlap=True, limits=limits)
     if not isinstance(require_lossless_timing, bool):
         raise SchemaError("require_lossless_timing must be a boolean")
     if not isinstance(allow_empty, bool):

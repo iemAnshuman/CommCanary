@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 from dataclasses import replace
-from typing import Any, Callable, List
+from typing import Any, Callable, Dict, List, Optional
 
-from ..adapters.kineto import kineto_trace_to_commcanary_trace, load_kineto_trace
+from ..adapters.kineto import (
+    kineto_trace_to_commcanary_trace,
+    kineto_traces_to_commcanary_trace,
+    load_kineto_trace_with_identity,
+)
 from ..adapters.param import canary_to_param_comms_trace, write_param_comms_trace
-from ..artifacts import load_json, validate_report, write_json
+from ..artifacts import (
+    SENSITIVE_JSON_POLICY,
+    atomic_write_json,
+    load_json,
+    validate_report,
+    validate_trace,
+    write_json,
+)
+from ..artifacts.wire import as_float, as_int
 from ..comparison import compare_reports
 from ..errors import CommCanaryError
+from ..execution import (
+    distributed_execution_environment,
+    execute_qualification_materialization,
+)
 from ..experimental import (
     clustering_representative_baseline_trace,
     frequency_representative_baseline_trace,
@@ -21,10 +38,17 @@ from ..experimental import (
 )
 from ..replay import replay_canary
 from ..reporting import write_compare_html, write_report_html
-from ..resources import DEFAULT_RESOURCE_LIMITS
-from ..services import compile_trace, ddmin_ranking_reduction, synthesize_behavioral_canary
+from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
+from ..services import (
+    compile_trace,
+    ddmin_ranking_reduction,
+    prepare_qualification_request,
+    synthesize_behavioral_canary,
+    verify_qualification_request,
+)
 from ..verification.canary import verify_canary_behavior, verify_canary_fidelity
 from ..verification.report import verify_report_against_canary
+from ..workflows import materialize_qualification, verify_qualification_materialization
 from .codes import EXIT_SUCCESS
 
 DiagnosticEmitter = Callable[..., None]
@@ -233,6 +257,125 @@ def reduce_command(
 
 
 def import_kineto_command(args: Any) -> int:
+    trace, _limits = _import_kineto_profiles(args)
+    write_json(args.output, trace)
+    workload = trace["workload"]
+    print(
+        "imported {events} collective events; overlap {derived} derived, {unknown} unknown; "
+        "message shapes {shape_derived} derived, {shape_unknown} unavailable; "
+        "reduction operators {reduction_derived} derived, {reduction_unknown} unknown; "
+        "broadcast roots {root_derived} derived, {root_unknown} unknown "
+        "(skipped {control} control, {empty} empty): {output}".format(
+            events=workload["imported_events"],
+            derived=workload["overlap_derived_events"],
+            unknown=workload["overlap_unknown_events"],
+            shape_derived=workload["message_shapes_derived_events"],
+            shape_unknown=workload["message_shapes_unknown_events"],
+            reduction_derived=workload["reduction_ops_derived_events"],
+            reduction_unknown=workload["reduction_ops_unknown_events"],
+            root_derived=workload["broadcast_roots_derived_events"],
+            root_unknown=workload["broadcast_roots_unknown_events"],
+            control=workload["skipped_control_events"],
+            empty=workload["skipped_empty_events"],
+            output=args.output,
+        )
+    )
+    return 0
+
+
+def prepare_qualification_command(args: Any) -> int:
+    trace, limits = _import_kineto_profiles(args)
+    canary = compile_trace(
+        trace,
+        timing_sample_limit=args.timing_sample_limit,
+        require_lossless_timing=not args.allow_bounded_timing,
+        limits=limits,
+    )
+    request = prepare_qualification_request(
+        args.output_directory,
+        trace,
+        canary,
+        limits=limits,
+    )
+    print(f"prepared source-verified qualification request {request['request_id']}: {args.output_directory}")
+    print("exact rank-local compute work is bound; physical measurement and verdict are not included")
+    return 0
+
+
+def verify_qualification_command(args: Any) -> int:
+    request = verify_qualification_request(args.bundle_directory)
+    print(f"verified portable qualification request: {request['request_id']}")
+    print("assurance: source correspondence verified; physical fidelity unproven; qualification verdict not issued")
+    return 0
+
+
+def materialize_qualification_command(args: Any) -> int:
+    materialization = materialize_qualification(
+        args.bundle_directory,
+        args.output_directory,
+    )
+    print(
+        f"materialized request-bound exact-work program {materialization['materialization_id']}: {args.output_directory}"
+    )
+    print(
+        "source-bound work: {events} events, {operations} rank-local GEMMs, {flops} mathematical FLOPs".format(
+            events=materialization["compute_work"]["event_count"],
+            operations=materialization["compute_work"]["operation_count"],
+            flops=materialization["compute_work"]["matmul_flop_count"],
+        )
+    )
+    print("target timing calibration is not used; physical measurement and qualification verdict are not included")
+    return 0
+
+
+def verify_materialization_command(args: Any) -> int:
+    materialization = verify_qualification_materialization(
+        args.bundle_directory,
+        args.materialization_directory,
+    )
+    print(f"verified request-bound qualification materialization: {materialization['materialization_id']}")
+    print(
+        "assurance: exact rank-local work and program recomputed from the source trace; "
+        "physical execution and verdict not included"
+    )
+    return 0
+
+
+def execute_materialization_command(args: Any) -> int:
+    rank, world_size, local_rank = distributed_execution_environment(os.environ)
+    result = execute_qualification_materialization(
+        args.bundle_directory,
+        args.materialization_directory,
+        rank=rank,
+        world_size=world_size,
+        local_rank=local_rank,
+        device=args.device,
+        backend=args.backend,
+        iterations=args.iterations,
+        warmup=args.warmup,
+        distributed_timeout_seconds=args.distributed_timeout_seconds,
+    )
+    if result is None:
+        return 0
+    atomic_write_json(
+        args.output,
+        result,
+        indent=2,
+        policy=replace(
+            SENSITIVE_JSON_POLICY,
+            artifact_label="reference execution diagnostic",
+            overwrite=False,
+        ),
+    )
+    print(f"wrote bound reference-execution diagnostic: {args.output}")
+    print(
+        "assurance: self-reported physical execution; reference executor conformance "
+        "and physical fidelity unproven; qualification verdict not issued"
+    )
+    return 0
+
+
+def _import_kineto_profiles(args: Any) -> tuple[Dict[str, Any], ResourceLimits]:
     limits = DEFAULT_RESOURCE_LIMITS
     if args.max_input_bytes is not None:
         if args.max_input_bytes < 1:
@@ -242,24 +385,78 @@ def import_kineto_command(args: Any) -> int:
         if args.max_json_items < 1:
             raise CommCanaryError("--max-json-items must be a positive integer")
         limits = replace(limits, max_json_items=args.max_json_items)
-    kineto = load_kineto_trace(args.kineto_trace, limits=limits)
-    trace = kineto_trace_to_commcanary_trace(
-        kineto,
-        workload_name=args.workload_name,
-        phase=args.phase,
-        process_group=args.process_group,
-    )
-    write_json(args.output, trace)
-    workload = trace["workload"]
-    print(
-        "imported {events} collective events (skipped {control} control, {empty} empty): {output}".format(
-            events=workload["imported_events"],
-            control=workload["skipped_control_events"],
-            empty=workload["skipped_empty_events"],
-            output=args.output,
+    loaded_profiles = [load_kineto_trace_with_identity(path, limits=limits) for path in args.kineto_trace]
+    kinetos = [profile for profile, _identity in loaded_profiles]
+    if len(kinetos) == 1:
+        if args.assume_shared_clock or args.clock_offset_us:
+            raise CommCanaryError("clock-alignment options require at least two Kineto rank profiles")
+        trace = kineto_trace_to_commcanary_trace(
+            kinetos[0],
+            workload_name=args.workload_name,
+            phase=args.phase,
+            process_group=args.process_group,
+            limits=limits,
         )
+    else:
+        trace = kineto_traces_to_commcanary_trace(
+            kinetos,
+            workload_name=args.workload_name,
+            phase=args.phase,
+            process_group=args.process_group,
+            clock_offsets_us=_parse_clock_offsets(args.clock_offset_us),
+            assume_shared_clock=args.assume_shared_clock,
+            limits=limits,
+        )
+    trace["system"]["kineto_source_profiles"] = _kineto_source_profiles(
+        loaded_profiles,
+        multi_rank=len(kinetos) > 1,
     )
-    return 0
+    validate_trace(trace, limits=limits)
+    return trace, limits
+
+
+def _kineto_source_profiles(
+    loaded_profiles: List[tuple[Dict[str, Any], Dict[str, Any]]],
+    *,
+    multi_rank: bool,
+) -> List[Dict[str, Any]]:
+    """Return path-free, exact-byte identities for successfully imported profiles."""
+
+    identities: List[Dict[str, Any]] = []
+    for profile, source_identity in loaded_profiles:
+        identity = dict(source_identity)
+        distributed = profile.get("distributedInfo")
+        if isinstance(distributed, dict) and "rank" in distributed:
+            identity["rank"] = as_int(distributed.get("rank"))
+        elif multi_rank:
+            # The multi-rank converter reports the richer profile-index error.
+            # This guard keeps the helper independently fail closed.
+            raise CommCanaryError("multi-rank Kineto source identity requires distributedInfo.rank")
+        identities.append(identity)
+    return sorted(
+        identities,
+        key=lambda identity: (
+            identity.get("rank", -1),
+            identity["sha256"],
+        ),
+    )
+
+
+def _parse_clock_offsets(values: List[str]) -> Optional[Dict[int, float]]:
+    if not values:
+        return None
+    offsets: Dict[int, float] = {}
+    for value in values:
+        if not isinstance(value, str) or value.count("=") != 1:
+            raise CommCanaryError("--clock-offset-us must use RANK=OFFSET")
+        raw_rank, raw_offset = value.split("=", 1)
+        rank = as_int(raw_rank)
+        if rank < 0:
+            raise CommCanaryError("--clock-offset-us rank must be non-negative")
+        if rank in offsets:
+            raise CommCanaryError(f"--clock-offset-us repeats rank {rank}")
+        offsets[rank] = as_float(raw_offset)
+    return offsets
 
 
 def export_param_command(args: Any) -> int:
@@ -270,10 +467,11 @@ def export_param_command(args: Any) -> int:
         skip_unsupported=args.skip_unsupported,
         compute_fill_us_per_gemm=args.compute_fill_us_per_gemm,
         compute_fill_gemm_dim=args.compute_fill_gemm_dim,
+        compute_fill_dtype=args.compute_fill_dtype,
         overlap_structure=args.overlap_structure,
     )
     write_param_comms_trace(args.output, entries)
-    print(f"exported {len(entries)} PARAM comms-replay entries: {args.output}")
+    print(f"exported {len(entries)} legacy PARAM-basic-derived entries: {args.output}")
     return 0
 
 

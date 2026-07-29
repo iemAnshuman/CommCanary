@@ -6,10 +6,10 @@ import hashlib
 import math
 from typing import Any, Iterable, Mapping, Tuple
 
+from ..artifacts.canary_expansion import timing_sample_offsets
 from ..artifacts.json_codec import canonical_json_bytes
 from ..artifacts.wire import JsonDict, as_float, as_int, average_wait_us
 from ..operation_identity import OperationIdentity
-from .expansion import _sample_offsets
 
 _MASK64 = (1 << 64) - 1
 
@@ -27,7 +27,7 @@ def _simulate_step(
     ablations: Iterable[str] = (),
 ) -> JsonDict:
     ablation_set = set(ablations)
-    offsets = _sample_offsets(step, timing_sample)
+    offsets = timing_sample_offsets(step, timing_sample)
     if "arrival_skew" in ablation_set:
         offsets = [0.0 for _ in offsets]
     skew_us = arrival_skew = (

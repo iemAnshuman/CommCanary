@@ -16,6 +16,8 @@ COMPARE_FORMAT = "commcanary.compare.v2"
 FIDELITY_VERIFICATION_FORMAT = "commcanary.fidelity_verification.v1"
 BEHAVIOR_VERIFICATION_FORMAT = "commcanary.behavior_verification.v1"
 REPORT_VERIFICATION_FORMAT = "commcanary.report_verification.v1"
+QUALIFICATION_REQUEST_FORMAT = "commcanary.qualification_request.v1"
+QUALIFICATION_MATERIALIZATION_FORMAT = "commcanary.qualification_materialization.v1"
 
 CANONICAL_JSON_VERSION = "commcanary.canonical-json.v1"
 CANARY_INTEGRITY_PROFILE = "commcanary.canary-integrity.v1"
@@ -99,6 +101,24 @@ FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
         migrate=False,
         semantic_validator=False,
     ),
+    FormatCapability(
+        artifact="qualification_request",
+        format_id=QUALIFICATION_REQUEST_FORMAT,
+        schema="schemas/commcanary.qualification_request.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="qualification_materialization",
+        format_id=QUALIFICATION_MATERIALIZATION_FORMAT,
+        schema="schemas/commcanary.qualification_materialization.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
 )
 
 
@@ -118,6 +138,8 @@ __all__ = [
     "FIDELITY_VERIFICATION_FORMAT",
     "FORMAT_CAPABILITIES",
     "FormatCapability",
+    "QUALIFICATION_MATERIALIZATION_FORMAT",
+    "QUALIFICATION_REQUEST_FORMAT",
     "REPORT_FORMAT",
     "REPORT_VERIFICATION_FORMAT",
     "TRACE_FORMAT",

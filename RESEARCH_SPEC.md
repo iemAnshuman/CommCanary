@@ -90,19 +90,53 @@ injected and naturally occurring regressions.
 - principled point-to-point identity fields for send/recv pairs;
 - a synthetic ranking-inversion scaffold contrasting isolated collective
   results, full workload replay, and verified/unverified canaries;
-- a single-rank observational importer for PyTorch Kineto profiler traces
-  (`record_param_comms` collective metadata; no invented skew or overlap);
-- a PARAM comms-replay "basic" trace exporter that expands a canary's full
-  event program for physical NCCL execution via facebookresearch/param.
+- single- and multi-rank observational import for PyTorch Kineto profiler
+  traces (`record_param_comms` collective metadata; no invented skew;
+  multi-rank arrivals require an explicit shared-clock assertion or complete
+  offset map; overlap is derived by unioning cross-stream compute intersections
+  with linked NCCL kernel intervals only when kernel evidence is complete and
+  unambiguous, otherwise it remains explicitly unknown and compilation
+  refuses; broadcast root is recovered from the containing
+  `c10d::broadcast_` dispatcher inputs, and missing/conflicting root evidence
+  later refuses physical materialization rather than defaulting to rank 0;
+  reduction operators are derived only from consistent uniquely linked NCCL
+  kernel names, and incomplete evidence later refuses qualification rather
+  than defaulting to SUM; exact input/output element counts and split vectors
+  are retained and cross-rank checked, and qualification refuses unsupported or
+  skipped shape evidence rather than rebuilding a convenient tensor shape);
+- a legacy PARAM-basic-derived trace exporter that expands a canary's full
+  event program while preserving source-bound collective dtype and reduction
+  operator per event; the pinned research harness consumes it, but current
+  upstream PARAM compatibility is explicitly not claimed;
+- a portable, source-verified qualification-request bundle whose closed
+  manifest binds exact source/canary/fidelity bytes while withholding any
+  physical-fidelity or acceptance verdict, rejecting unsupported execution
+  semantics before writing, binding communication dtype/reduction sets,
+  source-validated message shapes and equal-split-only `all_to_all`,
+  and a canonical projection of exact source-derived rank-local contiguous
+  GEMM recipes; timestamp pacing and target compute calibration are disabled;
+- a request-bound target materialization whose manifest binds the
+  source-work projection, exact generated program, and required source-bound
+  rank-aware async-issue/exact-work/explicit-wait executor semantics, with
+  independent byte-for-byte regeneration, exact per-rank and bounded total
+  rectangular GEMM work, and explicit no-execution/no-measurement/no-verdict
+  claims.
 
 ## Not implemented—and required before a strong systems-paper claim
 
 - broader physical CUDA/NCCL evidence beyond the first Rostam decomposition:
   a 4x A100-PCIE single-node result now exists via `experiments/rostam/`,
   while multi-node, NVLink-class, and multi-hardware evaluations remain open;
-- importers for Chakra ET, Nsight Systems, or serving-engine traces, and
-  multi-rank merged import for PyTorch profiler traces (the current Kineto
-  importer is single-rank and observational);
+- importers for Chakra ET, Nsight Systems, or serving-engine traces;
+- a conforming physical executor or verified current Chakra/PARAM replay path
+  for `commcanary.source-bound-compute-recipe.v2`; deterministic
+  materialization alone is not executable interoperability. A bounded
+  in-package torch.distributed reference implementation now covers the five
+  exactly materialized collectives and passes pure/injected-runtime tests, but
+  the exact-work contract remains physically unvalidated;
+- physical validation that the Kineto-derived overlap moves imported-proxy
+  fidelity toward the existing explicit-overlap result; unit tests establish
+  interval/linkage semantics but do not establish hardware fidelity;
 - synthetic compute kernels calibrated to preserve interference;
 - dependency-graph and communicator reconstruction;
 - full per-window/per-motif optimisation that directly minimises canary size

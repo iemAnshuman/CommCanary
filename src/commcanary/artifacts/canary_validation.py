@@ -23,6 +23,7 @@ from .canary_hashes import (
     canary_execution_sha256,
     canary_scheduler_execution_sha256,
 )
+from .dtypes import require_canonical_dtype
 from .wire import (
     MAX_TIME_US,
     as_float,
@@ -31,9 +32,11 @@ from .wire import (
     require_format,
     require_optional_mapping,
     validate_arrival_keys,
+    validate_broadcast_metadata,
     validate_nonempty_string,
     validate_op,
     validate_point_to_point_metadata,
+    validate_reduction_metadata,
     validate_sha256,
     validate_skew_matches_offsets,
 )
@@ -152,6 +155,8 @@ def validate_canary(
             if key not in event:
                 raise SchemaError(f"canary event {index} is missing {key!r}")
         validate_op(event.get("op"), f"canary event {index}", custom=event.get("custom_op") is True)
+        if "dtype" in event:
+            require_canonical_dtype(event.get("dtype"), label=f"canary event {index} dtype")
         for text_key in ("phase", "group"):
             if text_key not in event:
                 raise SchemaError(f"canary event {index} is missing {text_key!r}")
@@ -204,7 +209,9 @@ def validate_canary(
                 raise SchemaError(f"canary event {index} arrival_skew_us must be non-negative")
             if len(ranks) == 1 and as_float(event.get("arrival_skew_us"), 0.0) > 0.001:
                 raise SchemaError(f"canary event {index} one-rank skew must be zero")
+        validate_broadcast_metadata(event, ranks, f"canary event {index}")
         validate_point_to_point_metadata(event, ranks, f"canary event {index}")
+        validate_reduction_metadata(event, f"canary event {index}")
 
         samples = event.get("timing_samples")
         if not isinstance(samples, list) or not samples:

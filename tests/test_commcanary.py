@@ -155,6 +155,21 @@ class CommCanaryTests(unittest.TestCase):
         self.assertEqual(verification["source_verified_status"], "failed")
         self.assertNotEqual(verification["status"], "behaviorally_verified")
 
+    def test_only_isolated_baseline_may_deliberately_zero_unknown_overlap(self):
+        trace = small_trace()
+        for event in trace["events"]:
+            event.pop("compute_overlap_us")
+            event["compute_overlap_unknown"] = True
+
+        isolated = isolated_collective_baseline_trace(trace)
+        validate_trace(isolated, require_known_overlap=True)
+        self.assertTrue(all(event["compute_overlap_us"] == 0.0 for event in isolated["events"]))
+        self.assertTrue(all("compute_overlap_unknown" not in event for event in isolated["events"]))
+        compile_trace(isolated)
+
+        with self.assertRaisesRegex(SchemaError, "unknown compute overlap"):
+            random_sampling_baseline_trace(trace, sample_count=1)
+
     def test_research_baseline_traces_are_valid_and_not_source_verified_against_original(self):
         trace = adversarial_ranking_trace()
         random_baseline = random_sampling_baseline_trace(trace, sample_count=8, seed=5)

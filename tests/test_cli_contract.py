@@ -63,6 +63,11 @@ def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture
         "baseline",
         "reduce",
         "import-kineto",
+        "prepare-qualification",
+        "verify-qualification",
+        "materialize-qualification",
+        "verify-materialization",
+        "execute-materialization",
         "export-param",
         "verify-report",
         "capture",
@@ -70,6 +75,33 @@ def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture
         "report",
     ):
         assert command in output
+
+
+def test_execute_materialization_parser_binds_a_bounded_distributed_timeout() -> None:
+    parser = _build_parser()
+    default = parser.parse_args(
+        [
+            "execute-materialization",
+            "request",
+            "materialization",
+            "--output",
+            "diagnostic.json",
+        ]
+    )
+    assert default.distributed_timeout_seconds == 300
+
+    explicit = parser.parse_args(
+        [
+            "execute-materialization",
+            "request",
+            "materialization",
+            "--output",
+            "diagnostic.json",
+            "--distributed-timeout-seconds",
+            "45",
+        ]
+    )
+    assert explicit.distributed_timeout_seconds == 45
 
 
 def test_application_error_is_distinct_from_usage_error(

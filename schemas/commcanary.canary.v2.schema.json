@@ -309,6 +309,9 @@
         "custom_op": {
           "type": "boolean"
         },
+        "dtype": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/dtype"
+        },
         "bytes": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
         },
@@ -372,6 +375,18 @@
         },
         "receiver_rank": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "root_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "reduction_op": {
+          "enum": [
+            "avg",
+            "max",
+            "min",
+            "product",
+            "sum"
+          ]
         },
         "message_sequence": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"

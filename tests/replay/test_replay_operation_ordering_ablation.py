@@ -16,6 +16,7 @@ def _two_phase_trace():
         "ranks": [0, 1],
         "group": "tp",
         "rank_arrival_us": {"0": 0.0, "1": 0.0},
+        "compute_overlap_us": 0.0,
     }
     return {
         "format": TRACE_FORMAT,

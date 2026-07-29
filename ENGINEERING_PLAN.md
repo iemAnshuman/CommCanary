@@ -33,14 +33,18 @@ stays the authority for code, contracts, and the release gate only.
    release identity.
 2. **Refresh derived documentation from the joined evidence bytes**, not from
    prose summaries.
-3. **Cross-commit compatibility contract**, so future code changes do not force
-   a re-run of 280 cells. The strict join output is the ground truth any relaxed
-   contract must reproduce byte-for-byte.
+3. **Cross-commit compatibility contract** is implemented locally. It binds
+   exact manifests/selections/verdicts, exactly two repositories, the complete
+   analyzer/harness/schema byte inventory, and minimal observed differences;
+   it replays the strict historical join against golden bytes before accepting
+   an extension. The existing 280-cell evidence and its archive remain on
+   Rostam, so preparing/reviewing the real bridge there still requires explicit
+   operator authorization. The ordinary strict join remains byte-identical.
 4. **The two Rostam-side analyzer repairs remain uncommitted** on that checkout
    (patch at `/tmp/join-fix.patch`). The local equivalents have since landed on
    `main`. The Rostam branch is intentionally divergent; do not pull or rebase.
 
-### New defect found 2026-07-26 — unknown overlap silently becomes zero
+### Resolved 2026-07-26 — unknown overlap no longer silently becomes zero
 
 This is a Phase 1 regression against this plan's own assurance ladder, found
 while scoping the product pivot.
@@ -66,6 +70,121 @@ Required: absent overlap must propagate as unknown and either fail closed or
 downgrade the artifact's claim, exactly as skew does. Mutation-test it the way
 the other integrity claims are tested. This should ship before any derivation
 work, because it converts a silent wrong answer into a visible refusal.
+
+Implemented locally after this checkpoint: trace validation distinguishes
+`compute_overlap_unknown: true` from a measured value, and absence has the same
+unknown meaning for legacy traces. Compilation, behavior search, reduction, and
+overlap-preserving baselines require `compute_overlap_us` on every selected
+event. Kineto import emits the explicit unknown marker, so the former
+import → compile path now refuses visibly. Explicit measured or deliberately
+constructed `0.0` remains valid. The mutation test removes a known value and
+proves compilation fails; contract fixtures and their literal source hashes now
+bind an explicit zero.
+
+Follow-up implemented locally 2026-07-27: Kineto import now uses unique
+external correlation ids to bind selected collectives to NCCL kernel intervals,
+then unions intersections with non-communication kernels on other streams of
+the same device. Same-stream work, other-device kernels, and communication
+kernels are excluded, and overlapping compute intervals are not double-counted.
+Incomplete, missing, or ambiguous evidence remains unknown with a per-event
+reason, so one unresolved collective still blocks compilation. This closes the
+local algorithm/contract item; it does **not** close the Rostam experiment that
+must establish whether imported-proxy Kendall tau improves.
+
+A real-format check was then run against `Resnet50.zip` attached to upstream
+PyTorch issue #131462 (download SHA-256
+`35ff88127bb1ccbf139eade64763647ba656d33433c948441dc168fe9942095b`).
+The first pass exposed one zero-duration compute kernel: treating that empty
+measured interval as globally missing evidence incorrectly blocked every event.
+The reviewed rule now ignores zero-duration compute intervals, which cannot
+contribute an intersection, while a zero-duration linked communication kernel
+still leaves its collective unknown. After that correction, each of the two
+real rank profiles imported 7/7 overlap-known collectives and each compiled as
+lossless timing in about 0.35 seconds. The downloaded trace and generated
+artifacts stayed in temporary storage; they are not repository evidence and
+were not copied into the checkout.
+
+The same public pair exposed material rank-local overlap differences, so
+single-rank import still discarded decision-relevant evidence. Multi-profile
+Kineto import is now implemented through the existing capture reconciler:
+operation occurrences align by ordinal within an exact participant domain,
+missing/conflicting rank contributions fail, and unknown overlap from any rank
+remains unknown. Cross-rank arrival derivation requires an explicit shared-clock
+assertion or a complete additive offset map. Under the explicit shared-clock
+assertion, the public pair merges 14 rank records into 7 logical events,
+retains per-rank overlap, exposes 0.28–5.26 ms arrivals, and compiles
+losslessly. This is still a format/contract check, not the pending Rostam
+physical-fidelity result.
+
+The import boundary now also commits the exact bounded bytes of every source
+profile. `system.kineto_source_profiles` contains only SHA-256, byte size, and
+rank; records are rank-sorted and exclude paths and filenames. Hashing and JSON
+decoding share one read, and semantically equivalent JSON serializations are
+tested to produce the same imported events but different byte commitments.
+The original profiles remain separately retained evidence rather than being
+embedded in the shareable trace. Raw Kineto monotonic starts and wall-clock
+base times are also discarded after timestamp rebasing and explicit cross-rank
+alignment; the resulting arrival offsets are retained without leaking clock
+origins.
+
+The owner-to-lab boundary is now a first-class
+`commcanary.qualification_request.v1` directory. One CLI command imports
+profiles, requires lossless timing by default, compiles, recomputes source
+fidelity, and installs a closed byte-bound manifest last; a recipient command
+rejects inventory changes, symlinks, byte tampering, rehashed source changes,
+and canary-binding disagreement. Collective dtype is preserved from Kineto
+through compilation and PARAM element-count export. Reduction operators are
+derived only from consistent uniquely linked NCCL kernel names and preserved
+through semantic identity, fidelity, materialization, and execution.
+Preparation proves hardware-independent PARAM materializability, refuses an
+unknown reduction operator rather than assuming SUM, and binds the exact
+communication reduction set, source-validated input/output message shapes, an
+equal-split-only `all_to_all` policy, and a canonical projection of the exact
+contiguous GEMM recipe observed for every participating rank between
+collective issue and explicit wait. Timestamp pacing and target compute
+calibration are disabled; rank-arrival behavior must emerge from executing
+that source-bound work. Kineto split
+vectors and element counts are retained and compared across ranks; skipped,
+ambiguous, or explicit-split evidence cannot be reconstructed into a different
+executable.
+The request deliberately carries no executable or physical verdict. The target-side
+`commcanary.qualification_materialization.v1` workflow now binds an
+exact request manifest, canonical source-work projection, per-rank operation
+counts, source kernel observations, mathematical FLOPs, deterministic program
+bytes/count, and a source-bound rank-aware async issue/work/wait contract;
+independent verification regenerates the work audit and program byte-for-byte.
+It never converts elapsed gaps, communication exposure, Python overhead, or
+rank-arrival offsets into synthetic compute. It still carries no execution,
+measurement, or verdict.
+
+Broadcast ownership is now explicit through the same chain. Kineto
+`record_param_comms` omits the root, so import accepts it only when a containing
+same-thread `c10d::broadcast_` event supplies the concrete dispatcher root.
+Trace/canary validation constrains that root to the process group; rank-local
+merge requires agreement; compiler identity, independent fidelity, semantic
+hashes, baselines, and program generation retain it. Qualification and
+reference execution refuse a missing or invalid root instead of choosing the
+first rank. The public two-rank profile contains two broadcasts, both
+independently recovered and materialized with root rank 0.
+
+The same review corrected an interoperability overclaim. Current upstream PARAM
+removed basic/Kineto parsing and consumes Chakra host execution traces, while
+the older commit pinned by the Rostam harness accepts basic JSON but hardwires
+blocking replay. Qualification's exact-work encoding is therefore named
+`commcanary.source-bound-compute-recipe.v2`, requires a conforming adapter, and
+binds `upstream_param_compatibility: not_claimed`. Current Chakra/PARAM
+interoperability remains unproven. A packaged `execute-materialization`
+torch.distributed reference runner now revalidates the full artifact chain on
+every rank, supports the five exactly materialized collectives, executes each
+rank's rectangular GEMM recipe only on its encoded owner, preflights
+rank/request lifetimes plus repeated work and rectangular tensor allocation
+before lazy PyTorch import, and aggregates rank-local timing diagnostics.
+Reduction collectives dispatch their exact source-bound PyTorch `ReduceOp`,
+and the untimed correctness pass checks results under those semantics. Local
+pure, injected-runtime, and real-profile materialization evidence is green;
+GPU conformance
+and a versioned physical-observation contract remain product gates rather than
+inferred properties of the code.
 
 ## Superseded checkpoint — 2026-07-26 (trusted three-campaign join complete)
 
@@ -149,9 +268,9 @@ workload against 17.2 s for communication-only replay, so this campaign
 supports a decomposition result, not a decision-preservation or cost claim.
 
 Remaining work: refresh the derived documentation from these bytes, decide the
-0.3.0 release and commit questions, and build the cross-commit compatibility
-contract so future code changes do not require re-running 280 cells. 0.3.0
-remains unreleased and untagged.
+0.3.0 release and commit questions, and prepare/review the implemented
+cross-commit contract against the immutable Rostam ground truth when a later
+campaign exists. 0.3.0 remains unreleased and untagged.
 
 ## Implementation checkpoint — 2026-07-11 (evening; supersedes the morning entry)
 

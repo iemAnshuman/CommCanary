@@ -20,6 +20,8 @@ matrix together with `commcanary.canonical-json.v1` and the replay model.
 | Fidelity verification | `commcanary.fidelity_verification.v1` | `commcanary.fidelity_verification.v1.schema.json` | Yes | No general artifact reader | None | None |
 | Behavior verification | `commcanary.behavior_verification.v1` | `commcanary.behavior_verification.v1.schema.json` | Yes | No general artifact reader | None | None |
 | Report verification | `commcanary.report_verification.v1` | `commcanary.report_verification.v1.schema.json` | Yes | No general artifact reader | None | None |
+| Qualification request | `commcanary.qualification_request.v1` | `commcanary.qualification_request.v1.schema.json` | Yes | Yes | `validate_qualification_request` plus directory-level `verify_qualification_request` | None |
+| Qualification materialization | `commcanary.qualification_materialization.v1` | `commcanary.qualification_materialization.v1.schema.json` | Yes | Yes | `validate_qualification_materialization` plus request-assisted `verify_qualification_materialization` | None |
 
 “Consumed” means that a supported CLI or Python workflow accepts the artifact
 as input. A JSON file being loadable is not a format-support promise. No format
@@ -40,11 +42,13 @@ declared format. The runtime layer remains authoritative for semantic checks.
 
 | Artifact | Important checks intentionally left to runtime |
 |---|---|
-| Trace | rank-count equality, exact arrival-map coverage, skew derivation, endpoint membership, point-to-point requirements, custom-op opt-in, resource budgets |
-| Canary | all digest recomputation and alias equality, source-block commitments, motif expansion, repeat/count equality, timing interval coverage, fidelity maxima and budgets, resource budgets |
+| Trace | canonical dtype and reduction operator when present, reduction-field operation scope, rank-count equality, exact arrival-map coverage, skew derivation, known-overlap requirements for canary-producing workflows, endpoint membership, point-to-point requirements, custom-op opt-in, resource budgets |
+| Canary | canonical dtype and reduction operator when present, reduction-field operation scope, all digest recomputation and alias equality, source-block commitments, motif expansion, repeat/count equality, timing interval coverage, fidelity maxima and budgets, resource budgets |
 | Report | replay-protocol digest, model/protocol/backend agreement, count derivation, quantile ordering, breakdown and sample reconciliation, deterministic scheduling equations |
 | Comparison | embedded metric deltas, compatibility consistency, policy evaluation derivation, uncertainty effects, final verdict derivation |
 | Verification outputs | agreement between individual checks, aggregate status, and assurance state |
+| Qualification request | canonical request ID, closed inventory references, byte identities, canary commitment bindings, exact fidelity recomputation, request-only claim boundary, supported execution materializability, communication dtype/reduction-operator agreement, exact Kineto input/output message-shape evidence, equal-split-only `all_to_all`, canonical exact rank-local GEMM-recipe projection, disabled timestamp pacing, and explicit shape/dtype privacy disclosure |
+| Qualification materialization | canonical materialization ID, exact request-manifest binding, exact source-work projection and per-rank operation counts, source kernel observations, mathematical FLOPs, closed two-file inventory, exact program bytes/count, deterministic request-assisted regeneration, source-bound rank-aware issue/work/wait semantics, and no-execution/no-verdict claim boundary |
 
 This boundary is executable in `tests/contracts/test_json_schemas.py`:
 
@@ -57,6 +61,10 @@ This boundary is executable in `tests/contracts/test_json_schemas.py`:
 Verification result formats currently have producers but no corresponding
 runtime validators. Their tampered fixtures document that JSON Schema cannot
 establish that a claimed status follows from the included checks.
+Qualification requests and materializations are different: each manifest has a
+semantic validator, while directory verification additionally reads the fixed
+inventory. Materialization verification also revalidates its request and
+regenerates the program bytes rather than trusting the nearby program digest.
 
 ## Type and extension policy
 
@@ -84,3 +92,9 @@ Schema validation alone corresponds to structural shape, not to any stronger
 assurance state. In particular, a syntactically correct SHA-256 value is not
 evidence that its protected projection was recomputed, and no digest establishes
 producer authenticity.
+
+For trace timing, absence of `compute_overlap_us` means unknown rather than
+zero. `validate_trace` can inspect that legacy shape, but canary-producing
+workflows require a known value on every selected event. Producers can make the
+unknown state explicit with `compute_overlap_unknown: true`; the runtime rejects
+that marker if a value is also present.

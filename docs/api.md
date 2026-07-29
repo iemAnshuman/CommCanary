@@ -76,6 +76,8 @@ from commcanary.capture import TraceRecorder, record_collective
 from commcanary.interop import (
     canary_to_param_comms_trace,
     kineto_trace_to_commcanary_trace,
+    kineto_traces_to_commcanary_trace,
+    load_kineto_trace_with_identity,
 )
 ```
 
@@ -83,6 +85,69 @@ Their wire outputs and safety properties are supported, but third-party runtime
 compatibility (PyTorch Kineto and PARAM) is constrained by the versions and
 fixtures documented in the format and research material. They are intentionally
 not imported at the package top level.
+
+`kineto_traces_to_commcanary_trace` requires at least two distributed profiles
+and a complete contribution from every rank participating in each imported
+operation. Supply additive `clock_offsets_us={rank: offset}` for every imported
+rank, or set `assume_shared_clock=True` as an explicit zero-offset assertion.
+Omitting both preserves unknown arrival skew and prevents compilation.
+`load_kineto_trace_with_identity(path)` returns the parsed profile plus a
+path-free `{"sha256": ..., "size_bytes": ...}` identity computed from the same
+bounded bytes. The CLI attaches these records automatically; in-memory
+conversion functions cannot infer original file-byte identity.
+
+Qualification request composition is available through its owning modules:
+
+```python
+from commcanary.artifacts import validate_qualification_request
+from commcanary.services import (
+    prepare_qualification_request,
+    verify_qualification_request,
+)
+from commcanary.workflows import (
+    materialize_qualification,
+    verify_qualification_materialization,
+)
+from commcanary.execution import (
+    execute_qualification_materialization,
+    preflight_qualification_execution,
+)
+```
+
+The preparation service accepts an already imported Kineto trace and compiled
+canary. It requires a source-bound canonical communication dtype and a complete
+per-rank contiguous-GEMM recipe derived between issue and an explicit wait for
+every event. `all_reduce` and `reduce_scatter` additionally require a
+source-bound `reduction_op`; broadcasts require a source-bound `root_rank`.
+Kineto-backed traces require exact input/output element counts and normalized
+split evidence. The service will not fit elapsed gaps to compute, assume SUM,
+infer a root from group order, or reconstruct missing message shapes.
+
+`materialize_qualification(...)` takes only the verified request directory and
+a new output directory. It deterministically emits asynchronous collective
+issue, each rank's exact `m×k @ k×n` recipe, and an immediate explicit wait.
+There is no target timing calibration or duration quantization. The manifest
+records the canonical recipe projection hash, per-rank operation counts,
+source kernel observations, mathematical FLOPs, and exact program identity.
+`verify_qualification_materialization(...)` revalidates the source request and
+recomputes the audit and program bytes exactly. Both preserve an explicit
+conforming-adapter requirement and make no current upstream PARAM execution
+claim.
+
+`preflight_qualification_execution(...)` revalidates the request and
+materialization, then returns a frozen execution plan only after operation,
+request/wait, rank-domain, repeated-work, retained-sample, GEMM, and tensor
+allocation checks pass. It also validates and retains an explicit
+`distributed_timeout_seconds` value under the shared resource ceiling.
+`execute_qualification_materialization(...)` lazily
+imports PyTorch after that preflight and can run the full materialized
+collective operation set while applying each exact rectangular recipe only to
+its owner. Reduction collectives dispatch the
+exact bound operator and the untimed correctness pass checks results under
+those semantics. It preallocates and budgets both GEMM inputs plus the reused
+output before execution. Its return value is a bound reference diagnostic, not
+a supported physical-observation format. The implementation remains outside
+the stable top-level facade while physical conformance is unproven.
 
 ## Experimental API
 

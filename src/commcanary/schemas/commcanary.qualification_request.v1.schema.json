@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.qualification_request.v1.schema.json",
+  "title": "CommCanary portable hardware-qualification request v1",
+  "type": "object",
+  "required": [
+    "format",
+    "request_id",
+    "purpose",
+    "producer",
+    "claims",
+    "artifacts",
+    "bindings",
+    "target_execution"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.qualification_request.v1"
+    },
+    "request_id": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+    },
+    "purpose": {
+      "const": "hardware-vendor-qualification"
+    },
+    "producer": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "commcanary"
+        },
+        "version": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    },
+    "claims": {
+      "type": "object",
+      "required": [
+        "source_correspondence",
+        "physical_measurement",
+        "physical_fidelity",
+        "qualification_verdict"
+      ],
+      "properties": {
+        "source_correspondence": {
+          "const": "source_verified"
+        },
+        "physical_measurement": {
+          "const": "not_included"
+        },
+        "physical_fidelity": {
+          "const": "unproven"
+        },
+        "qualification_verdict": {
+          "const": "not_issued"
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "required": [
+        "source_trace",
+        "canary",
+        "fidelity_verification"
+      ],
+      "properties": {
+        "source_trace": {
+          "$ref": "#/$defs/sourceTraceReference"
+        },
+        "canary": {
+          "$ref": "#/$defs/canaryReference"
+        },
+        "fidelity_verification": {
+          "$ref": "#/$defs/fidelityReference"
+        }
+      },
+      "additionalProperties": false
+    },
+    "bindings": {
+      "type": "object",
+      "required": [
+        "source_trace_sha256",
+        "source_normalized_sha256",
+        "execution_semantic_sha256",
+        "scheduler_execution_sha256",
+        "calibration_evaluation_sha256",
+        "artifact_provenance_sha256"
+      ],
+      "properties": {
+        "source_trace_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "source_normalized_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "execution_semantic_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "scheduler_execution_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "calibration_evaluation_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "artifact_provenance_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "target_execution": {
+      "type": "object",
+      "required": [
+        "materialization",
+        "program_encoding",
+        "executor_contract",
+        "execution_adapter",
+        "upstream_param_compatibility",
+        "communication_dtype_source",
+        "communication_dtypes",
+        "communication_reduction_source",
+        "communication_reduction_ops",
+        "communication_message_shape_source",
+        "all_to_all_split_policy",
+        "rank_arrival_timing",
+        "compute_work_source",
+        "compute_recipe_method",
+        "compute_recipe_projection_sha256",
+        "compute_recipe_event_count",
+        "compute_recipe_operation_count",
+        "target_compute_calibration",
+        "source_overlap_observation",
+        "overlap_structure",
+        "inflight_communication_policy",
+        "timestamp_pacing",
+        "privacy_disclosure",
+        "physical_observation"
+      ],
+      "properties": {
+        "materialization": {
+          "const": "deterministic_from_verified_request"
+        },
+        "program_encoding": {
+          "const": "commcanary.source-bound-compute-recipe.v2"
+        },
+        "executor_contract": {
+          "const": "async-issue-rank-gemm-recipe-explicit-wait.v2"
+        },
+        "execution_adapter": {
+          "const": "conforming-adapter-required"
+        },
+        "upstream_param_compatibility": {
+          "const": "not_claimed"
+        },
+        "communication_dtype_source": {
+          "const": "source-bound-per-event"
+        },
+        "communication_dtypes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/paramDtype"
+          }
+        },
+        "communication_reduction_source": {
+          "const": "source-bound-per-event"
+        },
+        "communication_reduction_ops": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "avg",
+              "max",
+              "min",
+              "product",
+              "sum"
+            ]
+          }
+        },
+        "communication_message_shape_source": {
+          "const": "source-validated-per-event"
+        },
+        "all_to_all_split_policy": {
+          "const": "equal-split-only"
+        },
+        "rank_arrival_timing": {
+          "const": "emerges-from-source-bound-rank-local-work"
+        },
+        "compute_work_source": {
+          "const": "source-bound-per-rank-exact-recipe"
+        },
+        "compute_recipe_method": {
+          "const": "explicit-wait-linked-contiguous-gemm.v1"
+        },
+        "compute_recipe_projection_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "compute_recipe_event_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "compute_recipe_operation_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "target_compute_calibration": {
+          "const": "not_used"
+        },
+        "source_overlap_observation": {
+          "const": "bound-not-duration-paced"
+        },
+        "overlap_structure": {
+          "const": "async-issue-exact-rank-work-explicit-wait"
+        },
+        "inflight_communication_policy": {
+          "const": "single-collective"
+        },
+        "timestamp_pacing": {
+          "const": "disabled"
+        },
+        "privacy_disclosure": {
+          "const": "gemm-shapes-and-dtypes-revealed"
+        },
+        "physical_observation": {
+          "const": "required_before_qualification_verdict"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "computeDtype": {
+      "enum": [
+        "float16",
+        "bfloat16",
+        "float32",
+        "float64"
+      ]
+    },
+    "paramDtype": {
+      "enum": [
+        "float16",
+        "bfloat16",
+        "float32",
+        "float64",
+        "int8",
+        "uint8",
+        "int16",
+        "int32",
+        "int64",
+        "bool"
+      ]
+    },
+    "artifactReference": {
+      "type": "object",
+      "required": [
+        "path",
+        "format",
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "size_bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceTraceReference": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactReference"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "source.trace.json"
+            },
+            "format": {
+              "const": "commcanary.trace.v1"
+            }
+          }
+        }
+      ]
+    },
+    "canaryReference": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactReference"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "canary.json"
+            },
+            "format": {
+              "const": "commcanary.canary.v2"
+            }
+          }
+        }
+      ]
+    },
+    "fidelityReference": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactReference"
+        },
+        {
+          "properties": {
+            "path": {
+              "const": "fidelity.json"
+            },
+            "format": {
+              "const": "commcanary.fidelity_verification.v1"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

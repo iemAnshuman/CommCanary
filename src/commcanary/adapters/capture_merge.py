@@ -7,7 +7,7 @@ import glob
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from ..artifacts.trace import validate_trace
 from ..artifacts.wire import JsonDict, as_float, as_int, load_json, normalize_ranks
@@ -25,6 +25,7 @@ from ..resources import (
 
 TraceLoader = Callable[..., JsonDict]
 CaptureBucket = Union[JsonDict, List[JsonDict]]
+NamedTrace = Tuple[str, Mapping[str, Any]]
 
 
 def merge_trace_shards(
@@ -51,20 +52,82 @@ def merge_trace_shards_with_loader(
     load_trace: TraceLoader,
 ) -> JsonDict:
     shard_paths = _trace_shard_paths(shard_dir, limits=limits)
+
+    def loaded_traces() -> Iterable[NamedTrace]:
+        for shard_path in shard_paths:
+            yield Path(shard_path).name, load_trace(shard_path, limits=limits)
+
+    return _merge_named_traces(
+        loaded_traces(),
+        source_count=len(shard_paths),
+        workload_name=workload_name,
+        limits=limits,
+    )
+
+
+def merge_trace_documents(
+    named_traces: Sequence[NamedTrace],
+    *,
+    workload_name: str,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> JsonDict:
+    """Merge already-loaded rank contributions under capture invariants.
+
+    ``name`` values identify independent sources in diagnostics and persisted
+    ``merged_shards`` metadata. They must be unique, non-empty basenames. Input
+    mappings remain caller-owned; the returned trace is detached.
+    """
+
+    seen_names: Set[str] = set()
+    detached_names: List[NamedTrace] = []
+    for index, item in enumerate(named_traces):
+        if not isinstance(item, tuple) or len(item) != 2:
+            raise SchemaError(f"named trace {index} must be a (name, trace) tuple")
+        name, trace = item
+        if not isinstance(name, str) or not name or Path(name).name != name:
+            raise SchemaError(f"named trace {index} name must be a non-empty basename")
+        if name in seen_names:
+            raise SchemaError(f"named trace names must be unique; duplicate {name!r}")
+        if not isinstance(trace, Mapping):
+            raise SchemaError(f"named trace {name!r} must be an object")
+        seen_names.add(name)
+        detached_names.append((name, trace))
+    try:
+        require_within(
+            len(detached_names),
+            limits.max_capture_shards,
+            label="capture shards",
+        )
+    except JsonResourceError as exc:
+        raise SchemaError(str(exc)) from exc
+    return _merge_named_traces(
+        detached_names,
+        source_count=len(detached_names),
+        workload_name=workload_name,
+        limits=limits,
+    )
+
+
+def _merge_named_traces(
+    named_traces: Iterable[NamedTrace],
+    *,
+    source_count: int,
+    workload_name: str,
+    limits: ResourceLimits,
+) -> JsonDict:
     # Most capture directories contain one already-complete event for each
     # identity. Store that common case directly; allocate a contribution list
     # only after an actual cross-shard collision is observed.
     buckets: Dict[Tuple[Any, ...], CaptureBucket] = {}
     systems: List[JsonDict] = []
     workload: JsonDict = {"name": workload_name}
-    strict_sharded_merge = len(shard_paths) > 1
+    strict_sharded_merge = source_count > 1
     seen_occurrences: Set[Tuple[str, str, str]] = set()
     session_ids: Set[str] = set()
     canonical_workload: Optional[JsonDict] = None
     aggregate_event_count = 0
 
-    for shard_path in shard_paths:
-        trace = load_trace(shard_path, limits=limits)
+    for shard_name, trace in named_traces:
         try:
             validate_json_mapping(trace, limits=limits)
         except JsonResourceError as exc:
@@ -86,7 +149,6 @@ def merge_trace_shards_with_loader(
         clock_offset_us = _clock_offset_us(system)
         clock_alignment = "explicit_offset_us" if clock_offset_us is not None else "uncalibrated"
         systems.append({**system, "clock_alignment": clock_alignment, "clock_offset_us": clock_offset_us})
-        shard_name = Path(shard_path).name
 
         shard_events = trace.get("events", [])
         try:
@@ -163,7 +225,7 @@ def merge_trace_shards_with_loader(
         "workload": workload,
         "system": {
             "capture_mode": "sharded",
-            "shards": len(shard_paths),
+            "shards": source_count,
             "capture_session_id": next(iter(session_ids)) if len(session_ids) == 1 else None,
             "shard_systems": systems,
         },
@@ -302,7 +364,9 @@ def _coalesce_events(events: List[JsonDict]) -> JsonDict:
 
     coalesced["merged_shards"] = sorted(str(event.get("shard")) for event in events)
     coalesced["recorder_ranks"] = sorted(recorder_ranks, key=int)
+    _aggregate_reduction_op(coalesced, events)
     _aggregate_compute_fields(coalesced, events)
+    _aggregate_compute_recipes(coalesced, events)
     _aggregate_observed_field(coalesced, events)
     return coalesced
 
@@ -330,12 +394,14 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
         "capture_session_id": session,
         "collective_id": collective_id,
         "phase": first.get("phase", "unknown"),
+        "dtype": first.get("dtype"),
         "bytes": as_int(first.get("bytes")),
         "group": first.get("group", "default"),
         "ranks": tuple(ranks),
         "concurrent_groups": as_int(first.get("concurrent_groups"), 1),
+        "kineto_message_shape": _kineto_message_shape_identity(first),
     }
-    for optional_key in ("tag", "channel", "message_sequence"):
+    for optional_key in ("root_rank", "tag", "channel", "message_sequence"):
         if optional_key in first:
             expected[optional_key] = first.get(optional_key)
     ops = {str(first.get("op"))}
@@ -344,12 +410,14 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
             "capture_session_id": event.get("capture_session_id"),
             "collective_id": event.get("collective_id"),
             "phase": event.get("phase", "unknown"),
+            "dtype": event.get("dtype"),
             "bytes": as_int(event.get("bytes")),
             "group": event.get("group", "default"),
             "ranks": tuple(normalize_ranks(event.get("ranks"))),
             "concurrent_groups": as_int(event.get("concurrent_groups"), 1),
+            "kineto_message_shape": _kineto_message_shape_identity(event),
         }
-        for optional_key in ("tag", "channel", "message_sequence"):
+        for optional_key in ("root_rank", "tag", "channel", "message_sequence"):
             if optional_key in expected or optional_key in event:
                 actual[optional_key] = event.get(optional_key)
         if actual != expected:
@@ -381,6 +449,45 @@ def _validate_collective_identity(events: List[JsonDict], ranks: List[int]) -> T
                 "recv_observation": _p2p_observation(recv_event),
             }
     raise SchemaError("conflicting records share the same collective identity")
+
+
+def _kineto_message_shape_identity(event: Mapping[str, Any]) -> Optional[Tuple[Any, ...]]:
+    metadata = event.get("metadata")
+    if not isinstance(metadata, Mapping) or "kineto_message_shape_status" not in metadata:
+        return None
+    input_splits = metadata.get("kineto_in_split_sizes")
+    output_splits = metadata.get("kineto_out_split_sizes")
+    return (
+        metadata.get("kineto_message_shape_status"),
+        metadata.get("kineto_in_msg_nelems"),
+        metadata.get("kineto_out_msg_nelems"),
+        tuple(input_splits) if isinstance(input_splits, list) else None,
+        tuple(output_splits) if isinstance(output_splits, list) else None,
+    )
+
+
+def _aggregate_reduction_op(coalesced: JsonDict, events: List[JsonDict]) -> None:
+    """Preserve a reduction operator only when every rank derived the same one."""
+
+    observed = [str(event["reduction_op"]) for event in events if "reduction_op" in event]
+    if len(set(observed)) > 1:
+        raise SchemaError("conflicting reduction operators share the same collective identity")
+    if observed and len(observed) == len(events):
+        coalesced["reduction_op"] = observed[0]
+        return
+    coalesced.pop("reduction_op", None)
+    if not observed:
+        return
+    raw_metadata = coalesced.get("metadata")
+    metadata = dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
+    for key in (
+        "kineto_reduction_kernel_count",
+        "kineto_reduction_method",
+        "kineto_reduction_op",
+    ):
+        metadata.pop(key, None)
+    metadata["kineto_reduction_status"] = "unavailable_incomplete_rank_evidence"
+    coalesced["metadata"] = metadata
 
 
 def _p2p_observation(event: Mapping[str, Any]) -> JsonDict:
@@ -447,24 +554,73 @@ def _identical_full_arrival_map(events: List[JsonDict], expected_ranks: Set[str]
 
 
 def _aggregate_compute_fields(coalesced: JsonDict, events: List[JsonDict]) -> None:
-    by_rank: Dict[str, Dict[str, float]] = {}
+    by_rank: JsonDict = {}
+    known_overlap_values: List[float] = []
+    overlap_known_for_every_rank = True
     for event in events:
         rank_key = str(as_int(event.get("_shard_rank", event.get("recorder_rank", "unknown"))))
-        by_rank[rank_key] = {
+        rank_fields: JsonDict = {
             "compute_before_us": round(as_float(event.get("compute_before_us"), 0.0), 9),
-            "compute_overlap_us": round(as_float(event.get("compute_overlap_us"), 0.0), 9),
             "compute_pressure": round(as_float(event.get("compute_pressure"), 0.5), 6),
         }
+        overlap_known = "compute_overlap_us" in event and event.get("compute_overlap_unknown") is not True
+        if overlap_known:
+            overlap_us = round(as_float(event.get("compute_overlap_us")), 9)
+            rank_fields["compute_overlap_us"] = overlap_us
+            known_overlap_values.append(overlap_us)
+        else:
+            rank_fields["compute_overlap_unknown"] = True
+            overlap_known_for_every_rank = False
+        by_rank[rank_key] = rank_fields
     ordered = {rank: by_rank[rank] for rank in sorted(by_rank, key=int)}
     coalesced["compute_by_rank"] = ordered
     before_values = [values["compute_before_us"] for values in ordered.values()]
-    overlap_values = [values["compute_overlap_us"] for values in ordered.values()]
     pressure_values = [values["compute_pressure"] for values in ordered.values()]
     coalesced["compute_before_us"] = round(max(before_values), 9) if before_values else 0.0
-    coalesced["compute_overlap_us"] = round(min(overlap_values), 9) if overlap_values else 0.0
+    coalesced.pop("compute_overlap_us", None)
+    coalesced.pop("compute_overlap_unknown", None)
+    if overlap_known_for_every_rank:
+        coalesced["compute_overlap_us"] = round(min(known_overlap_values), 9)
+    else:
+        coalesced["compute_overlap_unknown"] = True
     coalesced["compute_pressure"] = round(max(pressure_values), 6) if pressure_values else 0.5
-    if len(set(before_values)) > 1 or len(set(overlap_values)) > 1 or len(set(pressure_values)) > 1:
+    if (
+        len(set(before_values)) > 1
+        or not overlap_known_for_every_rank
+        or len(set(known_overlap_values)) > 1
+        or len(set(pressure_values)) > 1
+    ):
         coalesced["compute_fields_uncertain"] = True
+
+
+def _aggregate_compute_recipes(coalesced: JsonDict, events: List[JsonDict]) -> None:
+    """Retain each rank's causal compute work without inventing a scalar proxy."""
+
+    by_rank: JsonDict = {}
+    present = []
+    for event in events:
+        rank_key = str(as_int(event.get("_shard_rank", event.get("recorder_rank", "unknown"))))
+        recipe = event.get("compute_recipe")
+        present.append(isinstance(recipe, list))
+        if isinstance(recipe, list):
+            by_rank[rank_key] = copy.deepcopy(recipe)
+    coalesced.pop("compute_recipe", None)
+    coalesced.pop("compute_recipe_by_rank", None)
+    if any(present) and not all(present):
+        raw_metadata = coalesced.get("metadata")
+        metadata = dict(raw_metadata) if isinstance(raw_metadata, Mapping) else {}
+        for key in (
+            "kineto_compute_recipe_kernel_count",
+            "kineto_compute_recipe_method",
+            "kineto_compute_recipe_operation_count",
+            "kineto_compute_recipe_duration_us",
+        ):
+            metadata.pop(key, None)
+        metadata["kineto_compute_recipe_status"] = "unavailable_incomplete_rank_evidence"
+        coalesced["metadata"] = metadata
+        return
+    if present and all(present):
+        coalesced["compute_recipe_by_rank"] = {rank: by_rank[rank] for rank in sorted(by_rank, key=int)}
 
 
 def _aggregate_observed_field(coalesced: JsonDict, events: List[JsonDict]) -> None:
@@ -475,4 +631,10 @@ def _aggregate_observed_field(coalesced: JsonDict, events: List[JsonDict]) -> No
         coalesced["observed_exposed_us"] = round(max(as_float(event.get("observed_exposed_us")) for event in events), 9)
 
 
-__all__ = ["TraceLoader", "merge_trace_shards", "merge_trace_shards_with_loader"]
+__all__ = [
+    "NamedTrace",
+    "TraceLoader",
+    "merge_trace_documents",
+    "merge_trace_shards",
+    "merge_trace_shards_with_loader",
+]

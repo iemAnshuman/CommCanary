@@ -42,6 +42,11 @@ def test_legacy_cli_surface_and_private_handler_signatures_are_preserved() -> No
         "_cmd_reduce",
         "_cmd_import_kineto",
         "_cmd_export_param",
+        "_cmd_prepare_qualification",
+        "_cmd_verify_qualification",
+        "_cmd_materialize_qualification",
+        "_cmd_verify_materialization",
+        "_cmd_execute_materialization",
         "_cmd_replay",
         "_cmd_compare",
         "_cmd_verify_fidelity",
@@ -54,7 +59,11 @@ def test_legacy_cli_surface_and_private_handler_signatures_are_preserved() -> No
 
 
 def test_cli_responsibilities_live_in_distinct_modules() -> None:
-    assert _definitions(COMMAND_LINE / "parser.py") == {"CommandHandlers", "build_parser"}
+    assert _definitions(COMMAND_LINE / "parser.py") == {
+        "CommandHandlers",
+        "_add_kineto_profile_arguments",
+        "build_parser",
+    }
     assert _definitions(COMMAND_LINE / "lifecycle.py") == {"run_cli"}
     assert _definitions(COMMAND_LINE / "diagnostics.py") == {
         "elapsed_seconds",

@@ -50,6 +50,7 @@
         "commcanary_future_hint": {
           "mode": "opaque"
         },
+        "compute_overlap_us": 0.0,
         "op": "all_reduce",
         "ranks": [
           0,

@@ -9,6 +9,10 @@ import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
+from commcanary.artifacts import (
+    validate_qualification_materialization,
+    validate_qualification_request,
+)
 from commcanary.compare import compare_reports
 from commcanary.compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
 from commcanary.replay import replay_canary, verify_report_against_canary
@@ -19,6 +23,9 @@ from commcanary.schema import (
     validate_report,
     validate_trace,
 )
+from commcanary.services import prepare_qualification_request
+from commcanary.workflows import materialize_qualification
+from tests.builders import qualification_trace
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas"
@@ -32,6 +39,8 @@ SCHEMA_FILES = {
     "fidelity_verification": "commcanary.fidelity_verification.v1.schema.json",
     "behavior_verification": "commcanary.behavior_verification.v1.schema.json",
     "report_verification": "commcanary.report_verification.v1.schema.json",
+    "qualification_request": "commcanary.qualification_request.v1.schema.json",
+    "qualification_materialization": "commcanary.qualification_materialization.v1.schema.json",
 }
 
 RUNTIME_VALIDATORS: Dict[str, Callable[[Mapping[str, Any]], None]] = {
@@ -39,6 +48,8 @@ RUNTIME_VALIDATORS: Dict[str, Callable[[Mapping[str, Any]], None]] = {
     "canary": validate_canary,
     "report": validate_report,
     "comparison": validate_comparison,
+    "qualification_request": validate_qualification_request,
+    "qualification_materialization": validate_qualification_materialization,
 }
 
 
@@ -145,10 +156,20 @@ def test_runtime_validators_reject_invalid_and_tampered_fixtures(
 
 def test_current_producers_match_published_schemas(
     schema_validators: Mapping[str, Draft202012Validator],
+    tmp_path: Path,
 ) -> None:
-    trace = _load_json(FIXTURE_DIR / "trace.valid.json")
+    trace = qualification_trace()
     canary = compile_trace(trace)
     report = replay_canary(canary)
+    qualification_request = prepare_qualification_request(
+        str(tmp_path / "qualification"),
+        trace,
+        canary,
+    )
+    qualification_materialization = materialize_qualification(
+        str(tmp_path / "qualification"),
+        str(tmp_path / "materialization"),
+    )
     produced = {
         "trace": trace,
         "canary": canary,
@@ -164,6 +185,8 @@ def test_current_producers_match_published_schemas(
             ],
         ),
         "report_verification": verify_report_against_canary(report, canary),
+        "qualification_request": qualification_request,
+        "qualification_materialization": qualification_materialization,
     }
 
     failures = {

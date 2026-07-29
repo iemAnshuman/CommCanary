@@ -60,7 +60,7 @@ def compile_trace(
             limits=limits,
         )
 
-    validate_trace(trace, limits=limits)
+    validate_trace(trace, require_known_overlap=True, limits=limits)
     if not isinstance(require_behavior_verification, bool):
         raise SchemaError("require_behavior_verification must be a boolean")
 

@@ -84,6 +84,7 @@ def test_operation_identity_has_named_non_flag_projections() -> None:
         "id": "event-7",
         "phase": "decode",
         "op": "point_to_point",
+        "dtype": "float16",
         "bytes": 1024,
         "ranks": [0, 1],
         "group": "pp",
@@ -101,9 +102,12 @@ def test_operation_identity_has_named_non_flag_projections() -> None:
     assert identity.compression_key() == (
         "decode",
         "point_to_point",
+        "float16",
+        None,
         1024,
         (0, 1),
         "pp",
+        None,
         0,
         1,
         "kv",
@@ -115,9 +119,12 @@ def test_operation_identity_has_named_non_flag_projections() -> None:
     assert identity.scheduler_ordering_key() == (
         "decode",
         "point_to_point",
+        "float16",
+        None,
         1024,
         "pp",
         (0, 1),
+        -1,
         0,
         1,
         "kv",
@@ -141,10 +148,26 @@ def test_operation_identity_has_named_non_flag_projections() -> None:
         "channel": "pipe",
     }
 
+    sum_identity = OperationIdentity.from_mapping({**operation, "op": "all_reduce", "reduction_op": "sum"})
+    max_identity = OperationIdentity.from_mapping({**operation, "op": "all_reduce", "reduction_op": "max"})
+    assert sum_identity.compression_key() != max_identity.compression_key()
+    assert sum_identity.noise_identity([0.0, 1.0], occurrence=0).to_wire()["reduction_op"] == "sum"
+
     uncoalesced = OperationIdentity.from_mapping(
         {"id": "event", "op": "all_reduce", "bytes": 4, "ranks": [0], "shard": "rank-0"}
     )
     assert uncoalesced.capture_coalescing_key() == ("uncoalesced", "rank-0", "event")
+
+    broadcast = {
+        "op": "broadcast",
+        "bytes": 4,
+        "ranks": [0, 1],
+        "group": "broadcast",
+    }
+    root_zero = OperationIdentity.from_mapping({**broadcast, "root_rank": 0})
+    root_one = OperationIdentity.from_mapping({**broadcast, "root_rank": 1})
+    assert root_zero.compression_key() != root_one.compression_key()
+    assert root_zero.scheduler_ordering_key() != root_one.scheduler_ordering_key()
 
 
 def test_threshold_policy_matches_legacy_surface_and_codes_stay_on_evaluations() -> None:
@@ -320,7 +343,15 @@ def test_grouped_event_summary_uses_componentwise_medians_for_offsets_and_scalar
 def test_size_accounting_is_exact_and_nonconvergence_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     trace = {
         "format": "commcanary.trace.v1",
-        "events": [{"op": "all_reduce", "bytes": 4, "ranks": [0, 1], "gap_us": 1.0}],
+        "events": [
+            {
+                "op": "all_reduce",
+                "bytes": 4,
+                "ranks": [0, 1],
+                "gap_us": 1.0,
+                "compute_overlap_us": 0.0,
+            }
+        ],
     }
     canary = compile_trace(trace)
     assert canary["compiler"]["canary_bytes"] == len(canonical_json_bytes(canary))

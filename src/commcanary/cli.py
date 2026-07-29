@@ -29,14 +29,19 @@ from .command_line.commands import (
     baseline_command,
     compare_command,
     compile_command,
+    execute_materialization_command,
     export_param_command,
     import_kineto_command,
+    materialize_qualification_command,
+    prepare_qualification_command,
     reduce_command,
     replay_command,
     report_command,
     split_ablations,
     verify_behavior_command,
     verify_fidelity_command,
+    verify_materialization_command,
+    verify_qualification_command,
     verify_report_command,
 )
 from .command_line.diagnostics import elapsed_seconds, emit_diagnostic, version_text
@@ -112,6 +117,26 @@ def _cmd_export_param(args: Any) -> int:
     return export_param_command(args)
 
 
+def _cmd_prepare_qualification(args: Any) -> int:
+    return prepare_qualification_command(args)
+
+
+def _cmd_verify_qualification(args: Any) -> int:
+    return verify_qualification_command(args)
+
+
+def _cmd_materialize_qualification(args: Any) -> int:
+    return materialize_qualification_command(args)
+
+
+def _cmd_verify_materialization(args: Any) -> int:
+    return verify_materialization_command(args)
+
+
+def _cmd_execute_materialization(args: Any) -> int:
+    return execute_materialization_command(args)
+
+
 def _cmd_replay(args: Any) -> int:
     return replay_command(args, ablation_splitter=_split_ablations)
 
@@ -155,6 +180,11 @@ def _build_parser() -> argparse.ArgumentParser:
             baseline=_cmd_baseline,
             reduce=_cmd_reduce,
             import_kineto=_cmd_import_kineto,
+            prepare_qualification=_cmd_prepare_qualification,
+            verify_qualification=_cmd_verify_qualification,
+            materialize_qualification=_cmd_materialize_qualification,
+            verify_materialization=_cmd_verify_materialization,
+            execute_materialization=_cmd_execute_materialization,
             export_param=_cmd_export_param,
             verify_report=_cmd_verify_report,
             capture=_cmd_capture,

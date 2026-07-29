@@ -16,7 +16,19 @@
       "type": "object"
     },
     "system": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "kineto_source_profiles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/sourceProfileIdentity"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
     },
     "events": {
       "type": "array",
@@ -27,6 +39,69 @@
   },
   "additionalProperties": true,
   "$defs": {
+    "sourceProfileIdentity": {
+      "type": "object",
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "size_bytes": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "computeRecipeOperation": {
+      "type": "object",
+      "required": [
+        "op",
+        "dtype",
+        "m",
+        "n",
+        "k",
+        "source_kernel_count",
+        "source_kernel_duration_us"
+      ],
+      "properties": {
+        "op": {
+          "const": "gemm"
+        },
+        "dtype": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/dtype"
+        },
+        "m": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "n": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "k": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "source_kernel_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "source_kernel_duration_us": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000000
+        }
+      },
+      "additionalProperties": false
+    },
+    "computeRecipe": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/computeRecipeOperation"
+      }
+    },
     "event": {
       "type": "object",
       "required": [
@@ -40,6 +115,9 @@
         },
         "custom_op": {
           "type": "boolean"
+        },
+        "dtype": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/dtype"
         },
         "bytes": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
@@ -101,6 +179,21 @@
           "minimum": 0,
           "maximum": 1000000000000
         },
+        "compute_overlap_unknown": {
+          "type": "boolean"
+        },
+        "compute_recipe": {
+          "$ref": "#/$defs/computeRecipe"
+        },
+        "compute_recipe_by_rank": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/computeRecipe"
+          }
+        },
         "compute_pressure": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeNumber"
         },
@@ -117,6 +210,18 @@
         },
         "receiver_rank": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "root_rank": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "reduction_op": {
+          "enum": [
+            "avg",
+            "max",
+            "min",
+            "product",
+            "sum"
+          ]
         },
         "message_sequence": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"

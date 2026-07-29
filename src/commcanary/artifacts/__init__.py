@@ -32,6 +32,25 @@ from .io import (
     atomic_write_text,
 )
 from .json_codec import canonical_json_bytes, formatted_json_bytes
+from .qualification import (
+    QUALIFICATION_ARTIFACT_FORMATS,
+    QUALIFICATION_ARTIFACT_PATHS,
+    QUALIFICATION_COMPUTE_RECIPE_METHOD,
+    QUALIFICATION_COMPUTE_RECIPE_PROJECTION,
+    QUALIFICATION_EXECUTION_ADAPTER,
+    QUALIFICATION_EXECUTOR_CONTRACT,
+    QUALIFICATION_PROGRAM_ENCODING,
+    QUALIFICATION_REQUEST_FILENAME,
+    QUALIFICATION_UPSTREAM_PARAM_COMPATIBILITY,
+    qualification_request_sha256,
+    validate_qualification_request,
+)
+from .qualification_materialization import (
+    QUALIFICATION_MATERIALIZATION_FILENAME,
+    QUALIFICATION_REPLAY_PROGRAM_FILENAME,
+    qualification_materialization_sha256,
+    validate_qualification_materialization,
+)
 from .report import validate_report
 from .schemas import load_schema_bytes
 from .trace import validate_trace
@@ -69,6 +88,17 @@ __all__ = [
     "MAX_TIME_US",
     "PARAM_TRACE_POLICY",
     "PROTOCOL_FINGERPRINT_EXCLUDE",
+    "QUALIFICATION_ARTIFACT_FORMATS",
+    "QUALIFICATION_ARTIFACT_PATHS",
+    "QUALIFICATION_COMPUTE_RECIPE_METHOD",
+    "QUALIFICATION_COMPUTE_RECIPE_PROJECTION",
+    "QUALIFICATION_EXECUTION_ADAPTER",
+    "QUALIFICATION_EXECUTOR_CONTRACT",
+    "QUALIFICATION_MATERIALIZATION_FILENAME",
+    "QUALIFICATION_PROGRAM_ENCODING",
+    "QUALIFICATION_REPLAY_PROGRAM_FILENAME",
+    "QUALIFICATION_REQUEST_FILENAME",
+    "QUALIFICATION_UPSTREAM_PARAM_COMPATIBILITY",
     "SENSITIVE_JSON_POLICY",
     "SHAREABLE_HTML_POLICY",
     "SUPPORTED_OPS",
@@ -99,11 +129,15 @@ __all__ = [
     "normalize_arrival_offsets",
     "normalize_ranks",
     "preflight_canary_expansion",
+    "qualification_request_sha256",
+    "qualification_materialization_sha256",
     "replay_protocol_sha256",
     "require_format",
     "validate_canary",
     "validate_comparison",
     "validate_report",
+    "validate_qualification_request",
+    "validate_qualification_materialization",
     "validate_trace",
     "write_json",
 ]

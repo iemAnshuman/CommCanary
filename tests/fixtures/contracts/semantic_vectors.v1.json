@@ -235,6 +235,7 @@
       "events": [
         {
           "bytes": 1024,
+          "compute_overlap_us": 0.0,
           "gap_us": 1.0,
           "group": "tp",
           "id": "event-0",
@@ -251,6 +252,7 @@
         },
         {
           "bytes": 1024,
+          "compute_overlap_us": 0.0,
           "gap_us": 1.0,
           "group": "tp",
           "id": "event-1",
@@ -267,6 +269,7 @@
         },
         {
           "bytes": 1024,
+          "compute_overlap_us": 0.0,
           "gap_us": 1.0,
           "group": "tp",
           "id": "event-2",
@@ -283,6 +286,7 @@
         },
         {
           "bytes": 1024,
+          "compute_overlap_us": 0.0,
           "gap_us": 1.0,
           "group": "tp",
           "id": "event-3",

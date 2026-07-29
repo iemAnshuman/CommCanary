@@ -176,6 +176,45 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(comparison["verdict"], "warn")
             self.assertTrue(any("uncertain rank-local compute fields" in reason for reason in comparison["reasons"]))
 
+    def test_capture_merge_preserves_unknown_rank_overlap_and_compile_refuses_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for rank in (0, 1):
+                event = {
+                    "id": "event-000000",
+                    "capture_session_id": "s",
+                    "collective_id": "c0",
+                    "collective_seq": 0,
+                    "recorder_rank": str(rank),
+                    "phase": "decode",
+                    "op": "all_reduce",
+                    "bytes": 16,
+                    "ranks": [0, 1],
+                    "start_us": float(rank),
+                    "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                }
+                if rank == 0:
+                    event["compute_overlap_us"] = 3.0
+                else:
+                    event["compute_overlap_unknown"] = True
+                write_json(
+                    os.path.join(tmp, f"rank-{rank}.trace.json"),
+                    {
+                        "format": TRACE_FORMAT,
+                        "workload": {"name": "ranked"},
+                        "system": {"rank": str(rank), "capture_session_id": "s"},
+                        "events": [event],
+                    },
+                )
+
+            merged = merge_trace_shards(tmp, workload_name="ranked")
+            merged_event = merged["events"][0]
+            self.assertNotIn("compute_overlap_us", merged_event)
+            self.assertTrue(merged_event["compute_overlap_unknown"])
+            self.assertEqual(merged_event["compute_by_rank"]["0"]["compute_overlap_us"], 3.0)
+            self.assertTrue(merged_event["compute_by_rank"]["1"]["compute_overlap_unknown"])
+            with self.assertRaisesRegex(SchemaError, "unknown compute overlap"):
+                compile_trace(merged)
+
     def test_compute_uncertainty_is_record_scoped_inside_repeated_motifs(self):
         trace = {
             "format": TRACE_FORMAT,
@@ -188,6 +227,7 @@ class CaptureTests(unittest.TestCase):
                     "bytes": 16,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                     "compute_fields_uncertain": True,
                 },
                 {
@@ -197,6 +237,7 @@ class CaptureTests(unittest.TestCase):
                     "bytes": 16,
                     "ranks": [0, 1],
                     "rank_arrival_us": {"0": 0.0, "1": 0.0},
+                    "compute_overlap_us": 0.0,
                 },
             ],
         }

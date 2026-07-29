@@ -1,0 +1,48 @@
+{
+  "format": "commcanary.qualification_materialization.v1",
+  "materialization_id": "cefed9c171beaf6a61093d015f53bd0eb2a13cbc1142ed836c3fe007c215acba",
+  "request": {
+    "format": "commcanary.qualification_request.v1",
+    "request_id": "1111111111111111111111111111111111111111111111111111111111111111",
+    "manifest_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "manifest_size_bytes": 4096
+  },
+  "compute_work": {
+    "provenance": "source_trace_exact_rank_local_work",
+    "method": "explicit-wait-linked-contiguous-gemm.v1",
+    "projection_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "event_count": 6,
+    "rank_recipe_count": 24,
+    "operation_count": 24,
+    "rank_operation_counts": {
+      "0": 6,
+      "1": 6,
+      "2": 6,
+      "3": 6
+    },
+    "source_kernel_count": 24,
+    "source_kernel_duration_us": 27.0,
+    "matmul_flop_count": 10752
+  },
+  "program": {
+    "path": "replay-program.json",
+    "encoding": "commcanary.source-bound-compute-recipe.v2",
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "size_bytes": 8192,
+    "entry_count": 19,
+    "compute_operation_count": 24
+  },
+  "executor": {
+    "contract": "async-issue-rank-gemm-recipe-explicit-wait.v2",
+    "adapter": "conforming-adapter-required",
+    "upstream_param_compatibility": "not_claimed",
+    "timestamp_pacing": "disabled"
+  },
+  "claims": {
+    "materialization": "request_bound",
+    "compute_work_provenance": "source_trace_verified",
+    "physical_execution": "not_included",
+    "physical_measurement": "not_included",
+    "qualification_verdict": "not_issued"
+  }
+}

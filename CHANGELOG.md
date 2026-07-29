@@ -4,6 +4,57 @@
 
 ### Integrity and safety
 
+- Made absent compute/communication overlap an explicit unknown instead of
+  silently coercing it to `0.0`. Canary compilation, behavior search,
+  reduction, and overlap-preserving baselines now require a measured or
+  deliberately constructed value.
+- Kineto import now derives overlap only from unique external-id linkage to
+  complete NCCL kernel intervals and the union of concurrent compute kernels
+  on other streams of the same device. Missing/malformed/ambiguous evidence
+  remains explicitly unknown, per-event reasons and totals are recorded, and
+  physical proxy fidelity remains an uncompleted experiment. Both ranks of the
+  public 2-GPU ResNet-50 profile from PyTorch issue #131462 import with 7/7
+  overlap-known events and compile losslessly as a real-format check.
+- `import-kineto` now accepts multiple rank-local profiles and reconciles them
+  through the existing fail-closed capture contract. Missing or conflicting
+  rank contributions fail; rank-local compute values are retained; arrival
+  skew is usable only after an explicit shared-clock assertion or a complete
+  additive clock-offset map. The public two-rank profile merges 14 records into
+  7 logical collectives and compiles losslessly under that explicit assertion.
+- `import-kineto` now binds every successfully decoded source profile by its
+  exact byte SHA-256, byte size, and distributed rank without recording local
+  paths or filenames. The same bounded bytes are hashed and parsed in one pass;
+  multi-rank identities are deterministic by rank and survive compilation
+  inside the source and artifact-provenance commitments.
+- Kineto clock origins are now transient import state rather than shareable
+  metadata. Events remain rebased and explicitly calibrated cross-rank arrival
+  offsets remain intact, while raw monotonic starts and wall-clock base times
+  are omitted from imported traces.
+- Kineto collective dtype is now normalized and preserved per event through
+  capture merge, compilation identity, fidelity checks, semantic hashes, and
+  PARAM element-count export. Qualification preparation refuses missing or
+  unsupported dtype and other non-materializable PARAM semantics instead of
+  silently applying a global float32 default or rounding byte counts up to a
+  different communicated volume.
+- Broadcast root rank is now recovered from a containing same-thread
+  `c10d::broadcast_` event's concrete dispatcher inputs, then preserved through
+  capture reconciliation, compilation, fidelity, semantic hashes, baselines,
+  materialization, and reference execution. Missing, out-of-group, or
+  conflicting roots fail closed at the relevant boundary; qualification and
+  export never guess the first process-group rank.
+- Reduction operators are now explicit execution semantics. Kineto import
+  derives SUM, PRODUCT, MIN, MAX, or AVG only from consistent uniquely linked
+  NCCL kernel names; compilation, fidelity, semantic hashes, operation
+  identities, and materialization preserve the result. General observational
+  traces may leave it unknown, but qualification refuses missing reduction
+  semantics instead of inheriting PyTorch's SUM default. The reference executor
+  dispatches the exact bound `ReduceOp` and checks its result before timing.
+- Kineto input/output element counts and split vectors are now normalized,
+  retained, and compared across rank-local profiles instead of being collapsed
+  irreversibly to `max(in, out)`. Qualification independently checks standard
+  operation ratios, dtype-derived bytes, and skipped-size inventory, binds an
+  equal-split-only `all_to_all` policy, and refuses explicit or ambiguous split
+  evidence rather than generating a different executable shape.
 - Added explicit assurance states for structural validity, internal
   consistency, source correspondence, model recomputation, and behavioral
   verification; documented that embedded hashes are not authenticity.
@@ -24,6 +75,51 @@
 
 ### Contracts and API
 
+- Added `commcanary.qualification_request.v1` and the
+  `prepare-qualification`/`verify-qualification` owner-to-lab workflow. A new,
+  fixed-inventory directory binds exact trace/canary/fidelity bytes and all
+  canary commitments, recomputes source fidelity independently, rejects
+  symlinks and rehashed semantic tampering, and explicitly states that physical
+  measurement, physical fidelity, and a qualification verdict are absent.
+  The request now binds source-derived communication dtypes, reduction
+  operators, validated message shapes, and equal-split `all_to_all` policy plus
+  a canonical projection of each rank's exact source-derived contiguous GEMM
+  recipe. It discloses that shared GEMM shapes and dtypes may reveal model
+  structure, disables timestamp pacing, and rejects missing or unsupported
+  recipes instead of reconstructing elapsed time as compute.
+- Added `commcanary.qualification_materialization.v1` and the
+  `materialize-qualification`/`verify-materialization` receiving-lab workflow.
+  It binds exact request-manifest bytes, the source-work projection, per-rank
+  operation counts, source kernel observations, mathematical FLOPs, and
+  deterministic replay-program bytes/count. Independent verification
+  regenerates both the audit and the program byte-for-byte. The executable
+  sequence is asynchronous collective issue, the exact rectangular GEMM
+  recipe belonging to each rank, and an immediate explicit wait; target
+  calibration, elapsed-gap fill, synthetic arrival fill, and duration
+  quantization are not accepted. It explicitly requires a conforming adapter
+  and withholds execution, measurement, and verdict claims.
+- Added a request-bound `execute-materialization` torch.distributed reference
+  runner. Every rank revalidates the request/materialization and preflights
+  process groups, all supported collective and point-to-point operations,
+  request/wait lifetimes, floating compute dtype, exact rectangular GEMM
+  dimensions, repeated work, retained samples, and tensor allocation before
+  importing PyTorch. Each rank executes only its declared recipe; different
+  arrival behavior therefore emerges from source-bound work rather than
+  synthetic delay. The runner aggregates rank-local issue-to-wait timings into
+  a bound diagnostic while explicitly withholding physical-conformance,
+  fidelity, observation-format, and qualification-verdict claims. All three
+  GEMM matrices, including the reused output, are preallocated and included in
+  the per-rank memory proof so the timed loop cannot hide output allocation.
+  Default-group initialization and every encoded subgroup now use one explicit
+  positive distributed timeout (300 seconds by default, capped at 3,600 by
+  `ResourceLimits`) and the rank-0 diagnostic records it, instead of inheriting
+  PyTorch's backend-dependent 10- or 30-minute defaults.
+- Corrected the interoperability boundary: current upstream PARAM removed
+  `basic` and Kineto trace parsing in favor of Chakra host execution traces,
+  while CommCanary's pinned historical basic replayer is blocking. Legacy
+  `export-param` remains for reviewed integrations, but qualification artifacts
+  now state `upstream_param_compatibility: not_claimed` instead of presenting
+  that encoding as a current upstream executable.
 - Relicensed from MIT to Apache License 2.0 for its express patent grant and
   mandatory attribution, added a `NOTICE` file that ships in the wheel and
   sdist, and reserved the CommCanary name under section 6. See ADR 0009.
@@ -101,13 +197,30 @@
   policy documents, whose `catalog_profile` and `input_paths` differ by
   construction. Input identity is still enforced by `(sha256, size_bytes)` per
   input id, and divergent analysis semantics still fail closed.
+- Added an opt-in cross-commit evidence bridge. A candidate/reviewed contract
+  binds exact manifests, selections, verdicts, two repository identities, and
+  every analyzer/harness/schema byte. Mixed-repository analysis is accepted
+  only after the current implementation regenerates the complete historical
+  publication byte-for-byte; policy/input exemptions must exactly equal the
+  observed manifest differences, and the ordinary strict join is unchanged.
 - Gave the publication serializer an explicit 4,000,000-item JSON budget. A
   280-cell joined aggregate measures 1,013,696 items in 8,101,263 bytes and
   exceeded the shared 1,000,000-item default; readers of untrusted input keep
   their original budgets.
 
-- Added `--overlap-structure` to `export-param`: collectives are emitted for asynchronous issue with explicit `wait` entries placed after the next gap's gemm entries, reconstructing compute/communication concurrency; issue entries carry an `issue` marker so parsers separate issue lines from completion-bearing wait lines.
-- Added compute-fill mode to `export-param` (`--compute-fill-us-per-gemm`, `--compute-fill-gemm-dim`): inter-collective gaps export as PARAM `{"compute": "gemm"}` entries instead of idle timestamps, so physical replay reproduces compute/communication interference. Replay compute-filled traces without `--use-timestamp`.
+- Added `--overlap-structure` to `export-param`: collectives are emitted for
+  asynchronous issue, but only the source `compute_overlap_us` slice of the
+  following gap precedes the explicit wait. The remainder and all rank-arrival
+  fill are serialized, zero source overlap cannot create concurrency, and
+  overlap crossing the next communication start refuses as an unrepresented
+  dependency graph. Issue entries carry an `issue` marker so parsers separate
+  issue lines from completion-bearing wait lines.
+- Added compute-fill mode to `export-param`
+  (`--compute-fill-us-per-gemm`, `--compute-fill-gemm-dim`):
+  inter-collective gaps export as `{"compute": "gemm"}` entries instead of
+  idle timestamps so a conforming executor can apply interference. Timestamp
+  pacing must stay disabled; deterministic export alone is not physical replay
+  evidence.
 
 ### Research fidelity
 
@@ -134,7 +247,12 @@
 - Added per-invocation `import-kineto --max-input-bytes` and
   `--max-json-items` overrides for trusted local profiler output while keeping
   both bounded defaults fail-closed for untrusted input.
-- Added `commcanary export-param`: expands a canary's full event program (motifs, patterns, run-length weights) into a PARAM comms-replay "basic" JSON trace with element counts, PARAM's asymmetric size conventions for `all_gather`/`reduce_scatter`, process-group ids, matched send/recv entry pairs (with `src_rank`/`dst_rank`) per point-to-point transfer, and cumulative `startTime_ns` timestamps for `--use-timestamp` replay — a physical NCCL execution path for minimized canaries.
+- Added `commcanary export-param`: expands a canary's full event program
+  (motifs, patterns, run-length weights) into the historical PARAM
+  comms-replay “basic” JSON encoding with element counts, asymmetric size
+  conventions for `all_gather`/`reduce_scatter`, process-group ids, matched
+  send/recv entries, and cumulative timestamps. This remains a legacy/pinned
+  integration encoding, not a current upstream PARAM execution claim.
 - Tightened `verify-behavior` so it replays the full normalized source trace by default and marks prefix/subset canaries as partial-source rather than behaviorally verified.
 - Added simulator ablation controls for skew, overlap, ordering, rare tails, queue-reset gaps, pressure, and observed exposed latency.
 - Strengthened point-to-point semantics with sender/receiver, tag, channel, message sequence, and send/recv observations.

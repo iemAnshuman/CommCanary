@@ -29,6 +29,7 @@ class ReplayClockBudgetExceededTests(unittest.TestCase):
             "ranks": [0, 1],
             "gap_us": half_budget_gap_us,
             "rank_arrival_us": {"0": 0.0, "1": 0.0},
+            "compute_overlap_us": 0.0,
         }
         trace = {
             "format": TRACE_FORMAT,

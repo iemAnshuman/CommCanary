@@ -1,9 +1,11 @@
 # Resource limits
 
-CommCanary treats trace, canary, report, capture, and ecosystem-adapter input as
+CommCanary treats trace, canary, report, qualification
+request/materialization, capture, execution, and ecosystem-adapter input as
 untrusted. `ResourceLimits` is the immutable policy shared by JSON loading,
 validation, expansion, hashing, replay, verification, behavior search,
-reduction, capture merging, and PARAM export. The default instance is
+reduction, capture merging, qualification preparation/materialization/
+execution, and PARAM export. The default instance is
 `DEFAULT_RESOURCE_LIMITS` in `commcanary.resources`.
 
 The policy is a safety ceiling, not a performance target or a promise that an
@@ -27,6 +29,13 @@ memory and time limits when handling hostile input.
 | `max_expanded_timing_records` | 2,000,000 | Logical timing records after repeat/weight expansion |
 | `max_replay_events` | 1,000,000 | Logical events across all replay iterations |
 | `max_param_entries` | 2,000,000 | Entries produced by one PARAM export |
+| `max_param_compute_operations` | 2,000,000 | Total physical rank-GEMM repetitions encoded across gap, source-overlap, tail-overlap, and arrival fill in one export |
+| `max_param_gemm_dim` | 16,384 | One square compute-fill GEMM dimension |
+| `max_execution_tensor_bytes` | 2,147,483,648 | Bytes in one tensor allocated by qualification execution |
+| `max_execution_total_tensor_bytes` | 17,179,869,184 | Aggregate per-rank tensor bytes planned by qualification execution |
+| `max_execution_compute_operations` | 10,000,000 | Total physical rank-GEMM repetitions across warmup and measured qualification passes |
+| `max_execution_observation_samples` | 2,000,000 | Rank-local communication timings retained by one qualification execution |
+| `max_execution_timeout_seconds` | 3,600 | Maximum accepted process-group initialization and operation timeout |
 | `max_capture_shards` | 65,536 | Shards considered by one capture merge |
 | `max_capture_events` | 1,000,000 | Aggregate events accepted by one capture merge |
 | `max_behavior_configurations` | 32 | Named configurations in one behavior-verification matrix |
@@ -100,6 +109,45 @@ profiler traces can exceed both default input budgets. Each explicit override
 applies only to that invocation and leaves every other limit unchanged. The
 flags exist for trusted, locally produced profiles — hostile input should keep
 the defaults.
+
+`prepare-qualification` carries the same explicit Kineto overrides through
+trace import, compilation, and every emitted bundle file. Preparation refuses
+to publish the final manifest if an artifact exceeds the active per-file byte
+ceiling. Its PARAM materializability check walks compact stored leaves and uses
+the existing checked entry-count preflight; it does not expand a prospective
+two-million-entry executable. `verify-qualification` applies the active
+default ceiling separately to the manifest, source trace, canary, and fidelity
+document before semantic use, and rejects any file outside the fixed inventory.
+`materialize-qualification` uses the same stored-event, program-entry, and
+total compute-operation ceilings before writing a program. Every rank-local
+rectangular GEMM is explicit; compact repeated counts and synthetic
+`rank_extra_counts` are not part of the exact-work contract.
+`verify-materialization` applies the per-file byte ceiling to both
+materialization files, revalidates the referenced request, and regenerates the
+expected program under the same logical-entry and total operation budgets.
+
+`execute-materialization` adds a second, target-runtime preflight before
+PyTorch import. It bounds GEMM dimensions, one tensor, aggregate tensor bytes
+per rank, compute repetitions across warmup and measured passes,
+communication operations across warmup, measurement, and the fixed untimed
+correctness pass, and retained rank-local timing samples. It accounts
+for every request-isolated communication buffer, both GEMM inputs, the
+preallocated reused GEMM output, and every rank-local recipe operation;
+changing `iterations` or `warmup` cannot bypass the one-pass materialization
+ceiling.
+Request identity is part of each communication allocation key, preventing
+overlapping same-shaped operations from racing on one tensor or being counted
+only once.
+The encoded process groups must cover exactly the launched dense rank domain,
+preventing unrepresented idle ranks from consuming target resources.
+The command also replaces PyTorch's backend-dependent 10- or 30-minute
+defaults with an explicit 300-second process-group timeout. An operator may
+select `--distributed-timeout-seconds`, but the value must be positive and no
+greater than `max_execution_timeout_seconds`. The same duration applies to
+default-group initialization and every encoded subgroup and is recorded in the
+rank-0 diagnostic.
+These application limits are not a CUDA memory sandbox, so target operators
+should still apply process and scheduler limits.
 
 Use the same object for a complete pipeline:
 

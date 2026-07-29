@@ -42,7 +42,9 @@
         "  comparison: commcanary.compare.v2",
         "  fidelity_verification: commcanary.fidelity_verification.v1",
         "  behavior_verification: commcanary.behavior_verification.v1",
-        "  report_verification: commcanary.report_verification.v1"
+        "  report_verification: commcanary.report_verification.v1",
+        "  qualification_request: commcanary.qualification_request.v1",
+        "  qualification_materialization: commcanary.qualification_materialization.v1"
       ],
       "stdout_prefix": "commcanary "
     }

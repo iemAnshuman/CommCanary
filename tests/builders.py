@@ -33,6 +33,51 @@ def small_trace():
     }
 
 
+def qualification_trace():
+    """Return a small Kineto-derived trace with exact per-rank compute work."""
+
+    trace = small_trace()
+    trace["workload"].update(
+        {
+            "import_source": "pytorch-kineto",
+            "skipped_empty_events": 0,
+        }
+    )
+    trace["system"] = {"source_format": "pytorch-kineto"}
+    for event_index, event in enumerate(trace["events"]):
+        event["dtype"] = "float32"
+        event["reduction_op"] = "sum"
+        nelems = event["bytes"] // 4
+        event["metadata"] = {
+            "kineto_in_msg_nelems": nelems,
+            "kineto_out_msg_nelems": nelems,
+            "kineto_in_split_sizes": [],
+            "kineto_out_split_sizes": [],
+            "kineto_message_shape_status": "derived",
+            "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+            "kineto_compute_recipe_status": "derived",
+            "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        }
+        event["compute_recipe_by_rank"] = {
+            str(rank): [
+                {
+                    "op": "gemm",
+                    "dtype": "bfloat16",
+                    "m": rank + 2,
+                    "n": 8,
+                    "k": 8,
+                    "source_kernel_count": 1,
+                    "source_kernel_duration_us": round(
+                        1.0 + rank * 0.1 + event_index * 0.01,
+                        3,
+                    ),
+                }
+            ]
+            for rank in event["ranks"]
+        }
+    return trace
+
+
 def adversarial_ranking_trace():
     tail_indices = {10, 30, 50, 70, 90}
     events = []

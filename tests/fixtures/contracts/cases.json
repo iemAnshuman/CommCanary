@@ -88,6 +88,37 @@
       "value": "failed"
     }
   },
+  "qualification_request": {
+    "invalid": {
+      "path": [
+        "purpose"
+      ],
+      "value": "simulation-benchmark"
+    },
+    "tampered": {
+      "path": [
+        "bindings",
+        "execution_semantic_sha256"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
+  "qualification_materialization": {
+    "invalid": {
+      "path": [
+        "compute_work",
+        "operation_count"
+      ],
+      "value": -1
+    },
+    "tampered": {
+      "path": [
+        "program",
+        "sha256"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
   "trace": {
     "invalid": {
       "path": [

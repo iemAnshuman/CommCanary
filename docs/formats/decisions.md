@@ -254,6 +254,193 @@ external caches.
 - **Gap:** there is no first-class redaction policy, metadata classification,
   or privacy-safe export mode. Those require source changes and explicit tests.
 
+## ADR-007: Missing compute overlap is unknown, never an implicit zero
+
+**Status:** Accepted fail-closed timing boundary.
+
+### Context
+
+`compute_overlap_us: 0.0` is a physical claim that no measured compute was
+concurrent with the communication event. Earlier readers also produced that
+value when the field was absent. That made an unmeasured event executable as if
+zero overlap had been observed, even though overlap materially changes proxy
+fidelity.
+
+### Decision
+
+A trace event has known overlap only when it carries `compute_overlap_us`.
+Producers that know the measurement is unavailable should emit
+`compute_overlap_unknown: true`; absence of both fields has the same unknown
+meaning for legacy traces. Carrying both fields is invalid, as is
+`compute_overlap_unknown: false` without a value.
+
+General trace validation may inspect an unknown-overlap trace. Workflows that
+compile, behavior-search, reduce, or preserve source overlap in a baseline
+require known overlap for every selected event and fail closed otherwise.
+`compute_overlap_us: 0.0` remains valid when it was measured or deliberately
+constructed. In particular, the isolated-collective negative control explicitly
+sets zero because removing overlap is that baseline's declared transformation.
+
+The Kineto importer derives overlap only when a selected collective's unique
+external correlation id links to complete communication-kernel intervals and
+the trace carries a complete, placeable compute-kernel inventory. The value is
+the union of intersections between those communication intervals and
+non-communication kernels on other streams of the same device. Same-stream
+work and other communication kernels are excluded; overlapping compute
+intervals are not double-counted. Missing, malformed, or ambiguous evidence
+preserves the unknown marker. The algorithm is locally mutation-tested, but
+its physical proxy fidelity remains an experiment rather than a supported
+result.
+
+Multiple Kineto profiles reuse the capture reconciliation contract rather than
+defining a second distributed-event format. Each profile must declare a unique
+distributed rank and consistent world size/backend. Rank-local events are
+matched by invocation ordinal within an exact process-group participant domain;
+one missing participant or any operation/size/group disagreement rejects the
+merge. Point-to-point records additionally require explicit source and
+destination ranks.
+
+`record_param_comms` does not name `BroadcastOptions.rootRank`. The importer
+may derive `root_rank` only from a containing `c10d::broadcast_` CPU event on
+the same pid/tid whose concrete dispatcher inputs encode a non-negative root
+inside the process group. The field is included in compilation, compression,
+fidelity, semantic hashes, baselines, rank reconciliation, and replay
+materialization. Missing root evidence leaves the observational trace
+inspectable, but qualification and PARAM-derived export refuse it. A root on a
+non-broadcast, a root outside the participant set, or disagreement between
+rank-local profiles is invalid. Group order is not a root-selection policy.
+
+`record_param_comms` also lacks a canonical reduction-operator field. For
+`all_reduce` and `reduce_scatter`, import derives `reduction_op` only from
+uniquely linked NCCL communication-kernel names when every linked kernel has
+one recognized and consistent operator token. Recognized semantics are SUM,
+PRODUCT, MIN, MAX, and AVG. Missing links, generic or unrecognized names,
+incomplete kernel records, and conflicting names leave the field unknown
+instead of guessing. Multi-rank reconciliation preserves the operator only
+when every participant derives the same value; conflicting known operators
+are invalid, while mixed known/unknown evidence is marked incomplete. General
+trace and canary validation permit the field to be absent for observational
+use, but qualification refuses any reduction collective without it.
+
+Kineto also supplies exact input/output element counts and input/output split
+lists. Import normalizes and retains that evidence instead of treating
+`max(in, out)` as a sufficient execution contract. Rank-local contributions
+must agree on the complete shape evidence before merge. Qualification
+independently checks standard collective ratios, dtype-derived bytes, and the
+absence of skipped zero/missing-size records. Explicit split vectors remain
+inspectable source evidence but are not materializable: the reference executor
+binds an equal-split-only `all_to_all` policy and refuses rather than silently
+reconstructing a different shape.
+
+Kineto timestamps are not assumed to share a clock. A complete additive
+rank-offset map, or an explicit shared-clock assertion equivalent to all-zero
+offsets, permits full `rank_arrival_us` derivation. Without either, merged
+events carry `arrival_skew_unknown: true`, and compilation refuses them. The
+merge retains `compute_by_rank`; the executable scalar overlap is the minimum
+known rank-local value, and any unknown rank leaves the logical event unknown.
+
+### Consequences
+
+- Existing traces that omitted overlap remain structurally inspectable but
+  cannot produce a canary or fidelity claim without an explicit measurement.
+- Published source hashes change when a deliberate zero is added; golden
+  vectors therefore include the field.
+- Import records both derived/unknown totals and per-event derivation status,
+  so one unresolved collective keeps the later compile boundary closed.
+
+## ADR-008: Qualification requests are portable pre-execution evidence
+
+**Status:** Accepted for `commcanary.qualification_request.v1` and
+`commcanary.qualification_materialization.v1`.
+
+### Context
+
+A model owner and hardware lab need one exchange boundary before either party
+can discuss an acceptance result. Shipping only a canary loses the source needed
+to recompute fidelity. Shipping a PARAM trace as the portable request is also
+wrong: it neither binds the trace-to-canary proof nor proves that executable
+compute came from the source rather than a duration fit. An owner-generated
+program is acceptable only when the exchange also binds exact source-derived
+work and lets the recipient regenerate it independently.
+
+### Decision
+
+A qualification request is a closed four-file directory containing a manifest,
+source trace, canary, and fidelity verification. The manifest binds the exact
+bytes of the other files, the canary's six source/execution/calibration/provenance
+commitments, and a canonical request ID. Directory verification rejects missing
+or extra files, symlinks, byte mismatches, semantic invalidity, rehashed source
+tampering, and manifest-to-canary disagreement. Preparation also requires a
+source-bound canonical dtype on every canary event, a source-bound reduction
+operator on every reduction collective, and proves that the compact program can
+be lowered to the narrow exact-work collective vocabulary without expanding
+the executable.
+
+The format has a fixed request-only claim boundary:
+
+- source correspondence is verified;
+- physical measurement is not included;
+- physical fidelity is unproven;
+- no qualification verdict is issued; and
+- deterministic executable materialization is required. The request binds the
+  communication dtype set, source-derived
+  reduction-operator set, source-validated per-event message shapes,
+  equal-split-only `all_to_all` policy, exact per-rank compute-recipe projection
+  and counts, single-inflight issue/work/wait structure, timestamp-pacing
+  policy, and the disclosure that GEMM shapes and dtypes are shared.
+
+The manifest carries content identity, not a signature or producer
+authentication. Preparation never overwrites an existing directory and installs
+the manifest last, so an interrupted directory cannot look complete.
+
+The receiving side creates a closed two-file materialization without target
+timing calibration. Its manifest binds the exact request manifest, canonical
+source-work projection, per-rank operation counts, source kernel observations,
+deterministic program bytes, entry count, and
+async-issue/exact-rank-work/explicit-wait semantics. Independent verification
+revalidates the request and regenerates the program byte-for-byte.
+
+The program encoding is named
+`commcanary.source-bound-compute-recipe.v2`; it is not called an upstream PARAM
+executable. Each compute entry carries exact rank-local contiguous GEMM shapes
+derived between issue and explicit wait. Start gaps, source durations, Python
+overhead, and idle time do not control executable work. Schedules requiring
+multiple in-flight collectives or unsupported compute need a real dependency
+graph and refuse; this format intentionally does not duplicate one. Current upstream PARAM removed
+basic/Kineto parsing in favor of Chakra host execution traces, while the pinned
+historical basic replayer both hardwires blocking execution and ignores the
+rank-aware extension. Both request and materialization therefore bind
+`upstream_param_compatibility: not_claimed` and
+`conforming-adapter-required`. A format resemblance cannot substitute for an
+executor conformance proof.
+
+An in-package torch.distributed reference executor may consume this verified
+program, but its diagnostic deliberately is not added to the supported format
+matrix. Local pure and injected-runtime tests establish fail-closed parsing,
+allocation/work budgets, operation dispatch, deterministic communication-data
+checks under exact source-bound reduction operators, rank aggregation, and the
+separation of per-operation latency from max-rank whole-program makespan; they
+do not establish CUDA/NCCL timing or semantic conformance. The correctness pass
+is separately resource-counted and untimed so a wrong result cannot become a
+timing success and validation work cannot contaminate the measured makespan.
+Pure tests additionally prove that timing-only mutations cannot change the
+program, recipe-shape mutations must change it, and per-rank work accounting
+recomputes exactly. The materialization
+continues to say `conforming-adapter-required` until the reference executor
+passes the physical gate.
+
+### Consequences
+
+- The receiving party can verify what the owner supplied before execution.
+- `source.trace.json` enables independent fidelity recomputation but reveals
+  more workload structure than a canary alone and requires source-boundary
+  privacy review.
+- The reference target-execution implementation must be physically validated,
+  after which a physical-observation contract can bind the conforming runtime
+  and raw evidence before the final `qualify` workflow issues an acceptance
+  verdict. Source-work provenance and materialized program bytes are already
+  closed by the pre-execution materialization format.
+
 ## Characterized gaps requiring later source or format changes
 
 The current suite records, but does not paper over, these remaining gaps:
@@ -261,7 +448,9 @@ The current suite records, but does not paper over, these remaining gaps:
 - numeric-string/integral-float coercion in runtime validators;
 - open unknown semantic fields and no reserved extension semantics;
 - Python-specific canonical JSON rather than a language-neutral standard;
-- no raw-input-byte commitment;
+- generic input paths still lack raw-byte commitments; Kineto CLI imports bind
+  exact source-profile hashes/sizes and qualification requests bind their
+  emitted trace/canary/fidelity file bytes;
 - no standalone semantic validators for verification result artifacts;
 - comparison has structured `evaluations[].metric` identifiers but no dedicated
   stable `reason_codes` array;

@@ -9,19 +9,27 @@ foundation
   errors · formats · resources · statistics · version
       ↓
 artifacts
-  wire/JSON · trace · canary expansion/hashes/validation
-  report · comparison contracts · atomic I/O · packaged schemas
-      ↓
-sibling engines
-  compilation       replay       comparison
-       \              /             /
-        verification/reference paths
-                    ↓
-application services
-  compile orchestration · behavior search · reduction
-                    ↓
-imperative edges
-  capture · Kineto/PARAM adapters · HTML reporting · CLI
+  wire/JSON · canonical dtypes · trace · canary expansion/hashes/validation
+  PARAM materialization contract
+  report · comparison · qualification contracts · atomic I/O · packaged schemas
+      ├─────────────▶ external adapters
+      │               capture · Kineto/PARAM conversion
+      ▼
+  sibling engines
+    compilation · replay · comparison
+               ▼
+    verification/reference paths
+               ▼
+    application services
+      compile orchestration · behavior search · reduction
+               │
+               └──── services + adapters ────▶ composed workflows
+                                                target materialization
+                                                        │
+  services · adapters · workflows · reporting ──────────┴──▶ CLI
+                                      │
+                                      └────▶ execution
+                                              bounded lazy-PyTorch reference runner
 ```
 
 The exact policy is executable in `tools/import_boundaries.py` and runs in the
@@ -36,13 +44,15 @@ cannot depend on them.
 | Boundary | Package/modules | Owns | Does not own |
 |---|---|---|---|
 | Foundation | `errors`, `formats`, `resources`, `statistics`, `version` | dependency-free errors, format IDs, checked limits, numeric summaries, package identity | artifact shape or workflow policy |
-| Artifact contracts | `artifacts/` | strict loading, canonical JSON, artifact validation, expansion preflight, semantic projections/hashes, atomic files, schema resources | compilation, replay, or verification decisions |
+| Artifact contracts | `artifacts/` | strict loading, canonical JSON/dtypes/reduction semantics, artifact validation, expansion preflight, semantic projections/hashes, non-executing PARAM materializability, atomic files, schema resources | compilation, replay, or verification decisions |
 | Compilation | `compilation/` | trace normalization, grouping, timing compression, sequence motifs, fidelity metrics, compile core | calling a verifier or choosing a searched candidate |
 | Replay | `replay/` | timing expansion under budget, deterministic scheduler/noise, accumulation and report production | report attestation or comparison policy |
 | Comparison | `comparison/` | immutable thresholds, structured evaluation codes, report comparison and verdict production | replay or presentation |
 | Verification | `verification/` | source/fidelity recomputation, behavior/ranking checks, model-recomputed report verification | producer shortcuts for the calculation being attested |
-| Services | `services/` | verified compile orchestration, behavior search, decision-only reduction | files, environment, HTML, or CLI parsing |
+| Services | `services/` | verified compile orchestration, behavior search, decision-only reduction, portable qualification bundle preparation/verification, independent source-message-shape checks | environment, HTML, CLI parsing, or target-hardware execution |
 | Adapters | `adapters/` | recorder lifecycle, shard reconciliation, Kineto conversion, PARAM export | domain policy not inherent to the external format |
+| Workflows | `workflows/` | narrow compositions across verified services and external adapters, including exact-work request-bound target materialization | silently strengthening work provenance, executor, measurement, or verdict claims |
+| Execution | `execution/` | verified rank-aware materialization preflight, exact rectangular source-work dispatch, source-bound reduction dispatch, target tensor/work budgets, lazy torch.distributed reference execution, untimed distributed data checks, per-operation diagnostics, and max-rank whole-program makespan aggregation | claiming physical conformance, fidelity, or a verdict before GPU evidence |
 | Reporting | `reporting/` | escaped, self-contained HTML presentation | synthetic samples or domain mutation |
 | CLI | `cli`, `command_line/` | compatibility entry point, parser, stable exits, progress/diagnostics, subprocess and output orchestration | domain calculations |
 | Experimental | `experimental/`, `baselines` | explicitly research-tier baselines and reduction access | stable top-level API promises |
@@ -64,6 +74,16 @@ capture / Kineto
                               fidelity/behavior checks      comparison.v2
                                                                  │
                                          model recomputation ────┘
+
+source trace + canary + fidelity ──▶ qualification_request.v1
+                                           │
+                         exact per-rank source-work recipes
+                                           ▼
+                          qualification_materialization.v1
+                                           │
+                          bounded reference execution diagnostic
+                                           │
+                            GPU conformance/observation still required
 ```
 
 Artifact validation establishes structure and internal consistency. Fidelity
@@ -105,6 +125,9 @@ format IDs and the compatibility matrix.
 - A new external ecosystem belongs in `adapters`; it translates to or from the
   canonical artifacts and fails closed when the external semantics cannot be
   represented honestly.
+- A workflow that composes services with an adapter belongs in `workflows`; it
+  must preserve each lower layer's assurance boundary rather than converting
+  deterministic generation into an execution or measurement claim.
 - A new comparison threshold is a typed policy/evaluation change with external
   boundary vectors. Human reason prose is not the machine code.
 - Experimental producers use their own schema IDs and import only documented

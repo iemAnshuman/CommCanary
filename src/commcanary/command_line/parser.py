@@ -19,10 +19,55 @@ class CommandHandlers:
     baseline: CommandHandler
     reduce: CommandHandler
     import_kineto: CommandHandler
+    prepare_qualification: CommandHandler
+    verify_qualification: CommandHandler
+    materialize_qualification: CommandHandler
+    verify_materialization: CommandHandler
+    execute_materialization: CommandHandler
     export_param: CommandHandler
     verify_report: CommandHandler
     capture: CommandHandler
     report: CommandHandler
+
+
+def _add_kineto_profile_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "kineto_trace",
+        nargs="+",
+        help="one rank-local profile, or multiple profiles for fail-closed cross-rank merge",
+    )
+    parser.add_argument("--workload-name", default="kineto-import")
+    parser.add_argument("--phase", default=None)
+    parser.add_argument(
+        "--process-group",
+        default=None,
+        help="import only events from this Process Group Name",
+    )
+    clock_group = parser.add_mutually_exclusive_group()
+    clock_group.add_argument(
+        "--assume-shared-clock",
+        action="store_true",
+        help="explicitly assert that all imported rank profiles use one shared timestamp clock",
+    )
+    clock_group.add_argument(
+        "--clock-offset-us",
+        action="append",
+        default=[],
+        metavar="RANK=OFFSET",
+        help="additive rank clock offset in microseconds; repeat exactly once for every imported rank",
+    )
+    parser.add_argument(
+        "--max-input-bytes",
+        type=int,
+        default=None,
+        help="raise the bounded-JSON input budget for a trusted, locally produced profile",
+    )
+    parser.add_argument(
+        "--max-json-items",
+        type=int,
+        default=None,
+        help="raise the bounded-JSON structural item budget for a trusted, locally produced profile",
+    )
 
 
 def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.ArgumentParser:
@@ -186,36 +231,85 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         "import-kineto",
         help="import record_param_comms collectives from a PyTorch Kineto profiler trace",
     )
-    import_parser.add_argument("kineto_trace")
+    _add_kineto_profile_arguments(import_parser)
     import_parser.add_argument("--output", "-o", required=True)
-    import_parser.add_argument("--workload-name", default="kineto-import")
-    import_parser.add_argument("--phase", default=None)
-    import_parser.add_argument(
-        "--process-group",
-        default=None,
-        help="import only events from this Process Group Name",
-    )
-    import_parser.add_argument(
-        "--max-input-bytes",
-        type=int,
-        default=None,
-        help="raise the bounded-JSON input budget for a trusted, locally produced profile",
-    )
-    import_parser.add_argument(
-        "--max-json-items",
-        type=int,
-        default=None,
-        help="raise the bounded-JSON structural item budget for a trusted, locally produced profile",
-    )
     import_parser.set_defaults(func=handlers.import_kineto)
+
+    qualification_parser = sub.add_parser(
+        "prepare-qualification",
+        help="prepare a source-verified portable owner-to-lab qualification request",
+    )
+    _add_kineto_profile_arguments(qualification_parser)
+    qualification_parser.add_argument("--output-directory", "-o", required=True)
+    qualification_parser.add_argument("--timing-sample-limit", type=int, default=128)
+    qualification_parser.add_argument(
+        "--allow-bounded-timing",
+        action="store_true",
+        help=("permit a source-verified bounded-approximate canary; the default requires lossless timing"),
+    )
+    qualification_parser.set_defaults(func=handlers.prepare_qualification)
+
+    qualification_verify_parser = sub.add_parser(
+        "verify-qualification",
+        help="independently verify a portable qualification request directory",
+    )
+    qualification_verify_parser.add_argument("bundle_directory")
+    qualification_verify_parser.set_defaults(func=handlers.verify_qualification)
+
+    qualification_materialize_parser = sub.add_parser(
+        "materialize-qualification",
+        help="materialize deterministic exact rank-local work from a verified request",
+    )
+    qualification_materialize_parser.add_argument("bundle_directory")
+    qualification_materialize_parser.add_argument("--output-directory", "-o", required=True)
+    qualification_materialize_parser.set_defaults(func=handlers.materialize_qualification)
+
+    materialization_verify_parser = sub.add_parser(
+        "verify-materialization",
+        help="recompute a qualification materialization from its verified request",
+    )
+    materialization_verify_parser.add_argument("bundle_directory")
+    materialization_verify_parser.add_argument("materialization_directory")
+    materialization_verify_parser.set_defaults(func=handlers.verify_materialization)
+
+    materialization_execute_parser = sub.add_parser(
+        "execute-materialization",
+        help="run a verified materialization with the unvalidated torch.distributed reference executor",
+    )
+    materialization_execute_parser.add_argument("bundle_directory")
+    materialization_execute_parser.add_argument("materialization_directory")
+    materialization_execute_parser.add_argument("--output", "-o", required=True)
+    materialization_execute_parser.add_argument(
+        "--device",
+        choices=("cuda", "cpu"),
+        default="cuda",
+    )
+    materialization_execute_parser.add_argument(
+        "--backend",
+        choices=("nccl", "gloo"),
+        default="nccl",
+    )
+    materialization_execute_parser.add_argument("--iterations", type=int, default=1)
+    materialization_execute_parser.add_argument("--warmup", type=int, default=1)
+    materialization_execute_parser.add_argument(
+        "--distributed-timeout-seconds",
+        type=int,
+        default=300,
+        help=("bounded timeout for process-group initialization and operations (default: 300; maximum: 3600)"),
+    )
+    materialization_execute_parser.set_defaults(func=handlers.execute_materialization)
 
     export_parser = sub.add_parser(
         "export-param",
-        help="export a canary as a PARAM comms-replay basic JSON trace",
+        help="export the legacy PARAM-basic-derived JSON encoding (not current upstream PARAM)",
     )
     export_parser.add_argument("canary")
     export_parser.add_argument("--output", "-o", required=True)
-    export_parser.add_argument("--dtype", default="float32")
+    export_parser.add_argument(
+        "--dtype",
+        default=None,
+        help="override every event dtype; otherwise preserve per-event dtype and fall back to float32 only when absent",
+    )
     export_parser.add_argument(
         "--skip-unsupported",
         action="store_true",
@@ -226,19 +320,25 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         type=float,
         default=None,
         help=(
-            "export inter-collective gaps as PARAM gemm compute entries, one "
-            "per this many microseconds (calibrate per device); replay the "
-            "result WITHOUT --use-timestamp"
+            "export inter-collective gaps and rank-arrival offsets as "
+            "rank-aware gemm compute entries, one per this many microseconds "
+            "(calibrate per device); replay the result WITHOUT --use-timestamp"
         ),
     )
     export_parser.add_argument("--compute-fill-gemm-dim", type=int, default=1024)
     export_parser.add_argument(
+        "--compute-fill-dtype",
+        default=None,
+        help="dtype for compute-fill GEMMs; defaults to each associated communication event dtype",
+    )
+    export_parser.add_argument(
         "--overlap-structure",
         action="store_true",
         help=(
-            "emit collectives as async-issue plus explicit wait entries placed "
-            "after the next gap's gemm entries, reconstructing compute/"
-            "communication overlap; requires --compute-fill-us-per-gemm"
+            "emit collectives as async issue, run only the source-bounded "
+            "portion of the following gap before the explicit wait, and "
+            "serialize the remainder; pipelined dependency graphs refuse; "
+            "requires --compute-fill-us-per-gemm"
         ),
     )
     export_parser.set_defaults(func=handlers.export_param)

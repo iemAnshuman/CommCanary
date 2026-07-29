@@ -67,6 +67,27 @@
       },
       "additionalProperties": true
     },
+    "dtype": {
+      "enum": [
+        "float8_e4m3fn",
+        "float8_e4m3fnuz",
+        "float8_e5m2",
+        "float8_e5m2fnuz",
+        "float16",
+        "bfloat16",
+        "float32",
+        "float64",
+        "int8",
+        "uint8",
+        "int16",
+        "int32",
+        "int64",
+        "bool",
+        "complex32",
+        "complex64",
+        "complex128"
+      ]
+    },
     "nonEmptyString": {
       "type": "string",
       "pattern": "\\S"

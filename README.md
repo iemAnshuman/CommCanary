@@ -5,8 +5,8 @@
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
-**Distill a distributed-LLM communication trace into a small, model-free
-regression canary — and prove the distillation didn't change the answer.**
+**Turn distributed workload profiles into a model-free, source-verifiable
+hardware-qualification request—without shipping weights or prompts.**
 
 Isolated collective microbenchmarks are known to mislead: `nccl-tests` can
 report healthy numbers while the real workload ships a 20% regression
@@ -14,9 +14,11 @@ report healthy numbers while the real workload ships a 20% regression
 erase everything contextual — operation order, rank-arrival skew,
 compute/communication overlap, queueing, and rare tail windows. Full
 reference-workload runs preserve all of that but need model code, data, and a
-cluster. CommCanary occupies the space between: a minutes-scale artifact
-distilled from *your* workload's trace, carrying no weights and no prompts,
-replayable against a candidate config before rollout.
+cluster. CommCanary occupies the space between: a portable request distilled
+from *your* workload's trace, carrying no weights or prompts, whose source
+correspondence a receiving lab can recompute before target-specific replay.
+Physical fidelity on imported profiles remains the deciding open experiment,
+not an implied property of the file format.
 
 ![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
 table, the threshold reasons that tripped, and per-phase and per-operation regression
@@ -58,12 +60,12 @@ refusing its answer.
 
 What makes it different:
 
-- **Decision-preserving reduction.** Minimization is gated on a fail-closed
-  verifier: a canary is only emitted if it provably preserves the source
-  workload's regression verdicts, pairwise configuration rankings, and tail
-  behavior. The gate matters — a generic ddmin reducer with a ranking-only
-  oracle happily collapses our adversarial 100-event trace to a **single
-  event** (`commcanary reduce`, included as a baseline).
+- **Optional behavior-gated compilation.** Source/timing fidelity is always
+  audited; callers can additionally require a canary to preserve declared
+  simulator verdicts, pairwise rankings, and tail behavior. The distinction
+  matters—a generic ddmin reducer with a ranking-only oracle happily collapses
+  our adversarial 100-event trace to a **single event** (`commcanary reduce`,
+  included as a baseline).
 - **Auditable lossy compression.** Every approximation carries per-field
   max-error bounds and a SHA-256 commitment to the exact source segment it
   summarizes, so a third party holding the trace can recompute every claim.
@@ -75,26 +77,56 @@ What makes it different:
   reduction, capture merging, and PARAM export share one immutable resource
   policy. Defaults and stricter service configurations are documented in
   [`docs/resource-limits.md`](docs/resource-limits.md).
-- **Ecosystem-native.** PyTorch Kineto profiler traces in
-  (`import-kineto`), PARAM comms-replay traces out (`export-param`) for
-  physical NCCL execution.
+- **Explicit ecosystem boundaries.** PyTorch Kineto profiler traces come in
+  through `import-kineto`. The PARAM-basic-derived rank-aware encoding requires
+  a CommCanary adapter; current upstream PARAM compatibility is not claimed.
+- **Portable qualification requests.** `prepare-qualification` turns complete
+  rank-local profiles into one source-verified owner-to-lab directory;
+  `verify-qualification` independently rehashes every file and recomputes the
+  trace-to-canary fidelity proof. The receiving lab can then run
+  `materialize-qualification` and `verify-materialization` without fitting
+  source durations to target timing. Materialization binds the exact
+  source-derived rectangular GEMM recipe for every rank, its canonical
+  projection hash, operation/FLOP counts, and the deterministic
+  issue-work-wait program bytes. Timing-only mutations cannot change the
+  executable work; missing or unsupported recipes refuse.
 
 ```
 capture / import-kineto        compile                replay              compare
   workload trace  ────────▶  canary artifact  ────▶  report(s)  ────▶  pass / warn / fail
       (v1)          verified minimization     deterministic sim      CI exit code
-                    + sha256 commitments            │
-                                              export-param ────▶ physical NCCL replay
+                    + sha256 commitments
+
+source + canary + fidelity ──▶ qualification request
+                                      │ exact per-rank work recipes
+                                      ▼
+                           verified materialization
+                                      │ bounded reference executor
+                                      ▼
+                          self-reported diagnostic
+                                      │ GPU conformance + observation contract pending
+                                      ▼
+                           verifiable physical observation
 ```
+
+The physical path is intentionally staged. A portable request contains the
+source trace, canary, and fidelity proof. It does not contain a supposedly
+portable executable: overlap-preserving GEMM counts depend on calibration for
+the receiving device. The lab-side materialization binds its operator-supplied
+calibration and exact generated program bytes, but explicitly does not claim
+execution, measurement, current upstream PARAM compatibility, or a
+qualification verdict.
 
 ### What this is not
 
-- **Not a physical NCCL executor.** The bundled replay engine is a
-  deterministic simulator. Its reports are claims about a model of contention
-  and overlap, not measurements of silicon.
-- **Not a source of hardware numbers.** Physical execution goes through the
-  PARAM export onto real GPUs. Claims about real hardware require that path
-  plus cross-system evaluation.
+- **Not yet a validated physical NCCL executor.** The bundled replay engine is
+  a deterministic simulator. A separate `execute-materialization` reference
+  runner now exercises torch.distributed, but its control flow has only local
+  injected-runtime coverage; GPU conformance remains unproven.
+- **Not yet a source of defensible hardware numbers.** The reference runner
+  emits a request/materialization-bound diagnostic, not a versioned physical
+  observation or qualification verdict. Claims about hardware still require
+  GPU validation, retained raw measurements, and cross-system evaluation.
 - **Not yet validated against a multi-node cluster.** That campaign is
   specified in [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md)
   and has not run.
@@ -147,6 +179,113 @@ Note the two compression numbers in the first line. Event ratio and byte ratio
 are reported separately because a canary with fewer events than its source can
 still serialize to more bytes — as it does here on a ten-event toy trace.
 Calling that "compression" would be a lie with units.
+
+## Prepare a hardware-qualification request
+
+For a model owner handing a workload-shaped artifact to a hardware lab:
+
+```bash
+commcanary prepare-qualification rank0.json rank1.json \
+  --assume-shared-clock \
+  --workload-name private-serving-decode \
+  --output-directory out/qualification-request
+
+# Run by the receiving party before trusting or materializing anything.
+commcanary verify-qualification out/qualification-request
+
+commcanary materialize-qualification out/qualification-request \
+  --output-directory out/qualification-materialization
+
+# Independently rederive and byte-compare the generated program.
+commcanary verify-materialization out/qualification-request \
+  out/qualification-materialization
+
+# Reference execution requires target-compatible PyTorch installed separately.
+# This diagnostic is not yet a qualification observation or verdict.
+python -m torch.distributed.run --standalone --nproc_per_node=2 \
+  --module commcanary execute-materialization \
+  out/qualification-request out/qualification-materialization \
+  --device cuda --backend nccl \
+  --distributed-timeout-seconds 300 \
+  --output out/reference-execution.json
+```
+
+Preparation imports all profiles, requires known overlap, compiles with
+lossless timing by default, recomputes source fidelity, and requires every
+collective to carry a complete per-rank contiguous-GEMM recipe derived from the
+same-thread region between collective issue and one explicit wait.
+`all_reduce` and `reduce_scatter` must carry their source-bound reduction
+operator; exact Kineto input/output element counts and split evidence must
+match the encoded operation; and every broadcast must carry its source-bound
+root rank. An unknown or incomplete compute recipe, reduction operator,
+message shape, or broadcast root is a refusal, not permission to fit elapsed
+time, assume SUM, reconstruct a convenient tensor shape, or choose the first
+process-group rank.
+The fixed inventory is:
+
+- `qualification-request.json`;
+- `source.trace.json`;
+- `canary.json`; and
+- `fidelity.json`.
+
+The manifest binds the exact bytes of the other three files and the canary's
+source, execution, calibration, and artifact-provenance commitments. Its claim
+boundary is equally explicit: source correspondence is verified, but no
+physical measurement is included, physical fidelity remains unproven, and no
+qualification verdict is issued. The target contract also binds the
+source-derived communication dtype and reduction-operator sets, the canonical
+hash and count of exact per-rank compute work, source-validated per-event
+message shapes, an equal-split-only `all_to_all` policy, issue/work/wait
+structure, and disabled timestamp pacing. GEMM shapes and dtypes are explicitly
+disclosed because they can reveal model structure even though weights and
+prompts are absent.
+
+Materialization writes exactly `replay-program.json` and
+`materialization.json`, with the manifest installed last into another new,
+non-overwriting directory. It takes no target timing calibration: each source
+event becomes asynchronous collective issue, exact rank-local
+`m×k @ k×n` work, and an immediate explicit wait. Start-to-start gaps, Python
+overhead, exposed communication, and idle time never become synthetic compute.
+The manifest binds the canonical work projection, per-rank operation counts,
+source kernel observations, mathematical FLOP count, exact program bytes, and
+the issue/work/wait semantics. It also records
+`upstream_param_compatibility: not_claimed` and
+`execution_adapter: conforming-adapter-required`; deterministic generation is
+not evidence that a GPU run happened. Embedded digests identify content; they
+do not authenticate who produced it.
+
+`execute-materialization` is the candidate in-package adapter, not yet a claim
+that the adapter conforms physically. Every rank revalidates the complete
+request and materialization before importing PyTorch or initializing a process
+group. Preflight checks request/wait lifetimes, rank membership, collective
+shapes, rank-local rectangular GEMM dtype and dimensions, operation counts,
+reduction operators, broadcast-root membership, and
+per-rank/aggregate tensor allocation. Communication tensors are isolated by request identity, so two
+overlapping same-shaped operations cannot race on a reused buffer or evade the
+allocation budget. A positive, resource-bounded distributed timeout is applied to
+default-group initialization and every encoded subgroup, replacing PyTorch's
+backend-dependent long defaults and binding the chosen value into the
+diagnostic. It also requires
+the encoded process groups to cover exactly the launched dense rank domain, so
+an operator cannot add unrepresented idle ranks and change contention. The
+exact-work qualification generator supports `all_reduce`, `all_gather`,
+`reduce_scatter`, `all_to_all`, and `broadcast`; other schedules refuse until
+their causal work can be represented honestly. The executor runs each rank's
+bound rectangular recipe, gathers rank-local issue-to-wait timings, and
+also records whole-program wall time for every rank and measured iteration.
+The decision-facing makespan is the maximum participating-rank duration, not a
+median of individual collective calls. Output is written only on rank 0. Both
+GEMM inputs and its reused output are preallocated
+and included in the rank memory plan; the repeated loop performs no hidden
+GEMM-output allocation. Before warmup or measurement, one separately bounded,
+untimed pass uses rank-dependent zero/one patterns to check every collective
+result under its bound reduction operator and every receive endpoint. The
+executor passes the exact operator to PyTorch rather than relying on its SUM
+default. All ranks exchange their exact check counts, and any mismatch fails
+the run collectively instead of producing a timing-only success.
+Its diagnostic remains deliberately outside the supported format table until
+the GPU-backed conformance gate establishes which physical observation
+semantics CommCanary can defend.
 
 ## Fidelity-first compilation
 
@@ -365,43 +504,156 @@ commcanary reduce trace.json -o out/reduced.trace.json \
 The reduced trace records the oracle-call ledger under
 `workload.reduction` and is labelled not source-verified.
 
-## Ecosystem interop: Kineto import and PARAM export
+## Ecosystem interop: Kineto import and legacy PARAM-derived export
+
+Chakra already provides the ecosystem's general workload graph: its official
+schema represents compute, memory, communication, dependencies, timing, and
+resource constraints. CommCanary should not replace that interchange layer.
+Its intended boundary is the smaller one Chakra does not supply: reduce a
+shared workload description to a decision-preserving acceptance case, bind it
+to exact source and calibration evidence, and let the receiving party verify
+the result. A future Chakra adapter must consume the official length-delimited
+protobuf execution trace and preserve its dependency/attribute semantics; a
+JSON object with similar names is not compatibility. Until that adapter is
+implemented and tested, Kineto remains the only supported real-profile input.
 
 CommCanary can ingest real collective metadata from a PyTorch profiler
-(Kineto) trace and can emit a compiled canary as a PARAM comms-replay
-"basic" trace, giving the minimized artifact a physical NCCL execution path
-via `facebookresearch/param`:
+(Kineto) trace and can emit the historical PARAM comms-replay “basic” JSON
+encoding used by the pinned Rostam research harness:
 
 ```bash
 commcanary import-kineto profiler_trace.json -o imported.trace.json \
   --workload-name llama70b-serve --phase decode
+# Multiple rank profiles retain cross-rank arrivals and rank-local overlap.
+# This explicit assertion is appropriate only when the profiles share a clock.
+commcanary import-kineto rank0.json rank1.json -o imported.trace.json \
+  --assume-shared-clock
+# The next step succeeds only when every collective linked to complete CUDA
+# kernel evidence and multi-rank arrival calibration; otherwise it refuses.
 commcanary compile imported.trace.json -o imported.canary.json
-commcanary export-param imported.canary.json -o param_comms_trace.json --dtype float32
+commcanary export-param imported.canary.json -o param_comms_trace.json
 ```
+
+This is not current upstream PARAM interoperability. Upstream removed `basic`
+and Kineto trace parsing in
+[PARAM PR #155](https://github.com/facebookresearch/param/pull/155); its
+current communication replayer accepts Chakra host execution traces. The
+legacy commit pinned by `experiments/rostam/patches/param-patch-contract.json`
+accepts basic JSON but hardwires blocking replay, so CommCanary's overlap
+campaign uses a separate explicit-wait reference replayer. For that reason,
+qualification manifests call the output
+`commcanary.source-bound-compute-recipe.v2`, require a conforming adapter, and
+make no upstream PARAM compatibility claim. The encoding does not convert
+inter-communication gaps into work. It binds the exact per-rank contiguous
+GEMMs observed between asynchronous issue and the corresponding explicit wait,
+then reproduces issue, work, and wait in that order. Pipelined or unsupported
+compute schedules need a dependency graph and refuse rather than being
+serialized into a different program. This is deliberately narrower than
+Chakra's graph semantics.
+[Chakra import/current-replay interop](https://github.com/mlcommons/chakra) is
+an open product requirement, not something inferred from similar field names.
 
 The Kineto import reads `record_param_comms` events (torch >= 2.2): collective
 name, dtype, element counts, process-group name and ranks, and single-rank
-timestamps rebased to the trace start (the raw monotonic-clock values are
-preserved via `workload.kineto_trace_start_us` and
-`system.kineto_base_time_ns`). It is an observational single-rank import — it
-does not invent cross-rank arrival skew, compute overlap, or measured exposed
-latency, and the imported workload notes say so. Truncated rank lists from
-non-uniform process groups are only reconstructed from an explicit global
-rank start/stride; otherwise the import fails closed rather than fabricate
-group membership. Collectives without a CommCanary op mapping (for example
-`reduce`, `gather`) are imported as `custom_op` events rather than dropped or
-mislabelled.
+timestamps rebased to the trace start. Raw monotonic and wall-clock origins are
+used transiently for explicit multi-rank alignment but are not retained in the
+shareable trace. One profile remains an observational single-rank import: it
+does not invent cross-rank arrival skew or measured exposed latency.
+With multiple rank profiles, records are matched by invocation ordinal inside
+the exact process-group rank domain. Every participating rank must contribute
+one compatible record. `--assume-shared-clock` is an explicit zero-offset
+claim; profiles from separate clocks instead require one additive
+`--clock-offset-us RANK=OFFSET` value per imported rank. With neither claim the
+merged trace remains inspectable, marks arrival skew unknown, and cannot be
+compiled.
 
-The PARAM export expands the canary's full event program (motifs, patterns,
+`record_param_comms` omits the broadcast root. For a broadcast, the importer
+recovers `root_rank` only from an interval-containing `c10d::broadcast_` CPU
+event on the same thread, using the concrete dispatcher input corresponding to
+`BroadcastOptions.rootRank`. The root must be a member of the recorded process
+group and every rank-local contribution must agree. Missing, malformed,
+out-of-group, or conflicting evidence remains unknown or fails; owner-side
+qualification and legacy PARAM-derived export then refuse instead of guessing.
+Both broadcasts in the public issue #131462 pair resolve to rank 0 and retain
+that value through trace, canary, materialization, and reference-executor
+preflight.
+
+`record_param_comms` also does not carry a canonical reduction operator. For
+`all_reduce` and `reduce_scatter`, the importer derives `reduction_op` only when
+every uniquely linked NCCL communication kernel has one recognized, consistent
+operator token (`sum`, `product`, `min`, `max`, or `avg`). Generic,
+unrecognized, ambiguously linked, or incomplete kernel evidence leaves the
+operator unknown. A general trace remains inspectable without this optional
+field, but owner-side qualification refuses to silently execute an unknown
+operator as SUM. Multi-rank merging preserves the operator only when every
+participant derives the same value. The public issue #131462 pair derives SUM
+for all five reduction events and preserves it through materialization.
+
+Kineto's input/output element counts and split lists are also retained as
+normalized source evidence. Multi-rank merging requires exact agreement before
+coalescing. Qualification independently checks the counts against the operation
+and process-group size, checks the stored byte count against dtype width, and
+refuses any skipped zero/missing-size event or explicit split vector. The
+current reference executor supports only source-verified equal-split
+`all_to_all`; observational import can retain an unsupported shape without
+turning it into a different executable. All seven events in the public issue
+#131462 pair have exact materializable shapes.
+
+Kineto dtype names are normalized to an explicit canonical dtype on every
+trace event. Dtype remains part of compilation grouping, source fidelity, and
+execution commitments, then legacy PARAM-derived export uses it per event to
+derive element counts. `export-param --dtype ...` is an explicit whole-trace override for
+legacy or deliberately transformed inputs; omission no longer silently turns
+typed Kineto events into float32.
+
+The CLI reads and hashes each bounded profile in one pass. The imported trace
+records only its exact byte SHA-256, byte size, and distributed rank (when
+present) under `system.kineto_source_profiles`; it never records the source
+path or filename. Multi-rank identities are sorted by rank. Retain the original
+profiles separately if another party must verify those commitments: the trace
+binds the bytes but does not embed them, and a hash is identification rather
+than authenticity.
+
+For a
+collective whose external correlation id links to complete NCCL kernel
+activities, the importer measures `compute_overlap_us` as the union of time
+where non-communication kernels run concurrently on another stream of the same
+device. Same-stream work, another device's kernels, and other communication
+kernels do not count; overlapping compute intervals are unioned rather than
+double-counted. Missing, malformed, or non-unique linkage leaves that event at
+`compute_overlap_unknown: true`, and `compile` fails closed unless every event
+is known. The output records derived/unknown counts plus a reason on every
+event. This derivation is unit-tested against Kineto-shaped events but has not
+yet passed the physical fidelity experiment described in `STRATEGY.md`. As a
+format reality check, both ranks in the public 2-GPU ResNet-50 profile attached
+to [PyTorch issue #131462](https://github.com/pytorch/pytorch/issues/131462)
+merge from 14 rank-local records into 7 logical events with 7/7 known overlap
+and compile losslessly under the explicit shared-clock assumption. The merge
+retains different per-rank overlap values and exposes cross-rank arrival
+offsets from 0.28–5.26 ms. That proves the adapter preserves real profiler
+evidence; it does not prove that replay ranks hardware correctly.
+
+Truncated rank lists from non-uniform process groups are only reconstructed
+from an explicit global rank start/stride; otherwise the import fails closed
+rather than fabricate group membership. Collectives without a CommCanary op
+mapping (for example `reduce`, `gather`) are imported as `custom_op` events
+rather than dropped or mislabelled.
+
+The legacy PARAM-derived export expands the canary's full event program (motifs, patterns,
 and run-length weights included) into one entry per logical occurrence with
 element counts, process-group ids, and cumulative `startTime_ns` timestamps,
 so `--use-timestamp` replay reproduces inter-op gaps. Sharded collectives use
 PARAM's size conventions (`all_gather` gathers `world_size` shards of
-`in_msg_size`; `reduce_scatter` scatters into `out_msg_size` shards). Every
-point-to-point transfer exports as a matched send/recv entry pair carrying
+`in_msg_size`; `reduce_scatter` scatters into `out_msg_size` shards;
+`all_to_all` requires equal input/output shards divisible by `world_size`).
+Every point-to-point transfer exports as a matched send/recv entry pair carrying
 `src_rank`/`dst_rank`, because PARAM executes each side only on its own rank.
 Ops with no PARAM equivalent — including `send`/`recv` events without peer
 ranks — fail closed unless `--skip-unsupported` is passed.
+Qualification preparation never permits that escape hatch: missing dtype,
+unsupported dtype/operation, incompatible process-group membership, or
+byte counts not exactly divisible by dtype width or sharded-collective sizing
+fails before a bundle directory is created.
 
 ## Trace timing semantics
 
@@ -427,6 +679,7 @@ record_collective(
     op="all_reduce",
     bytes=128 * 1024,
     ranks=list(range(8)),
+    dtype="bfloat16",
     phase="decode",
     collective_id="decode-token-42-tp-allreduce",
     rank_arrival_us={str(rank): rank * 2.5 for rank in range(8)},
@@ -492,6 +745,8 @@ global thresholds.
 - `commcanary.fidelity_verification.v1`
 - `commcanary.behavior_verification.v1`
 - `commcanary.report_verification.v1`
+- `commcanary.qualification_request.v1`
+- `commcanary.qualification_materialization.v1`
 
 Exact read/write/validation/migration support and the published JSON Schemas are
 listed in [`docs/formats/compatibility.md`](docs/formats/compatibility.md).
@@ -532,7 +787,7 @@ the repository-local engineering gate cannot independently regenerate or
 revalidate those numbers. A new publication-grade claim requires the
 manifest-bound, hash-verified campaign described in the artifact-evaluation
 guide. Multi-node, NVLink-class, multi-model, and multi-generation-hardware
-evaluation; Chakra ET or Nsight ingestion; dependency-aware compute-kernel
+evaluation; Chakra ET/current PARAM or Nsight ingestion; dependency-aware compute-kernel
 synthesis; and full per-window/per-motif Pareto minimisation remain open.
 “Model-free” means the artifact omits weights and application code; it does not
 by itself prove privacy or absence of trace leakage.

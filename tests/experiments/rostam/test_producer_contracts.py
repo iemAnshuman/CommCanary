@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from experiments.rostam import microbench_tp8, overlap_replay, workload_tp8
+from experiments.rostam import (
+    microbench_tp8,
+    overlap_replay,
+    workload_overlap_capture,
+    workload_tp8,
+)
 from experiments.rostam.lib import physical_results
 from experiments.rostam.lib.physical_results import (
     FULL_STDOUT_SCHEMA,
@@ -105,6 +110,114 @@ def test_producers_emit_distinct_honest_raw_contracts() -> None:
     assert overlap_replay.OVERLAP_STDOUT_SCHEMA == OVERLAP_STDOUT_SCHEMA
     assert set(overlap) == {"schema", "rank", "world_size", "timings_us", "metrics"}
     assert len({micro["schema"], workload["schema"], overlap["schema"]}) == 3
+
+
+def test_overlap_capture_issues_async_communication_before_compute_and_wait() -> None:
+    calls: list[object] = []
+
+    class Work:
+        def wait(self) -> None:
+            calls.append("wait")
+
+    class Dist:
+        class ReduceOp:
+            SUM = "sum"
+
+        @staticmethod
+        def all_reduce(buffer: object, *, op: object, async_op: bool) -> Work:
+            calls.append(("all_reduce", buffer, op, async_op))
+            return Work()
+
+    class Torch:
+        @staticmethod
+        def matmul(activation: object, weight: object) -> None:
+            calls.append(("matmul", activation, weight))
+
+    workload_overlap_capture._run_overlap_layer(
+        Torch(),
+        Dist(),
+        "activation",
+        "weight",
+        "buffer",
+    )
+
+    assert calls == [
+        ("all_reduce", "buffer", "sum", True),
+        ("matmul", "activation", "weight"),
+        "wait",
+    ]
+
+
+def test_overlap_capture_profile_directory_is_new_and_non_overwriting(tmp_path: Path) -> None:
+    directory = tmp_path / "profiles"
+    output = workload_overlap_capture._profile_path(directory, rank=2)
+    assert output == directory / "rank-00002.json"
+    output.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="already exists"):
+        workload_overlap_capture._profile_path(directory, rank=2)
+
+    symlink = tmp_path / "profile-link"
+    symlink.symlink_to(directory, target_is_directory=True)
+    with pytest.raises(SystemExit, match="must not be a symlink"):
+        workload_overlap_capture._profile_path(symlink, rank=0)
+
+
+def test_overlap_capture_payload_binds_profiles_and_unprofiled_program_timing() -> None:
+    profiles = [
+        {
+            "rank": rank,
+            "filename": f"rank-{rank:05d}.json",
+            "sha256": f"{rank + 1:064x}",
+            "size_bytes": 100 + rank,
+        }
+        for rank in range(2)
+    ]
+    payload = workload_overlap_capture._result_payload(
+        world_size=2,
+        tokens=2,
+        layers=3,
+        hidden=8,
+        gemm_m_rank0=4,
+        gemm_n=8,
+        dtype="bf16",
+        message_sizes=[1024],
+        inject_skew=0.0,
+        warmup_programs=1,
+        measurement_iterations=2,
+        profile_warmup_programs=1,
+        distributed_timeout_seconds=45,
+        profiles=profiles,
+        rank_timings=[[10.0, 30.0], [20.0, 25.0]],
+    )
+
+    assert payload["schema"] == workload_overlap_capture.OVERLAP_CAPTURE_STDOUT_SCHEMA
+    assert payload["execution_semantics"] == "async-all-reduce-then-gemm-then-explicit-wait"
+    assert payload["timing_semantics"] == "maximum-rank-unprofiled-whole-program-duration"
+    assert payload["warmup_programs"] == 1
+    assert payload["measurement_iterations"] == 2
+    assert payload["profile_warmup_programs"] == 1
+    assert payload["profiled_programs"] == 1
+    assert payload["profiles"] == profiles
+    assert payload["rank_timings_us"] == [[10.0, 30.0], [20.0, 25.0]]
+    assert payload["timings_us"] == [20.0, 30.0]
+    assert payload["metrics"] == {"median_us": 25.0, "iqr_us": 10.0, "count": 2}
+
+
+def test_overlap_capture_requires_bounded_positive_measurement_iterations() -> None:
+    args = workload_overlap_capture.build_parser().parse_args(["--profile-directory", "profiles"])
+    args.measurement_iterations = 0
+    with pytest.raises(SystemExit, match="measurement-iterations"):
+        workload_overlap_capture._positive_arguments(args)
+
+    args.measurement_iterations = 1001
+    with pytest.raises(SystemExit, match="measurement-iterations"):
+        workload_overlap_capture._positive_arguments(args)
+
+    args.measurement_iterations = 1
+    args.profile_warmup_programs = 0
+    with pytest.raises(SystemExit, match="profile-warmup-programs"):
+        workload_overlap_capture._positive_arguments(args)
 
 
 def test_overlap_preflight_requires_dense_world_and_complete_waits(tmp_path: Path) -> None:

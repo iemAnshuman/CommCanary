@@ -15,7 +15,7 @@ Review these field families before sharing an artifact:
 | Workload identity | names, phases, user metadata, input IDs | model/product or customer disclosure |
 | System identity | hostnames, cluster/site, runtime versions, device/topology | infrastructure fingerprinting |
 | Process/scheduler identity | rank, PID, job, account, partition, node | user and cluster attribution |
-| Communication semantics | operation sequence, bytes, groups, peers, channels | model parallelism and architecture inference |
+| Communication semantics | operation sequence, dtypes, bytes, groups, peers, channels | precision, model parallelism, and architecture inference |
 | Timing/calibration | gaps, arrival skew, overlap, observed latency | capacity and performance disclosure |
 | Provenance | commit, dirty patch hash, script/config/input hashes | internal development-state disclosure |
 | Logs and commands | argv, stdout/stderr, environment | secrets, paths, tokens, or tenant data |
@@ -24,6 +24,39 @@ The artifact-provenance digest protects included metadata from unnoticed
 editing; it does not make that metadata safe to disclose. Hashing a low-entropy
 identifier such as a hostname is often reversible by guessing and is not
 redaction.
+
+Kineto CLI import deliberately records no local source path or filename. It
+does record each source profile's exact byte SHA-256 and size so a hardware
+owner can verify the private input later. The size is a direct disclosure, and
+the digest lets a recipient confirm a guessed or already-known profile; review
+both before sharing even though the profile contents are not embedded. Raw
+Kineto monotonic starts and wall-clock base times are used only transiently for
+rebasing/alignment and are omitted from imported traces.
+
+A qualification request deliberately includes `source.trace.json` so the
+receiving party can independently recompute trace-to-canary fidelity. This is
+more revealing than sending the canary alone: operation order, collective
+dtypes, exact message sizes, rank topology, arrivals, and overlap remain
+visible. Review or redact at the source boundary before preparing the request;
+post-hoc removal invalidates its byte and semantic bindings.
+
+A materialization contains the expanded event program and exact per-rank GEMM
+dtypes and `m`, `n`, and `k` dimensions. Expansion can reveal repeated
+operation order, hidden dimensions, token/batch structure, and rank-dependent
+work more directly than the compact canary. These shapes are necessary to
+reproduce causal work and are an explicit privacy cost, not anonymous
+metadata. Review both files before sharing. The materialization deliberately
+omits source kernel durations from executable entries and omits hostname,
+device name, and execution output; adding those ad hoc would bypass the
+documented evidence and privacy contracts.
+
+The optional reference-execution diagnostic is more revealing still. It binds
+request/materialization identities, runtime PyTorch/CUDA/NCCL versions,
+per-rank planned tensor bytes and GEMM counts, and per-rank physical timing
+samples. Those values can identify a software stack and expose target
+performance. The diagnostic is not embedded into or required by the portable
+request; review it as target-owned sensitive output and do not treat its
+current unsupported diagnostic contract as a safe external exchange format.
 
 ## Redaction policy
 
@@ -62,4 +95,3 @@ hand-copy rows around completeness validation.
 Large raw data should live in an access-controlled immutable archive. Its URI
 can itself be sensitive. A public manifest may record a redacted archive ID and
 trusted digest while the access mapping remains private.
-

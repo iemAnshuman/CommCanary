@@ -40,16 +40,21 @@ compact separators, and non-finite numbers rejected.
 | `compiler.source_normalized_sha256` | Exactly the same projection as `source_trace_sha256`. | Compatibility alias; it is not an independent guarantee. |
 | Leaf `event.source.digest` | The ordered source event IDs represented by that stored leaf. Each canonical ID is followed by a NUL separator before SHA-256 is finalized. | Event contents other than IDs are excluded and are protected by the other source and semantic checks. |
 | Motif-wrapper `event.source.digest` | Canonical `{"sources": [...]}` containing the independently ordered leaf-source digests for every motif occurrence. | It summarizes the leaf ID commitments; it does not replace source event-content verification. |
-| `compiler.execution_semantic_sha256` | Logical expanded event identity, operation, bytes, ranks, point-to-point identity, group/concurrency, execution occurrence, and executable timing runs (gap, arrivals, overlap, and pressure). | Workload/system metadata, source bookkeeping, fidelity/error metadata, observed calibration values, and timestamps are excluded. |
+| `compiler.execution_semantic_sha256` | Logical expanded event identity, operation, dtype and reduction operator when present, broadcast root, bytes, ranks, point-to-point identity, group/concurrency, execution occurrence, and executable timing runs (gap, arrivals, overlap, and pressure). | Workload/system metadata, source bookkeeping, fidelity/error metadata, observed calibration values, and timestamps are excluded. |
 | `compiler.scheduler_execution_sha256` | Exactly the same projection as `execution_semantic_sha256`. | Compatibility alias; it is not an independent guarantee. |
 | `compiler.calibration_evaluation_sha256` | Logical expanded event identity plus the ordered `observed_exposed_us` runs used for calibration. | Source bookkeeping, workload/system metadata, fidelity/error metadata, and scheduler-only timing fields are excluded. |
 | `compiler.artifact_provenance_sha256` | The full profiled canary: format, source format, workload, system, events, compiler metadata, and the other stored commitments. | Excludes top-level `created_at` and, inside `compiler`, the self-referential `artifact_provenance_sha256` plus derived `canary_bytes` and `byte_compression_ratio`. |
 | Report `canary.sha256` | The full supplied canary except top-level `created_at`. | It identifies canary content for report recomputation; it is not a source-trace commitment. |
 | Report `replay_protocol.sha256` | The declared replay protocol fields. | Excludes its own `sha256` and the enforcement-only `max_replay_events` ceiling. |
 
-CommCanary does not currently preserve or commit the raw input artifact bytes.
-If exact byte provenance matters, retain the input separately with its own
-digest or attestation.
+CommCanary does not preserve raw input artifacts inside compiled outputs.
+The `import-kineto` CLI is the one exact-byte source boundary: it hashes the
+same bounded bytes it decodes and records each profile's SHA-256 and byte size
+under `system.kineto_source_profiles` without recording a path or contents.
+Those identities are included in the normalized source and full artifact
+provenance commitments after compilation. Retain the profiles separately if
+another party must rehash them. For other input paths, exact raw-byte
+provenance still requires a separately retained digest or attestation.
 
 ## What validation catches
 
@@ -66,6 +71,62 @@ bounded-interval commitments, and every stored source ID bound and digest from
 the supplied trace. A rehashed producer mutation can remain
 `internally_consistent`, but it cannot become `source_corresponding` to the
 unchanged source.
+
+Qualification-directory verification additionally reruns the source fidelity
+check and the non-expanding PARAM materializability preflight. It requires
+source-bound per-event dtype and recomputes the declared communication dtype
+set. Every `all_reduce` and `reduce_scatter` must carry a supported source-bound
+reduction operator, and verification recomputes the exact declared operator
+set. Every broadcast must carry a source-bound root inside its process group.
+For Kineto sources, exact input/output element counts and normalized split
+lists must be present and agree across ranks; verification recomputes the
+operation-specific shape and dtype-derived byte count and refuses skipped
+zero/missing-size events. Explicit splits are outside the current executor
+contract. Reduction operator and root rank are part of source correspondence
+and the execution-semantic commitment; no verifier or executor assumes SUM,
+reconstructs a convenient shape, or derives a root from group order. The
+request ID also covers the equal-split-only `all_to_all` policy, exact
+source-derived rank-local GEMM recipe projection, single-inflight
+issue/work/wait structure, disabled timestamp pacing, and explicit
+shape-and-dtype privacy disclosure. These commitments make materialization
+inputs deterministic.
+
+Materialization verification then binds and reuses the exact request manifest,
+recomputes the source-work projection, exact per-rank operation counts, source
+kernel observations, mathematical FLOPs, and rederives
+`replay-program.json` byte-for-byte. Source timing is retained only as an
+observation and cannot change the executable recipe. Target calibration,
+elapsed-gap fill, synthetic rank-arrival fill, and duration quantization are
+absent. The canonical ID and program digest detect nearby mutation, but an
+executor is still required separately, upstream PARAM compatibility is not
+claimed, and no physical run or verdict is attested.
+
+Reference execution starts from the stronger directory verifier rather than
+trusting a nearby replay file. Every rank independently revalidates the request,
+materialization, program bytes, and exact-work audit before PyTorch import or
+process-group initialization. Pure preflight then validates request/wait
+lifetimes, message shapes, process groups, exact rectangular recipes, repeated
+work, retained samples, and tensor allocations. Rank-local operation counts
+must match their encoded recipes and are budgeted before allocation. The union of encoded groups
+must equal the launched dense
+rank domain, and each encoded group gets a distinct runtime identity; extra
+idle ranks and process-group aliasing are rejected. The exact canonical bytes
+of the parsed in-memory program are rehashed against the verified manifest,
+closing mutation between directory verification and execution. After
+initialization, the executor checks the actual rank, world size, and backend
+against the launch contract. Aggregation requires exactly one matching sample
+from every expected participant for each measured operation; duplicates cannot
+mask a missing rank. Before measurement, a separately resource-counted,
+untimed pass uses deterministic rank-dependent patterns to validate every
+collective output under its exact source-bound reduction operator and every
+receive endpoint, exchanges exact check counts across the launched world, and
+fails all ranks if any data result is wrong. Measured iterations retain both
+per-operation issue-to-wait samples and whole-program wall time per rank; the
+decision-facing makespan is the maximum rank duration, not a median of
+collective calls. The resulting diagnostic binds both artifact IDs and the
+program digest, but it currently has neither a stable semantic validator nor an
+authenticity mechanism. It is therefore self-reported execution evidence, not
+yet a verifiable physical-observation artifact.
 
 `created_at` is intentionally volatile and excluded. Changing it alone does not
 invalidate a canary.

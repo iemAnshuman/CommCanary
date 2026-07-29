@@ -10,9 +10,12 @@ from .artifacts import JsonDict, as_int, normalize_ranks
 CompressionKey = Tuple[
     str,
     str,
+    Optional[str],
+    Optional[str],
     int,
     Tuple[int, ...],
     str,
+    Optional[int],
     Optional[int],
     Optional[int],
     Optional[str],
@@ -24,15 +27,31 @@ CompressionKey = Tuple[
 BaselineShapeKey = Tuple[
     str,
     str,
+    Optional[str],
+    Optional[str],
     int,
     Tuple[int, ...],
     str,
     Optional[int],
     Optional[int],
+    Optional[int],
     Optional[str],
     Optional[str],
 ]
-SchedulerOrderingKey = Tuple[str, str, int, str, Tuple[int, ...], int, int, str, str]
+SchedulerOrderingKey = Tuple[
+    str,
+    str,
+    Optional[str],
+    Optional[str],
+    int,
+    str,
+    Tuple[int, ...],
+    int,
+    int,
+    int,
+    str,
+    str,
+]
 CaptureCoalescingKey = Tuple[Any, ...]
 
 
@@ -54,6 +73,8 @@ class NoiseIdentity:
     group: str
     arrival_offsets_us: Tuple[float, ...]
     occurrence: int
+    reduction_op: Optional[str]
+    root_rank: Optional[int]
     sender_rank: Optional[int]
     receiver_rank: Optional[int]
     message_sequence: Optional[int]
@@ -71,7 +92,10 @@ class NoiseIdentity:
             "arrival_offsets_us": list(self.arrival_offsets_us),
             "occurrence": self.occurrence,
         }
+        if self.reduction_op is not None:
+            identity["reduction_op"] = self.reduction_op
         for key, numeric_value in (
+            ("root_rank", self.root_rank),
             ("sender_rank", self.sender_rank),
             ("receiver_rank", self.receiver_rank),
             ("message_sequence", self.message_sequence),
@@ -94,9 +118,12 @@ class OperationIdentity:
 
     phase: str
     op: str
+    dtype: Optional[str]
+    reduction_op: Optional[str]
     byte_count: int
     ranks: Tuple[int, ...]
     group: str
+    root_rank: Optional[int]
     sender_rank: Optional[int]
     receiver_rank: Optional[int]
     tag: Optional[str]
@@ -117,9 +144,12 @@ class OperationIdentity:
         return cls(
             phase=str(operation.get("phase", "unknown")),
             op=str(operation.get("op", "unknown")),
+            dtype=_optional_text(operation, "dtype"),
+            reduction_op=_optional_text(operation, "reduction_op"),
             byte_count=as_int(operation.get("bytes"), 0),
             ranks=ranks,
             group=str(operation.get("group", "default")),
+            root_rank=_optional_int(operation, "root_rank"),
             sender_rank=_optional_int(operation, "sender_rank"),
             receiver_rank=_optional_int(operation, "receiver_rank"),
             tag=_optional_text(operation, "tag"),
@@ -139,9 +169,12 @@ class OperationIdentity:
         return (
             self.phase,
             self.op,
+            self.dtype,
+            self.reduction_op,
             self.byte_count,
             self.ranks,
             self.group,
+            self.root_rank,
             self.sender_rank,
             self.receiver_rank,
             self.tag,
@@ -157,9 +190,12 @@ class OperationIdentity:
         return (
             self.phase,
             self.op,
+            self.dtype,
+            self.reduction_op,
             self.byte_count,
             self.group,
             self.ranks,
+            self.root_rank if self.root_rank is not None else -1,
             self.sender_rank if self.sender_rank is not None else -1,
             self.receiver_rank if self.receiver_rank is not None else -1,
             self.tag or "",
@@ -199,6 +235,8 @@ class OperationIdentity:
             group=self.group,
             arrival_offsets_us=tuple(round(value, 9) for value in offsets),
             occurrence=occurrence,
+            reduction_op=self.reduction_op,
+            root_rank=self.root_rank,
             sender_rank=self.sender_rank,
             receiver_rank=self.receiver_rank,
             message_sequence=self.message_sequence,
@@ -220,9 +258,12 @@ class OperationIdentity:
         return (
             phase,
             self.op,
+            self.dtype,
+            self.reduction_op,
             self.byte_count,
             self.ranks,
             self.group,
+            self.root_rank,
             self.sender_rank,
             self.receiver_rank,
             self.tag,

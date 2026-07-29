@@ -109,6 +109,8 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["phase"] = str(event.get("phase"))
     if "op" in event:
         projected["op"] = str(event.get("op"))
+    if "dtype" in event:
+        projected["dtype"] = str(event.get("dtype"))
     if "bytes" in event:
         projected["bytes"] = as_int(event.get("bytes"))
     ranks = None
@@ -117,10 +119,10 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
         projected["ranks"] = ranks
     if "group" in event:
         projected["group"] = str(event.get("group"))
-    for key in ("sender_rank", "receiver_rank", "message_sequence"):
+    for key in ("root_rank", "sender_rank", "receiver_rank", "message_sequence"):
         if key in event:
             projected[key] = as_int(event.get(key))
-    for key in ("tag", "channel"):
+    for key in ("reduction_op", "tag", "channel"):
         if key in event:
             projected[key] = str(event.get(key))
     if "concurrent_groups" in event:
@@ -139,14 +141,14 @@ def _execution_event_projection(event: Mapping[str, Any]) -> JsonDict:
 
 def _calibration_event_projection(event: Mapping[str, Any]) -> JsonDict:
     projected: JsonDict = {}
-    for key in ("phase", "op", "group"):
+    for key in ("phase", "op", "dtype", "group", "reduction_op"):
         if key in event:
             projected[key] = str(event.get(key))
     if "bytes" in event:
         projected["bytes"] = as_int(event.get("bytes"))
     if "ranks" in event:
         projected["ranks"] = normalize_ranks(event.get("ranks"))
-    for key in ("sender_rank", "receiver_rank", "message_sequence"):
+    for key in ("root_rank", "sender_rank", "receiver_rank", "message_sequence"):
         if key in event:
             projected[key] = as_int(event.get(key))
     for key in ("tag", "channel"):

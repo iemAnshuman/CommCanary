@@ -32,6 +32,7 @@ def _two_occurrence_trace():
                 "group": "tp",
                 "gap_us": 3.0,
                 "rank_arrival_us": {"0": 0.0, "1": 1.0},
+                "compute_overlap_us": 0.0,
             },
             {
                 "id": "b",
@@ -42,6 +43,7 @@ def _two_occurrence_trace():
                 "group": "tp",
                 "gap_us": 7.0,
                 "rank_arrival_us": {"0": 0.0, "1": 2.0},
+                "compute_overlap_us": 0.0,
             },
         ],
     }

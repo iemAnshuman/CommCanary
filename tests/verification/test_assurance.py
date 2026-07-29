@@ -96,6 +96,7 @@ class VerificationTests(unittest.TestCase):
                     "start_us": index * 10.0,
                     "rank_arrival_us": {"0": 0.0, "1": float(index % 7)},
                     "compute_before_us": float((index * 13) % 23),
+                    "compute_overlap_us": 0.0,
                     "compute_pressure": ((index * 37) % 101) / 100.0,
                 }
             )
@@ -306,6 +307,7 @@ class VerificationTests(unittest.TestCase):
                     "ranks": [0, 1],
                     "gap_us": float((index * 7) % 19),
                     "rank_arrival_us": {"0": 0.0, "1": float((index * 11) % 31)},
+                    "compute_overlap_us": 0.0,
                 }
             )
         canary = compile_trace(trace, timing_sample_limit=2)

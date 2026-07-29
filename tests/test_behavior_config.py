@@ -27,6 +27,7 @@ def _trace():
                 "ranks": [0, 1],
                 "start_us": float(index * 10),
                 "rank_arrival_us": {"0": 0.0, "1": float(index)},
+                "compute_overlap_us": 0.0,
             }
             for index in range(2)
         ],
