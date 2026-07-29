@@ -177,6 +177,25 @@ on-node measurement and change that capture recipe's readiness value to
 `shared-replay` separately binds the selected capture as the exact
 `shared-param-trace` input.
 
+The `qualification-exact` profile is the deliberately narrow replacement
+same-node gate. It contains one `nccl-2.20.5-default` cell pinned to `toranj1`,
+the node that produced the preserved source capture. The cell collects twenty
+maximum-rank whole-program samples internally; campaign repetitions remain
+one. Freezing requires the exact request manifest, source trace, canary,
+fidelity verification, materialization manifest, replay program, and preserved
+source-capture evidence as separately named inputs. The physical producer
+revalidates the complete request/materialization chain independently on every
+rank before initializing `torch.distributed`, then executes only asynchronous
+collective issue, the source-bound rank-local rectangular GEMM, and immediate
+explicit wait.
+
+The source-capture input is bound for the later byte-verifiable diagnostic
+comparison; it is not treated as a measurement emitted by the new cell.
+Executor success proves neither timing fidelity nor a qualification verdict.
+Do not add an acceptance tolerance or issue a verdict until the same-node
+measurement and the later multi-configuration ranking gate provide a reviewed
+basis for that policy.
+
 ## Historical physical execution boundary
 
 Only after the local gate is green and the site values above have been reviewed

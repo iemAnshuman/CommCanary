@@ -889,7 +889,9 @@ def _capture_artifacts(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--site-wrapper", choices=tuple(sorted({"micro", "full", "canary", "shared-capture", "shared"})), required=True
+        "--site-wrapper",
+        choices=tuple(sorted({"micro", "full", "canary", "qualification", "shared-capture", "shared"})),
+        required=True,
     )
     parser.add_argument("--run-directory", type=Path, required=True)
     parser.add_argument("--cell-id", required=True)

@@ -11,6 +11,7 @@ import pytest
 
 from experiments.rostam.analysis.schemas import (
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA,
+    PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
     validate_scalar_measurement,
 )
 from experiments.rostam.harness import JSONResourceLimits, build_run_manifest, freeze_campaign
@@ -36,6 +37,9 @@ from experiments.rostam.lib.physical_results import (
     OVERLAP_STDOUT_SCHEMA,
     PARAM_MEASUREMENT_SCHEMA,
     PARAM_PRODUCER_SCHEMA,
+    QUALIFICATION_MEASUREMENT_SCHEMA,
+    QUALIFICATION_PRODUCER_SCHEMA,
+    QUALIFICATION_STDOUT_SCHEMA,
     PhysicalResultError,
     adapt_physical_measurement,
     validate_param_trace,
@@ -147,6 +151,104 @@ def _overlap_stdout() -> str:
     )
 
 
+def _qualification_parameters() -> dict[str, object]:
+    return {
+        **_micro_parameters(),
+        "adapter": "torch-json",
+        "backend": "nccl",
+        "device": "cuda",
+        "distributed_timeout_seconds": 300,
+        "expected_communication_operations_per_pass": 1,
+        "expected_correctness_checks_per_rank": [1, 1, 1, 1],
+        "expected_materialization_id": "b" * 64,
+        "expected_program_sha256": "c" * 64,
+        "expected_rank_compute_operations_per_pass": [8, 8, 8, 8],
+        "expected_rank_tensor_bytes": [16, 16, 16, 16],
+        "expected_request_id": "a" * 64,
+        "iterations": 3,
+        "replay_mode": "source-bound-exact-rank-work",
+        "warmup": 1,
+    }
+
+
+def _qualification_payload() -> dict[str, object]:
+    rank_timings = {
+        "0": [1.0, 5.0, 3.0],
+        "1": [2.0, 4.0, 6.0],
+        "2": [3.0, 3.0, 4.0],
+        "3": [4.0, 2.0, 5.0],
+    }
+    rank_samples = {
+        str(rank): [
+            {
+                "duration_us": float(rank + 1),
+                "iteration": iteration,
+                "operation": "all_reduce",
+                "rank": rank,
+                "request": 1,
+                "sequence": 2,
+            }
+            for iteration in range(3)
+        ]
+        for rank in range(4)
+    }
+    return {
+        "schema": QUALIFICATION_STDOUT_SCHEMA,
+        "request_id": "a" * 64,
+        "materialization_id": "b" * 64,
+        "program_sha256": "c" * 64,
+        "executor": {
+            "name": "commcanary.torch-distributed-reference.v2",
+            "claim": "reference-implementation-not-yet-physically-conformance-validated",
+            "device": "cuda",
+            "backend": "nccl",
+            "world_size": 4,
+            "iterations": 3,
+            "warmup": 1,
+            "distributed_timeout_seconds": 300,
+        },
+        "runtime": {
+            "torch_version": "2.4.1",
+            "torch_cuda_version": "12.1",
+            "runtime_nccl_version_code": 22005,
+            "distributed_backend": "nccl",
+        },
+        "rank_tensor_bytes": [16, 16, 16, 16],
+        "rank_compute_operations_per_pass": [8, 8, 8, 8],
+        "correctness_validation": {
+            "status": "passed",
+            "semantics": "untimed-deterministic-communication-data-check",
+            "checks_per_rank": [1, 1, 1, 1],
+            "total_check_count": 4,
+        },
+        "rank_samples": rank_samples,
+        "program_makespan": {
+            "semantics": "maximum-rank-whole-program-wall-clock",
+            "rank_timings_us": rank_timings,
+            "timings_us": [4.0, 5.0, 6.0],
+            "count": 3,
+            "median_us": 5.0,
+            "max_us": 6.0,
+        },
+        "aggregate": {
+            "semantics": "maximum-participating-rank-issue-to-explicit-wait",
+            "timings_us": [4.0, 4.0, 4.0],
+            "count": 3,
+            "median_us": 4.0,
+            "max_us": 4.0,
+        },
+        "claims": {
+            "physical_execution": "self_reported_reference_executor",
+            "physical_fidelity": "unproven",
+            "qualification_verdict": "not_issued",
+        },
+    }
+
+
+def _qualification_stdout() -> str:
+    return json.dumps(_qualification_payload(), sort_keys=True)
+
+
 def _micro_parameters() -> dict[str, object]:
     return {
         "adapter": "torch-json",
@@ -161,9 +263,9 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert catalog.site.site_id == "rostam"
     assert catalog.site.scheduler == "slurm"
     assert catalog.site.partition == "cuda-A100"
-    assert catalog.site.node_constraints == ("toranj0",)
+    assert catalog.site.node_constraints == ("toranj1",)
     assert len(catalog.configurations) == 8
-    assert len(catalog.workloads) == 8
+    assert len(catalog.workloads) == 9
     core = catalog.profile("core")
     assert core.workload_ids == ("micro", "full", "trace-build", "canary-param")
     assert "canary-overlap" not in core.workload_ids
@@ -199,6 +301,19 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     shared_export = shared_parameters["transform_commands"][-1]
     assert "--overlap-structure" in shared_export
     assert shared_export[shared_export.index("--compute-fill-us-per-gemm") + 1] == GEMM_CALIBRATION_US
+
+    qualification = catalog.profile("qualification-exact")
+    assert qualification.configuration_ids == ("nccl-2.20.5-default",)
+    assert qualification.workload_ids == ("qualification-exact",)
+    qualification_workload = catalog.selected_workloads(qualification)[0]
+    qualification_parameters = qualification_workload.parameters.to_value()
+    assert qualification_workload.wrapper == "qualification"
+    assert qualification_parameters["replay_mode"] == "source-bound-exact-rank-work"
+    assert qualification_parameters["expected_request_id"] == (
+        "62dd77fd2f7bb01f45368d909036c09e61870b477c9cc15a58b30bdd5918af60"
+    )
+    assert "{input:qualification-replay-program}" in qualification_parameters["command"]
+    assert "source-capture-evidence" in qualification.required_input_ids
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     forged = copy.deepcopy(raw)
@@ -315,6 +430,78 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
     )
     assert param["samples_us"] == [12.5]
     assert param["trace_sha256"] == "a" * 64
+
+    qualification = adapt_physical_measurement(
+        measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
+        producer_schema=QUALIFICATION_PRODUCER_SCHEMA,
+        attempt_id="a-000007",
+        parameters=_qualification_parameters(),
+        stdout=_qualification_stdout(),
+        stderr="",
+        wall_time_s=1.25,
+        runtime=_runtime(),
+    )
+    assert qualification["samples_us"] == [4.0, 5.0, 6.0]
+    assert qualification["request_id"] == "a" * 64
+    assert qualification["materialization_id"] == "b" * 64
+    assert qualification["program_sha256"] == "c" * 64
+    assert qualification["correctness_check_count"] == 4
+    qualification_scalar = validate_scalar_measurement(
+        PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
+        QUALIFICATION_PRODUCER_SCHEMA,
+        "a-000007",
+        qualification,
+    )
+    assert qualification_scalar.samples_us == (4.0, 5.0, 6.0)
+    assert qualification_scalar.physical is not None
+    assert qualification_scalar.physical.attributes["replay_mode"] == ("source-bound-exact-rank-work")
+
+    stale_qualification = _qualification_payload()
+    stale_qualification["request_id"] = "d" * 64
+    with pytest.raises(PhysicalResultError, match="disagrees with the frozen workload"):
+        adapt_physical_measurement(
+            measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
+            producer_schema=QUALIFICATION_PRODUCER_SCHEMA,
+            attempt_id="a-000008",
+            parameters=_qualification_parameters(),
+            stdout=json.dumps(stale_qualification),
+            stderr="",
+            wall_time_s=1.25,
+            runtime=_runtime(),
+        )
+
+    inconsistent_makespan = _qualification_payload()
+    assert isinstance(inconsistent_makespan["program_makespan"], dict)
+    inconsistent_makespan["program_makespan"]["timings_us"] = [4.0, 5.0, 5.0]
+    with pytest.raises(PhysicalResultError, match="disagree with rank timings"):
+        adapt_physical_measurement(
+            measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
+            producer_schema=QUALIFICATION_PRODUCER_SCHEMA,
+            attempt_id="a-000009",
+            parameters=_qualification_parameters(),
+            stdout=json.dumps(inconsistent_makespan),
+            stderr="",
+            wall_time_s=1.25,
+            runtime=_runtime(),
+        )
+
+    inconsistent_aggregate = _qualification_payload()
+    assert isinstance(inconsistent_aggregate["aggregate"], dict)
+    inconsistent_aggregate["aggregate"]["timings_us"] = [3.0, 4.0, 4.0]
+    inconsistent_aggregate["aggregate"]["median_us"] = 4.0
+    inconsistent_aggregate["aggregate"]["max_us"] = 4.0
+    with pytest.raises(PhysicalResultError, match="disagree with rank operation samples"):
+        adapt_physical_measurement(
+            measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
+            producer_schema=QUALIFICATION_PRODUCER_SCHEMA,
+            attempt_id="a-000010",
+            parameters=_qualification_parameters(),
+            stdout=json.dumps(inconsistent_aggregate),
+            stderr="",
+            wall_time_s=1.25,
+            runtime=_runtime(),
+        )
+
     with pytest.raises(PhysicalResultError, match="requires producer"):
         adapt_physical_measurement(
             measurement_schema=MICRO_MEASUREMENT_SCHEMA,
@@ -568,6 +755,72 @@ def test_overlap_capture_profiles_refuse_missing_calibration_input(tmp_path: Pat
         )
 
 
+def test_exact_qualification_profile_binds_every_portable_input_and_is_submittable(
+    tmp_path: Path,
+) -> None:
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    for input_id in (
+        "qualification-canary",
+        "qualification-fidelity",
+        "qualification-materialization-manifest",
+        "qualification-replay-program",
+        "qualification-request-manifest",
+        "qualification-source-trace",
+        "source-capture-evidence",
+    ):
+        path = tmp_path / f"{input_id}.json"
+        path.write_text(json.dumps({"input_id": input_id}) + "\n", encoding="utf-8")
+        inputs[input_id] = path
+    campaign = build_campaign(
+        catalog=load_catalog(CATALOG_PATH),
+        catalog_path=CATALOG_PATH,
+        profile_id="qualification-exact",
+        run_id="rostam-qualification-exact-static-fixture",
+        repetitions=1,
+        repository_commit="1" * 40,
+        repository_dirty=False,
+        repository_patch_sha256=None,
+        source_archive_sha256="2" * 64,
+        inputs=inputs,
+    )
+    manifest = build_run_manifest(campaign)
+    assert len(manifest.cells) == 1
+    assert {item.id for item in manifest.campaign.inputs} == {
+        "commcanary-wheel",
+        "environment-lock",
+        "param-patch-contract",
+        "qualification-canary",
+        "qualification-fidelity",
+        "qualification-materialization-manifest",
+        "qualification-replay-program",
+        "qualification-request-manifest",
+        "qualification-source-trace",
+        "rostam-catalog",
+        "source-capture-evidence",
+    }
+    frozen = freeze_campaign(campaign, tmp_path / "qualification-results")
+    plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True)
+    assert len(plan.cells) == 1
+    assert plan.cells[0].action == "run"
+    assert plan.cells[0].wrapper_path.endswith("run_qualification.sbatch")
+
+
+def test_exact_qualification_profile_refuses_unbound_source_capture(tmp_path: Path) -> None:
+    with pytest.raises(CampaignPreparationError, match="source-capture-evidence"):
+        build_campaign(
+            catalog=load_catalog(CATALOG_PATH),
+            catalog_path=CATALOG_PATH,
+            profile_id="qualification-exact",
+            run_id="rostam-qualification-exact-missing-source",
+            repetitions=1,
+            repository_commit="1" * 40,
+            repository_dirty=False,
+            repository_patch_sha256=None,
+            source_archive_sha256="2" * 64,
+            inputs=_campaign_inputs(tmp_path, reviewed=True),
+        )
+
+
 def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Path) -> None:
     calibration = _write_json(
         tmp_path / "wrong-gemm-calibration.json",
@@ -622,7 +875,7 @@ def test_submission_plan_precomputes_unique_owners_dependencies_and_exact_argv(t
     assert all(cell.action == "run" for cell in plan.cells)
     assert all(cell.sbatch_argv[0:2] == ("sbatch", "--parsable") for cell in plan.cells)
     assert all("--partition=cuda-A100" in cell.sbatch_argv for cell in plan.cells)
-    assert all("--nodelist=toranj0" in cell.sbatch_argv for cell in plan.cells)
+    assert all("--nodelist=toranj1" in cell.sbatch_argv for cell in plan.cells)
     assert all("--exclusive" in cell.sbatch_argv for cell in plan.cells)
     assert all(not any("*" in argument for argument in cell.sbatch_argv) for cell in plan.cells)
     canary_cells = [cell for cell in plan.cells if cell.workload_id == "canary-param"]
@@ -736,6 +989,7 @@ def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> N
         "run_canary.sbatch",
         "run_full.sbatch",
         "run_micro.sbatch",
+        "run_qualification.sbatch",
         "run_shared.sbatch",
     ]
     forbidden = ("torchrun", "nvidia-smi", "eval ", "<<", "configs.json", "results/shared", "#SBATCH")

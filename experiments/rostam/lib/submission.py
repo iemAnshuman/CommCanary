@@ -42,6 +42,7 @@ _WRAPPERS = {
     "micro": "run_micro.sbatch",
     "full": "run_full.sbatch",
     "canary": "run_canary.sbatch",
+    "qualification": "run_qualification.sbatch",
     "shared-capture": "capture_shared_trace.sbatch",
     "shared": "run_shared.sbatch",
 }

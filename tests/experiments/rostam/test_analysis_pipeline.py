@@ -613,8 +613,8 @@ def test_legacy_glob_analysis_requires_acknowledgement_and_watermarks_outputs(tm
 
 def test_local_measurement_schemas_are_distinct_strict_and_committed() -> None:
     documents = validate_schema_documents()
-    assert len(documents) == 11
-    assert len({document["schema"] for document in documents}) == 11
+    assert len(documents) == 12
+    assert len({document["schema"] for document in documents}) == 12
     assert all(len(document["sha256"]) == 64 for document in documents)
     valid = {
         "attempt_id": "a-000001",

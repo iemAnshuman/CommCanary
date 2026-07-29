@@ -18,6 +18,7 @@ PHYSICAL_FULL_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.full-measurement.
 PHYSICAL_PARAM_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.param-measurement.v1"
 PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
+PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
 RAW_ARCHIVE_DESCRIPTOR_SCHEMA = "commcanary.rostam.raw-archive-descriptor.v1"
 CROSS_COMMIT_COMPATIBILITY_SCHEMA = "commcanary.rostam.cross-commit-compatibility.v1"
 
@@ -32,6 +33,7 @@ _SCHEMA_FILES = {
     PHYSICAL_PARAM_MEASUREMENT_SCHEMA: "physical-param-measurement-v1.schema.json",
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: "physical-overlap-measurement-v1.schema.json",
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "physical-capture-measurement-v1.schema.json",
+    PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "physical-qualification-measurement-v1.schema.json",
     RAW_ARCHIVE_DESCRIPTOR_SCHEMA: "raw-archive-descriptor-v1.schema.json",
     CROSS_COMMIT_COMPATIBILITY_SCHEMA: "cross-commit-compatibility-v1.schema.json",
 }
@@ -41,6 +43,7 @@ _PHYSICAL_PRODUCER_CONTRACTS = {
     PHYSICAL_PARAM_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.param-producer.v1",
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.overlap-producer.v1",
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.capture-producer.v1",
+    PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.qualification-producer.v1",
 }
 _PRODUCER_CONTRACTS = {
     LOCAL_PREPARE_MEASUREMENT_SCHEMA: ("commcanary.experiment.prepare.v1", "success"),
@@ -73,6 +76,15 @@ _PHYSICAL_SPECIFIC_FIELDS = {
     PHYSICAL_PARAM_MEASUREMENT_SCHEMA: {"replay_mode", "trace_sha256"},
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: {"replay_mode", "trace_sha256"},
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: {"artifacts"},
+    PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: {
+        "replay_mode",
+        "request_id",
+        "materialization_id",
+        "program_sha256",
+        "correctness_check_count",
+        "rank_compute_operations_per_pass",
+        "rank_tensor_bytes",
+    },
 }
 _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
 _OVERLAP_REPLAY_MODES = {"explicit-wait-overlap", "fixed-input-explicit-wait-overlap"}
@@ -295,6 +307,40 @@ def _physical_measurement(
                 )
             )
         physical_artifacts = tuple(parsed_artifacts)
+    elif schema == PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA:
+        if raw["replay_mode"] != "source-bound-exact-rank-work":
+            raise MeasurementValidationError("physical qualification replay mode is unsupported")
+        identities = {}
+        for field in ("request_id", "materialization_id", "program_sha256"):
+            value = raw[field]
+            if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+                raise MeasurementValidationError(f"physical qualification {field} is invalid")
+            identities[field] = value
+        correctness_check_count = raw["correctness_check_count"]
+        if (
+            isinstance(correctness_check_count, bool)
+            or not isinstance(correctness_check_count, int)
+            or correctness_check_count <= 0
+        ):
+            raise MeasurementValidationError("physical qualification correctness_check_count must be positive")
+        rank_vectors: Dict[str, List[int]] = {}
+        for field in ("rank_compute_operations_per_pass", "rank_tensor_bytes"):
+            values = raw[field]
+            if (
+                not isinstance(values, list)
+                or len(values) != world_size
+                or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values)
+            ):
+                raise MeasurementValidationError(
+                    f"physical qualification {field} must cover every rank with non-negative integers"
+                )
+            rank_vectors[field] = list(values)
+        physical_attributes = {
+            "replay_mode": raw["replay_mode"],
+            **identities,
+            "correctness_check_count": correctness_check_count,
+            **rank_vectors,
+        }
     physical = PhysicalMeasurement(
         operation="all_reduce",
         world_size=world_size,

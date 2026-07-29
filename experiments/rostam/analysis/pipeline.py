@@ -51,6 +51,7 @@ from .schemas import (
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA,
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
     PHYSICAL_PARAM_MEASUREMENT_SCHEMA,
+    PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
     RAW_ARCHIVE_DESCRIPTOR_SCHEMA,
     validate_scalar_measurement,
     validate_schema_documents,
@@ -552,6 +553,18 @@ def _physical_binding(
             raise AnalysisValidationError(f"physical capture artifacts are not bound by attempt {record.attempt_id!r}")
         for artifact in physical.artifacts:
             verify_artifact_reference(frozen.directory, ArtifactReference.from_dict(artifact.to_reference()))
+    elif workload.measurement_schema == PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA:
+        expected_attributes = {
+            "replay_mode": parameters.get("replay_mode"),
+            "request_id": parameters.get("expected_request_id"),
+            "materialization_id": parameters.get("expected_materialization_id"),
+            "program_sha256": parameters.get("expected_program_sha256"),
+        }
+        for field, expected in expected_attributes.items():
+            if attributes.get(field) != expected:
+                raise AnalysisValidationError(f"physical qualification {field} is stale for cell {cell.id!r}")
+        if not isinstance(attributes.get("correctness_check_count"), int):
+            raise AnalysisValidationError(f"physical qualification correctness evidence is stale for cell {cell.id!r}")
     return {
         "wall_time_s": physical.wall_time_s,
         "measurement_iqr_us": physical.iqr_us,
@@ -940,6 +953,7 @@ def _build_aggregate(
         PHYSICAL_PARAM_MEASUREMENT_SCHEMA,
         PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
         PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
+        PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
     }:
         schema_ids.update(
             {
@@ -948,6 +962,7 @@ def _build_aggregate(
                 PHYSICAL_PARAM_MEASUREMENT_SCHEMA,
                 PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
                 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
+                PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
             }
         )
     schema_documents = validate_schema_documents(tuple(sorted(schema_ids)))

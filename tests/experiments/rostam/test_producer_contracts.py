@@ -11,6 +11,7 @@ import pytest
 from experiments.rostam import (
     microbench_tp8,
     overlap_replay,
+    qualification_physical,
     workload_overlap_capture,
     workload_tp8,
 )
@@ -51,6 +52,68 @@ def _trace(*, ranks: list[int], explicit_wait: bool = True) -> list[dict[str, ob
 
 def _write_trace(path: Path, entries: list[dict[str, object]]) -> None:
     path.write_text(json.dumps(entries), encoding="utf-8")
+
+
+def _qualification_sources(tmp_path: Path) -> dict[str, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    sources = {}
+    for source_id in (
+        "request_manifest",
+        "source_trace",
+        "canary",
+        "fidelity",
+        "materialization_manifest",
+        "replay_program",
+    ):
+        source = tmp_path / f"{source_id}.json"
+        source.write_text(f'{{"source":"{source_id}"}}', encoding="utf-8")
+        sources[source_id] = source
+    return sources
+
+
+def test_qualification_inputs_are_rank_local_canonical_and_non_overwriting(tmp_path: Path) -> None:
+    sources = _qualification_sources(tmp_path)
+    request, materialization = qualification_physical.stage_qualification_inputs(
+        sources,
+        rank=2,
+        workspace=tmp_path,
+    )
+
+    assert request == tmp_path / "qualification-input-rank-00002" / "request"
+    assert materialization == tmp_path / "qualification-input-rank-00002" / "materialization"
+    assert sorted(path.name for path in request.iterdir()) == [
+        "canary.json",
+        "fidelity.json",
+        "qualification-request.json",
+        "source.trace.json",
+    ]
+    assert sorted(path.name for path in materialization.iterdir()) == [
+        "materialization.json",
+        "replay-program.json",
+    ]
+    assert all(path.stat().st_mode & 0o222 == 0 for path in (*request.iterdir(), *materialization.iterdir()))
+
+    with pytest.raises(SystemExit, match="cannot create rank-local"):
+        qualification_physical.stage_qualification_inputs(sources, rank=2, workspace=tmp_path)
+
+
+def test_qualification_staging_refuses_symlinked_and_empty_sources(tmp_path: Path) -> None:
+    sources = _qualification_sources(tmp_path)
+    target = sources["canary"]
+    symlink = tmp_path / "canary-link.json"
+    symlink.symlink_to(target)
+    sources["canary"] = symlink
+    with pytest.raises(SystemExit, match="real regular file"):
+        qualification_physical.stage_qualification_inputs(sources, rank=0, workspace=tmp_path)
+
+    empty_sources = _qualification_sources(tmp_path / "empty-sources")
+    empty_sources["fidelity"].write_bytes(b"")
+    with pytest.raises(SystemExit, match="is empty"):
+        qualification_physical.stage_qualification_inputs(
+            empty_sources,
+            rank=1,
+            workspace=tmp_path,
+        )
 
 
 def test_producers_emit_distinct_honest_raw_contracts() -> None:

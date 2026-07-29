@@ -18,16 +18,19 @@ FULL_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.full-measurement.v1"
 PARAM_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.param-measurement.v1"
 OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
 CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
+QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
 
 MICRO_PRODUCER_SCHEMA = "commcanary.rostam.physical.micro-producer.v1"
 FULL_PRODUCER_SCHEMA = "commcanary.rostam.physical.full-producer.v1"
 PARAM_PRODUCER_SCHEMA = "commcanary.rostam.physical.param-producer.v1"
 OVERLAP_PRODUCER_SCHEMA = "commcanary.rostam.physical.overlap-producer.v1"
 CAPTURE_PRODUCER_SCHEMA = "commcanary.rostam.physical.capture-producer.v1"
+QUALIFICATION_PRODUCER_SCHEMA = "commcanary.rostam.physical.qualification-producer.v1"
 
 MICRO_STDOUT_SCHEMA = "commcanary.rostam.microbench_tp8.stdout.v1"
 FULL_STDOUT_SCHEMA = "commcanary.rostam.workload_tp8.stdout.v1"
 OVERLAP_STDOUT_SCHEMA = "commcanary.rostam.overlap_replay.stdout.v1"
+QUALIFICATION_STDOUT_SCHEMA = "commcanary.reference-execution.stdout.v1"
 
 
 @dataclass(frozen=True)
@@ -63,6 +66,7 @@ PHYSICAL_SCHEMA_PAIRS = {
     PARAM_MEASUREMENT_SCHEMA: PARAM_PRODUCER_SCHEMA,
     OVERLAP_MEASUREMENT_SCHEMA: OVERLAP_PRODUCER_SCHEMA,
     CAPTURE_MEASUREMENT_SCHEMA: CAPTURE_PRODUCER_SCHEMA,
+    QUALIFICATION_MEASUREMENT_SCHEMA: QUALIFICATION_PRODUCER_SCHEMA,
 }
 
 _RAW_LATENCY_FIELDS = {
@@ -585,6 +589,281 @@ def _torch_payload(
     return payload, samples
 
 
+def _summary_samples(raw: Any, field: str) -> Tuple[float, ...]:
+    summary = _object(raw, field)
+    _strict(
+        summary,
+        field,
+        ("semantics", "timings_us", "count", "median_us", "max_us"),
+    )
+    _text(summary["semantics"], f"{field}.semantics", maximum=160)
+    samples = _samples(summary["timings_us"], f"{field}.timings_us")
+    count = _integer(summary["count"], f"{field}.count", minimum=1, maximum=1_000_000)
+    if count != len(samples):
+        raise PhysicalResultError(f"{field}.count disagrees with its timing samples")
+    if abs(_finite(summary["median_us"], f"{field}.median_us") - _median(samples)) > 0.001:
+        raise PhysicalResultError(f"{field}.median_us disagrees with its timing samples")
+    if abs(_finite(summary["max_us"], f"{field}.max_us") - max(samples)) > 0.001:
+        raise PhysicalResultError(f"{field}.max_us disagrees with its timing samples")
+    return samples
+
+
+def _qualification_payload(
+    stdout: str,
+    *,
+    world_size: int,
+    parameters: Mapping[str, Any],
+) -> Tuple[Mapping[str, Any], Tuple[float, ...]]:
+    payload = _last_json_object(stdout)
+    _strict(
+        payload,
+        "qualification producer stdout",
+        (
+            "schema",
+            "request_id",
+            "materialization_id",
+            "program_sha256",
+            "executor",
+            "runtime",
+            "rank_tensor_bytes",
+            "rank_compute_operations_per_pass",
+            "correctness_validation",
+            "rank_samples",
+            "program_makespan",
+            "aggregate",
+            "claims",
+        ),
+    )
+    if payload["schema"] != QUALIFICATION_STDOUT_SCHEMA:
+        raise PhysicalResultError(f"qualification producer stdout requires schema {QUALIFICATION_STDOUT_SCHEMA!r}")
+    for field in ("request_id", "materialization_id", "program_sha256"):
+        observed = _sha256(payload[field], f"qualification producer stdout.{field}")
+        expected = parameters.get(f"expected_{field}")
+        if observed != expected:
+            raise PhysicalResultError(f"qualification producer stdout.{field} disagrees with the frozen workload")
+
+    executor = _object(payload["executor"], "qualification producer stdout.executor")
+    _strict(
+        executor,
+        "qualification producer stdout.executor",
+        (
+            "name",
+            "claim",
+            "device",
+            "backend",
+            "world_size",
+            "iterations",
+            "warmup",
+            "distributed_timeout_seconds",
+        ),
+    )
+    expected_executor = {
+        "name": "commcanary.torch-distributed-reference.v2",
+        "claim": "reference-implementation-not-yet-physically-conformance-validated",
+        "device": parameters.get("device"),
+        "backend": parameters.get("backend"),
+        "world_size": world_size,
+        "iterations": parameters.get("iterations"),
+        "warmup": parameters.get("warmup"),
+        "distributed_timeout_seconds": parameters.get("distributed_timeout_seconds"),
+    }
+    if dict(executor) != expected_executor:
+        raise PhysicalResultError("qualification producer executor contract disagrees with the frozen workload")
+
+    runtime = _object(payload["runtime"], "qualification producer stdout.runtime")
+    _strict(
+        runtime,
+        "qualification producer stdout.runtime",
+        ("torch_version", "torch_cuda_version", "runtime_nccl_version_code", "distributed_backend"),
+    )
+    _text(runtime["torch_version"], "qualification producer stdout.runtime.torch_version", maximum=128)
+    _text(
+        runtime["torch_cuda_version"],
+        "qualification producer stdout.runtime.torch_cuda_version",
+        nullable=True,
+        maximum=64,
+    )
+    _integer(
+        runtime["runtime_nccl_version_code"],
+        "qualification producer stdout.runtime.runtime_nccl_version_code",
+        minimum=1,
+        maximum=99_999,
+    )
+    if runtime["distributed_backend"] != parameters.get("backend"):
+        raise PhysicalResultError("qualification producer distributed backend disagrees with the frozen workload")
+
+    for field in ("rank_tensor_bytes", "rank_compute_operations_per_pass"):
+        values = payload[field]
+        if not isinstance(values, list) or len(values) != world_size:
+            raise PhysicalResultError(f"qualification producer stdout.{field} must cover every rank")
+        parsed_values = [
+            _integer(
+                value,
+                f"qualification producer stdout.{field}[{rank}]",
+                maximum=2**63 - 1,
+            )
+            for rank, value in enumerate(values)
+        ]
+        expected_values = parameters.get(f"expected_{field}")
+        if parsed_values != expected_values:
+            raise PhysicalResultError(f"qualification producer stdout.{field} disagrees with the frozen workload")
+
+    correctness = _object(
+        payload["correctness_validation"],
+        "qualification producer stdout.correctness_validation",
+    )
+    _strict(
+        correctness,
+        "qualification producer stdout.correctness_validation",
+        ("status", "semantics", "checks_per_rank", "total_check_count"),
+    )
+    if correctness["status"] != "passed" or correctness["semantics"] != (
+        "untimed-deterministic-communication-data-check"
+    ):
+        raise PhysicalResultError("qualification producer correctness validation did not pass")
+    checks = correctness["checks_per_rank"]
+    if not isinstance(checks, list) or len(checks) != world_size:
+        raise PhysicalResultError("qualification producer correctness checks must cover every rank")
+    parsed_checks = [
+        _integer(value, f"qualification producer correctness checks[{rank}]", maximum=1_000_000)
+        for rank, value in enumerate(checks)
+    ]
+    if parsed_checks != parameters.get("expected_correctness_checks_per_rank"):
+        raise PhysicalResultError("qualification producer correctness checks disagree with the frozen workload")
+    if _integer(
+        correctness["total_check_count"],
+        "qualification producer total_check_count",
+        maximum=1_000_000,
+    ) != sum(parsed_checks):
+        raise PhysicalResultError("qualification producer correctness check total is inconsistent")
+
+    makespan = _object(payload["program_makespan"], "qualification producer stdout.program_makespan")
+    _strict(
+        makespan,
+        "qualification producer stdout.program_makespan",
+        ("semantics", "rank_timings_us", "timings_us", "count", "median_us", "max_us"),
+    )
+    if makespan["semantics"] != "maximum-rank-whole-program-wall-clock":
+        raise PhysicalResultError("qualification producer program makespan semantics are unsupported")
+    rank_timings = _object(
+        makespan["rank_timings_us"],
+        "qualification producer stdout.program_makespan.rank_timings_us",
+    )
+    expected_rank_keys = {str(rank) for rank in range(world_size)}
+    if set(rank_timings) != expected_rank_keys:
+        raise PhysicalResultError("qualification producer program timings do not cover the dense rank domain")
+    iterations = _integer(parameters.get("iterations"), "workload.parameters.iterations", minimum=1)
+    parsed_rank_timings = {
+        rank: _samples(
+            rank_timings[str(rank)],
+            f"qualification producer stdout.program_makespan.rank_timings_us[{rank}]",
+        )
+        for rank in range(world_size)
+    }
+    if any(len(values) != iterations for values in parsed_rank_timings.values()):
+        raise PhysicalResultError("qualification producer rank timing count disagrees with iterations")
+    samples = _samples(
+        makespan["timings_us"],
+        "qualification producer stdout.program_makespan.timings_us",
+    )
+    if len(samples) != iterations:
+        raise PhysicalResultError("qualification producer makespan sample count disagrees with iterations")
+    recomputed = tuple(
+        max(parsed_rank_timings[rank][iteration] for rank in range(world_size)) for iteration in range(iterations)
+    )
+    if any(abs(observed - expected) > 0.001 for observed, expected in zip(samples, recomputed)):
+        raise PhysicalResultError("qualification producer makespan samples disagree with rank timings")
+    count = _integer(makespan["count"], "qualification producer stdout.program_makespan.count", minimum=1)
+    if count != len(samples):
+        raise PhysicalResultError("qualification producer makespan count is inconsistent")
+    if abs(_finite(makespan["median_us"], "qualification producer makespan median") - _median(samples)) > 0.001:
+        raise PhysicalResultError("qualification producer makespan median is inconsistent")
+    if abs(_finite(makespan["max_us"], "qualification producer makespan maximum") - max(samples)) > 0.001:
+        raise PhysicalResultError("qualification producer makespan maximum is inconsistent")
+
+    aggregate_samples = _summary_samples(payload["aggregate"], "qualification producer stdout.aggregate")
+    rank_samples = _object(payload["rank_samples"], "qualification producer stdout.rank_samples")
+    if set(rank_samples) != expected_rank_keys or any(not isinstance(rank_samples[key], list) for key in rank_samples):
+        raise PhysicalResultError("qualification producer operation samples do not cover every rank")
+    grouped_samples: Dict[Tuple[int, int, int, str], Dict[int, float]] = {}
+    for rank in range(world_size):
+        raw_samples = cast(List[Any], rank_samples[str(rank)])
+        for index, raw_sample in enumerate(raw_samples):
+            sample = _object(
+                raw_sample,
+                f"qualification producer stdout.rank_samples[{rank}][{index}]",
+            )
+            _strict(
+                sample,
+                f"qualification producer stdout.rank_samples[{rank}][{index}]",
+                ("duration_us", "iteration", "operation", "rank", "request", "sequence"),
+            )
+            observed_rank = _integer(
+                sample["rank"],
+                f"qualification producer operation sample rank[{rank}][{index}]",
+                maximum=world_size - 1,
+            )
+            if observed_rank != rank:
+                raise PhysicalResultError("qualification producer operation sample ownership is inconsistent")
+            iteration = _integer(
+                sample["iteration"],
+                f"qualification producer operation sample iteration[{rank}][{index}]",
+                maximum=iterations - 1,
+            )
+            sequence = _integer(
+                sample["sequence"],
+                f"qualification producer operation sample sequence[{rank}][{index}]",
+                maximum=10_000_000,
+            )
+            request = _integer(
+                sample["request"],
+                f"qualification producer operation sample request[{rank}][{index}]",
+                maximum=10_000_000,
+            )
+            operation = cast(
+                str,
+                _text(
+                    sample["operation"],
+                    f"qualification producer operation sample operation[{rank}][{index}]",
+                    maximum=64,
+                ),
+            )
+            if operation != parameters.get("operation"):
+                raise PhysicalResultError("qualification producer operation sample disagrees with the frozen workload")
+            key = (iteration, sequence, request, operation)
+            by_rank = grouped_samples.setdefault(key, {})
+            if rank in by_rank:
+                raise PhysicalResultError("qualification producer operation sample duplicates one rank")
+            by_rank[rank] = _finite(
+                sample["duration_us"],
+                f"qualification producer operation sample duration[{rank}][{index}]",
+            )
+    operations_per_pass = _integer(
+        parameters.get("expected_communication_operations_per_pass"),
+        "workload.parameters.expected_communication_operations_per_pass",
+        minimum=1,
+        maximum=1_000_000,
+    )
+    if len(grouped_samples) != operations_per_pass * iterations:
+        raise PhysicalResultError("qualification producer operation sample count disagrees with the frozen workload")
+    expected_ranks = set(range(world_size))
+    if any(set(by_rank) != expected_ranks for by_rank in grouped_samples.values()):
+        raise PhysicalResultError("qualification producer operation sample is missing a participating rank")
+    recomputed_aggregate = tuple(max(grouped_samples[key].values()) for key in sorted(grouped_samples))
+    if len(aggregate_samples) != len(recomputed_aggregate) or any(
+        abs(observed - expected) > 0.001 for observed, expected in zip(aggregate_samples, recomputed_aggregate)
+    ):
+        raise PhysicalResultError("qualification producer aggregate samples disagree with rank operation samples")
+    claims = _object(payload["claims"], "qualification producer stdout.claims")
+    if dict(claims) != {
+        "physical_execution": "self_reported_reference_executor",
+        "physical_fidelity": "unproven",
+        "qualification_verdict": "not_issued",
+    }:
+        raise PhysicalResultError("qualification producer claims exceed the diagnostic boundary")
+    return payload, samples
+
+
 def _param_samples(stdout: str, stderr: str) -> Tuple[float, ...]:
     samples: List[float] = []
     for line in (stdout + "\n" + stderr).splitlines():
@@ -694,6 +973,13 @@ def adapt_physical_measurement(
     if measurement_schema == PARAM_MEASUREMENT_SCHEMA:
         samples = _param_samples(stdout, stderr)
         payload = None
+    elif measurement_schema == QUALIFICATION_MEASUREMENT_SCHEMA:
+        world_size, _ = validate_physical_layout(parameter_object)
+        payload, samples = _qualification_payload(
+            stdout,
+            world_size=world_size,
+            parameters=parameter_object,
+        )
     else:
         world_size, _ = validate_physical_layout(parameter_object)
         payload, samples = _torch_payload(stdout, world_size, producer_schema)
@@ -729,6 +1015,33 @@ def adapt_physical_measurement(
             {
                 "replay_mode": _text(parameter_object.get("replay_mode"), "workload.parameters.replay_mode"),
                 "trace_sha256": _sha256(trace_sha256, "trace_sha256"),
+            }
+        )
+    elif measurement_schema == QUALIFICATION_MEASUREMENT_SCHEMA:
+        assert payload is not None
+        correctness = _object(payload["correctness_validation"], "qualification producer correctness validation")
+        measurement.update(
+            {
+                "replay_mode": _text(
+                    parameter_object.get("replay_mode"),
+                    "workload.parameters.replay_mode",
+                ),
+                "request_id": _sha256(payload["request_id"], "qualification request_id"),
+                "materialization_id": _sha256(
+                    payload["materialization_id"],
+                    "qualification materialization_id",
+                ),
+                "program_sha256": _sha256(
+                    payload["program_sha256"],
+                    "qualification program_sha256",
+                ),
+                "correctness_check_count": _integer(
+                    correctness["total_check_count"],
+                    "qualification correctness_check_count",
+                    maximum=1_000_000,
+                ),
+                "rank_compute_operations_per_pass": list(payload["rank_compute_operations_per_pass"]),
+                "rank_tensor_bytes": list(payload["rank_tensor_bytes"]),
             }
         )
     return measurement
