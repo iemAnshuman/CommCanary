@@ -355,9 +355,17 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert qualification_workload.wrapper == "qualification"
     assert qualification_parameters["replay_mode"] == "source-bound-exact-rank-work"
     assert qualification_parameters["expected_request_id"] == (
-        "62dd77fd2f7bb01f45368d909036c09e61870b477c9cc15a58b30bdd5918af60"
+        "4049cab93ba2ed86ce06de8f932d583e91d49bd282ab4b54c16fa84c0e5657e9"
     )
-    assert "{input:qualification-replay-program}" in qualification_parameters["command"]
+    assert qualification_parameters["expected_materialization_id"] == (
+        "e9363c72ab9c0a34751635b933493073c45d101befdee5357cb909a8facfddef"
+    )
+    qualification_command = qualification_parameters["command"]
+    assert qualification_command[
+        qualification_command.index("--module") : qualification_command.index("--module") + 2
+    ] == ["--module", "experiments.rostam.qualification_physical"]
+    assert "{experiment_dir}/qualification_physical.py" not in qualification_command
+    assert "{input:qualification-replay-program}" in qualification_command
     assert "source-capture-evidence" in qualification.required_input_ids
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
