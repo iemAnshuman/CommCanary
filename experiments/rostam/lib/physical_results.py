@@ -30,7 +30,9 @@ QUALIFICATION_PRODUCER_SCHEMA = "commcanary.rostam.physical.qualification-produc
 MICRO_STDOUT_SCHEMA = "commcanary.rostam.microbench_tp8.stdout.v1"
 FULL_STDOUT_SCHEMA = "commcanary.rostam.workload_tp8.stdout.v1"
 OVERLAP_STDOUT_SCHEMA = "commcanary.rostam.overlap_replay.stdout.v1"
-QUALIFICATION_STDOUT_SCHEMA = "commcanary.reference-execution.stdout.v1"
+REFERENCE_EXECUTION_STDOUT_SCHEMA = "commcanary.reference-execution.stdout.v1"
+QUALIFICATION_STDOUT_SCHEMA = "commcanary.rostam.qualification-comparison.stdout.v1"
+SOURCE_TIMING_SEMANTICS = "maximum-rank-unprofiled-whole-program-duration"
 
 
 @dataclass(frozen=True)
@@ -608,16 +610,127 @@ def _summary_samples(raw: Any, field: str) -> Tuple[float, ...]:
     return samples
 
 
+def _qualification_source_capture(
+    raw: Any,
+    *,
+    world_size: int,
+    parameters: Mapping[str, Any],
+) -> Tuple[Mapping[str, Any], Tuple[float, ...]]:
+    source = _object(raw, "qualification producer stdout.source_capture")
+    _strict(
+        source,
+        "qualification producer stdout.source_capture",
+        (
+            "evidence_sha256",
+            "stdout_sha256",
+            "diagnostic_id",
+            "scheduler",
+            "execution_semantics",
+            "timing_semantics",
+            "rank_timings_us",
+            "timings_us",
+            "metrics",
+        ),
+    )
+    for field in ("evidence_sha256", "stdout_sha256"):
+        _sha256(source[field], f"qualification producer stdout.source_capture.{field}")
+    if source["diagnostic_id"] != parameters.get("expected_source_capture_diagnostic_id"):
+        raise PhysicalResultError("qualification source diagnostic id disagrees with the frozen workload")
+    scheduler = _object(source["scheduler"], "qualification producer stdout.source_capture.scheduler")
+    _strict(
+        scheduler,
+        "qualification producer stdout.source_capture.scheduler",
+        ("job_id", "node", "partition"),
+    )
+    expected_scheduler = {
+        "job_id": parameters.get("expected_source_job_id"),
+        "node": parameters.get("expected_source_node"),
+        "partition": parameters.get("expected_source_partition"),
+    }
+    if dict(scheduler) != expected_scheduler:
+        raise PhysicalResultError("qualification source scheduler identity disagrees with the frozen workload")
+    if source["execution_semantics"] != "async-all-reduce-then-gemm-then-explicit-wait":
+        raise PhysicalResultError("qualification source execution semantics are unsupported")
+    if source["timing_semantics"] != SOURCE_TIMING_SEMANTICS:
+        raise PhysicalResultError("qualification source timing semantics are unsupported")
+
+    iterations = _integer(parameters.get("iterations"), "workload.parameters.iterations", minimum=1)
+    rank_timings_raw = source["rank_timings_us"]
+    if not isinstance(rank_timings_raw, list) or len(rank_timings_raw) != world_size:
+        raise PhysicalResultError("qualification source rank timings do not cover every rank")
+    rank_timings = tuple(
+        _samples(
+            values,
+            f"qualification producer stdout.source_capture.rank_timings_us[{rank}]",
+        )
+        for rank, values in enumerate(rank_timings_raw)
+    )
+    if any(len(values) != iterations for values in rank_timings):
+        raise PhysicalResultError("qualification source rank timing count disagrees with iterations")
+    samples = _samples(
+        source["timings_us"],
+        "qualification producer stdout.source_capture.timings_us",
+    )
+    if len(samples) != iterations:
+        raise PhysicalResultError("qualification source timing count disagrees with iterations")
+    recomputed = tuple(
+        max(rank_timings[rank][iteration] for rank in range(world_size)) for iteration in range(iterations)
+    )
+    if samples != recomputed:
+        raise PhysicalResultError("qualification source timings disagree with rank timings")
+
+    metrics = _object(source["metrics"], "qualification producer stdout.source_capture.metrics")
+    _strict(
+        metrics,
+        "qualification producer stdout.source_capture.metrics",
+        ("count", "median_us", "iqr_us", "min_us", "max_us"),
+    )
+    if _integer(metrics["count"], "qualification source count", minimum=1) != len(samples):
+        raise PhysicalResultError("qualification source metric count disagrees with timing samples")
+    expected_metrics = {
+        "median_us": _median(samples),
+        "iqr_us": _iqr(samples),
+        "min_us": min(samples),
+        "max_us": max(samples),
+    }
+    for field, expected in expected_metrics.items():
+        if abs(_finite(metrics[field], f"qualification source {field}") - expected) > 0.001:
+            raise PhysicalResultError(f"qualification source {field} disagrees with timing samples")
+    return source, samples
+
+
 def _qualification_payload(
     stdout: str,
     *,
     world_size: int,
     parameters: Mapping[str, Any],
-) -> Tuple[Mapping[str, Any], Tuple[float, ...]]:
-    payload = _last_json_object(stdout)
+) -> Tuple[Mapping[str, Any], Tuple[float, ...], Mapping[str, Any], Tuple[float, ...]]:
+    envelope = _last_json_object(stdout)
+    _strict(
+        envelope,
+        "qualification producer stdout",
+        ("schema", "source_capture", "execution", "claims"),
+    )
+    if envelope["schema"] != QUALIFICATION_STDOUT_SCHEMA:
+        raise PhysicalResultError(f"qualification producer stdout requires schema {QUALIFICATION_STDOUT_SCHEMA!r}")
+    claims = _object(envelope["claims"], "qualification producer stdout.claims")
+    if dict(claims) != {
+        "single_configuration_timing_comparison": "diagnostic",
+        "physical_fidelity": "unproven",
+        "multi_configuration_ranking": "not_measured",
+        "qualification_verdict": "not_issued",
+    }:
+        raise PhysicalResultError("qualification comparison claims exceed the diagnostic boundary")
+    source, source_samples = _qualification_source_capture(
+        envelope["source_capture"],
+        world_size=world_size,
+        parameters=parameters,
+    )
+
+    payload = _object(envelope["execution"], "qualification producer stdout.execution")
     _strict(
         payload,
-        "qualification producer stdout",
+        "qualification producer stdout.execution",
         (
             "schema",
             "request_id",
@@ -634,8 +747,8 @@ def _qualification_payload(
             "claims",
         ),
     )
-    if payload["schema"] != QUALIFICATION_STDOUT_SCHEMA:
-        raise PhysicalResultError(f"qualification producer stdout requires schema {QUALIFICATION_STDOUT_SCHEMA!r}")
+    if payload["schema"] != REFERENCE_EXECUTION_STDOUT_SCHEMA:
+        raise PhysicalResultError(f"qualification execution requires schema {REFERENCE_EXECUTION_STDOUT_SCHEMA!r}")
     for field in ("request_id", "materialization_id", "program_sha256"):
         observed = _sha256(payload[field], f"qualification producer stdout.{field}")
         expected = parameters.get(f"expected_{field}")
@@ -861,7 +974,7 @@ def _qualification_payload(
         "qualification_verdict": "not_issued",
     }:
         raise PhysicalResultError("qualification producer claims exceed the diagnostic boundary")
-    return payload, samples
+    return payload, samples, source, source_samples
 
 
 def _param_samples(stdout: str, stderr: str) -> Tuple[float, ...]:
@@ -973,9 +1086,11 @@ def adapt_physical_measurement(
     if measurement_schema == PARAM_MEASUREMENT_SCHEMA:
         samples = _param_samples(stdout, stderr)
         payload = None
+        source_capture = None
+        source_samples = None
     elif measurement_schema == QUALIFICATION_MEASUREMENT_SCHEMA:
         world_size, _ = validate_physical_layout(parameter_object)
-        payload, samples = _qualification_payload(
+        payload, samples, source_capture, source_samples = _qualification_payload(
             stdout,
             world_size=world_size,
             parameters=parameter_object,
@@ -983,6 +1098,8 @@ def adapt_physical_measurement(
     else:
         world_size, _ = validate_physical_layout(parameter_object)
         payload, samples = _torch_payload(stdout, world_size, producer_schema)
+        source_capture = None
+        source_samples = None
     measurement = _base_measurement(
         attempt_id=attempt_id,
         parameters=parameter_object,
@@ -1019,7 +1136,21 @@ def adapt_physical_measurement(
         )
     elif measurement_schema == QUALIFICATION_MEASUREMENT_SCHEMA:
         assert payload is not None
+        assert source_capture is not None
+        assert source_samples is not None
         correctness = _object(payload["correctness_validation"], "qualification producer correctness validation")
+        source_scheduler = _object(
+            source_capture["scheduler"],
+            "qualification producer source scheduler",
+        )
+        if str(runtime_object["hostname"]).split(".", 1)[0] != source_scheduler["node"]:
+            raise PhysicalResultError("qualification comparison is not same-node")
+        replay_median = _median(samples)
+        source_median = _median(source_samples)
+        if source_median <= 0.0:
+            raise PhysicalResultError("qualification source median must be positive")
+        signed_error = replay_median - source_median
+        relative_error_pct = signed_error / source_median * 100.0
         measurement.update(
             {
                 "replay_mode": _text(
@@ -1042,6 +1173,24 @@ def adapt_physical_measurement(
                 ),
                 "rank_compute_operations_per_pass": list(payload["rank_compute_operations_per_pass"]),
                 "rank_tensor_bytes": list(payload["rank_tensor_bytes"]),
+                "source_samples_us": list(source_samples),
+                "source_value_us": source_median,
+                "source_iqr_us": _iqr(source_samples),
+                "source_timing_semantics": source_capture["timing_semantics"],
+                "source_capture_diagnostic_id": source_capture["diagnostic_id"],
+                "source_capture_evidence_sha256": source_capture["evidence_sha256"],
+                "source_capture_stdout_sha256": source_capture["stdout_sha256"],
+                "source_capture_job_id": source_scheduler["job_id"],
+                "source_capture_node": source_scheduler["node"],
+                "signed_median_error_us": signed_error,
+                "relative_median_error_pct": relative_error_pct,
+                "absolute_relative_median_error_pct": abs(relative_error_pct),
+                "comparison_claims": {
+                    "single_configuration_timing_comparison": "diagnostic",
+                    "physical_fidelity": "unproven",
+                    "multi_configuration_ranking": "not_measured",
+                    "qualification_verdict": "not_issued",
+                },
             }
         )
     return measurement

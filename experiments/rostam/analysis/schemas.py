@@ -77,6 +77,8 @@ _PHYSICAL_SPECIFIC_FIELDS = {
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: {"replay_mode", "trace_sha256"},
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: {"artifacts"},
     PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: {
+        "absolute_relative_median_error_pct",
+        "comparison_claims",
         "replay_mode",
         "request_id",
         "materialization_id",
@@ -84,6 +86,17 @@ _PHYSICAL_SPECIFIC_FIELDS = {
         "correctness_check_count",
         "rank_compute_operations_per_pass",
         "rank_tensor_bytes",
+        "relative_median_error_pct",
+        "signed_median_error_us",
+        "source_capture_diagnostic_id",
+        "source_capture_evidence_sha256",
+        "source_capture_job_id",
+        "source_capture_node",
+        "source_capture_stdout_sha256",
+        "source_iqr_us",
+        "source_samples_us",
+        "source_timing_semantics",
+        "source_value_us",
     },
 }
 _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
@@ -145,6 +158,15 @@ def _finite_number(value: Any, field: str) -> float:
     number = float(value)
     if not math.isfinite(number) or number < 0:
         raise MeasurementValidationError(f"{field} must be finite and non-negative")
+    return number
+
+
+def _finite_signed_number(value: Any, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise MeasurementValidationError(f"{field} must be a finite number")
+    number = float(value)
+    if not math.isfinite(number):
+        raise MeasurementValidationError(f"{field} must be finite")
     return number
 
 
@@ -335,11 +357,79 @@ def _physical_measurement(
                     f"physical qualification {field} must cover every rank with non-negative integers"
                 )
             rank_vectors[field] = list(values)
+        source_samples_raw = raw["source_samples_us"]
+        if not isinstance(source_samples_raw, list) or len(source_samples_raw) != len(samples):
+            raise MeasurementValidationError(
+                "physical qualification source_samples_us must match the replay sample count"
+            )
+        source_samples = tuple(
+            _finite_number(value, f"measurement.source_samples_us[{index}]")
+            for index, value in enumerate(source_samples_raw)
+        )
+        source_value_us = _finite_number(raw["source_value_us"], "measurement.source_value_us")
+        if source_value_us <= 0.0 or source_value_us != _median(source_samples):
+            raise MeasurementValidationError(
+                "physical qualification source_value_us must equal the positive source median"
+            )
+        source_iqr_us = _finite_number(raw["source_iqr_us"], "measurement.source_iqr_us")
+        if source_iqr_us != _iqr(source_samples):
+            raise MeasurementValidationError("physical qualification source_iqr_us must equal the source sample IQR")
+        source_identities = {}
+        for field in ("source_capture_evidence_sha256", "source_capture_stdout_sha256"):
+            value = raw[field]
+            if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+                raise MeasurementValidationError(f"physical qualification {field} is invalid")
+            source_identities[field] = value
+        for field in ("source_capture_diagnostic_id", "source_capture_job_id", "source_capture_node"):
+            value = raw[field]
+            if not isinstance(value, str) or not value or "\x00" in value:
+                raise MeasurementValidationError(f"physical qualification {field} is invalid")
+            source_identities[field] = value
+        if raw["source_timing_semantics"] != "maximum-rank-unprofiled-whole-program-duration":
+            raise MeasurementValidationError("physical qualification source timing semantics are unsupported")
+        signed_error = _finite_signed_number(
+            raw["signed_median_error_us"],
+            "measurement.signed_median_error_us",
+        )
+        relative_error = _finite_signed_number(
+            raw["relative_median_error_pct"],
+            "measurement.relative_median_error_pct",
+        )
+        absolute_error = _finite_number(
+            raw["absolute_relative_median_error_pct"],
+            "measurement.absolute_relative_median_error_pct",
+        )
+        expected_signed = value_us - source_value_us
+        expected_relative = expected_signed / source_value_us * 100.0
+        if (
+            signed_error != expected_signed
+            or relative_error != expected_relative
+            or absolute_error != abs(expected_relative)
+        ):
+            raise MeasurementValidationError("physical qualification comparison metrics are inconsistent")
+        claims = raw["comparison_claims"]
+        expected_claims = {
+            "single_configuration_timing_comparison": "diagnostic",
+            "physical_fidelity": "unproven",
+            "multi_configuration_ranking": "not_measured",
+            "qualification_verdict": "not_issued",
+        }
+        if not isinstance(claims, Mapping) or dict(claims) != expected_claims:
+            raise MeasurementValidationError("physical qualification comparison claims exceed the diagnostic boundary")
         physical_attributes = {
             "replay_mode": raw["replay_mode"],
             **identities,
             "correctness_check_count": correctness_check_count,
             **rank_vectors,
+            "source_samples_us": list(source_samples),
+            "source_value_us": source_value_us,
+            "source_iqr_us": source_iqr_us,
+            "source_timing_semantics": raw["source_timing_semantics"],
+            **source_identities,
+            "signed_median_error_us": signed_error,
+            "relative_median_error_pct": relative_error,
+            "absolute_relative_median_error_pct": absolute_error,
+            "comparison_claims": expected_claims,
         }
     physical = PhysicalMeasurement(
         operation="all_reduce",

@@ -554,17 +554,32 @@ def _physical_binding(
         for artifact in physical.artifacts:
             verify_artifact_reference(frozen.directory, ArtifactReference.from_dict(artifact.to_reference()))
     elif workload.measurement_schema == PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA:
+        input_sha256 = {item.id: item.sha256 for item in manifest.campaign.inputs}
         expected_attributes = {
             "replay_mode": parameters.get("replay_mode"),
             "request_id": parameters.get("expected_request_id"),
             "materialization_id": parameters.get("expected_materialization_id"),
             "program_sha256": parameters.get("expected_program_sha256"),
+            "source_capture_diagnostic_id": parameters.get("expected_source_capture_diagnostic_id"),
+            "source_capture_job_id": parameters.get("expected_source_job_id"),
+            "source_capture_node": parameters.get("expected_source_node"),
+            "source_capture_evidence_sha256": input_sha256.get("source-capture-evidence"),
+            "source_capture_stdout_sha256": input_sha256.get("source-capture-stdout"),
         }
         for field, expected in expected_attributes.items():
             if attributes.get(field) != expected:
                 raise AnalysisValidationError(f"physical qualification {field} is stale for cell {cell.id!r}")
         if not isinstance(attributes.get("correctness_check_count"), int):
             raise AnalysisValidationError(f"physical qualification correctness evidence is stale for cell {cell.id!r}")
+        if attributes.get("source_capture_node") != physical.runtime.hostname.split(".", 1)[0]:
+            raise AnalysisValidationError(f"physical qualification comparison is not same-node for cell {cell.id!r}")
+        if attributes.get("comparison_claims") != {
+            "single_configuration_timing_comparison": "diagnostic",
+            "physical_fidelity": "unproven",
+            "multi_configuration_ranking": "not_measured",
+            "qualification_verdict": "not_issued",
+        }:
+            raise AnalysisValidationError(f"physical qualification claims are stale for cell {cell.id!r}")
     return {
         "wall_time_s": physical.wall_time_s,
         "measurement_iqr_us": physical.iqr_us,

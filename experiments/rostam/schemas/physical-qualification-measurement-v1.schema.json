@@ -3,7 +3,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "absolute_relative_median_error_pct": {"minimum": 0, "type": "number"},
     "attempt_id": {"pattern": "^a-[0-9]{6}$", "type": "string"},
+    "comparison_claims": {
+      "additionalProperties": false,
+      "properties": {
+        "multi_configuration_ranking": {"const": "not_measured"},
+        "physical_fidelity": {"const": "unproven"},
+        "qualification_verdict": {"const": "not_issued"},
+        "single_configuration_timing_comparison": {"const": "diagnostic"}
+      },
+      "required": ["multi_configuration_ranking", "physical_fidelity", "qualification_verdict", "single_configuration_timing_comparison"],
+      "type": "object"
+    },
     "correctness_check_count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
     "count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
     "global_ranks": {"items": {"minimum": 0, "type": "integer"}, "minItems": 1, "type": "array", "uniqueItems": true},
@@ -13,6 +25,7 @@
     "program_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "rank_compute_operations_per_pass": {"items": {"minimum": 0, "type": "integer"}, "maxItems": 1024, "minItems": 1, "type": "array"},
     "rank_tensor_bytes": {"items": {"minimum": 0, "type": "integer"}, "maxItems": 1024, "minItems": 1, "type": "array"},
+    "relative_median_error_pct": {"type": "number"},
     "replay_mode": {"const": "source-bound-exact-rank-work"},
     "request_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "runtime": {
@@ -29,10 +42,20 @@
       "type": "object"
     },
     "samples_us": {"items": {"minimum": 0, "type": "number"}, "maxItems": 1000000, "minItems": 1, "type": "array"},
+    "signed_median_error_us": {"type": "number"},
+    "source_capture_diagnostic_id": {"minLength": 1, "type": "string"},
+    "source_capture_evidence_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "source_capture_job_id": {"minLength": 1, "type": "string"},
+    "source_capture_node": {"minLength": 1, "type": "string"},
+    "source_capture_stdout_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "source_iqr_us": {"minimum": 0, "type": "number"},
+    "source_samples_us": {"items": {"minimum": 0, "type": "number"}, "maxItems": 1000000, "minItems": 1, "type": "array"},
+    "source_timing_semantics": {"const": "maximum-rank-unprofiled-whole-program-duration"},
+    "source_value_us": {"exclusiveMinimum": 0, "type": "number"},
     "value_us": {"minimum": 0, "type": "number"},
     "wall_time_s": {"minimum": 0, "type": "number"},
     "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
   },
-  "required": ["attempt_id", "correctness_check_count", "count", "global_ranks", "iqr_us", "materialization_id", "operation", "program_sha256", "rank_compute_operations_per_pass", "rank_tensor_bytes", "replay_mode", "request_id", "runtime", "samples_us", "value_us", "wall_time_s", "world_size"],
+  "required": ["absolute_relative_median_error_pct", "attempt_id", "comparison_claims", "correctness_check_count", "count", "global_ranks", "iqr_us", "materialization_id", "operation", "program_sha256", "rank_compute_operations_per_pass", "rank_tensor_bytes", "relative_median_error_pct", "replay_mode", "request_id", "runtime", "samples_us", "signed_median_error_us", "source_capture_diagnostic_id", "source_capture_evidence_sha256", "source_capture_job_id", "source_capture_node", "source_capture_stdout_sha256", "source_iqr_us", "source_samples_us", "source_timing_semantics", "source_value_us", "value_us", "wall_time_s", "world_size"],
   "type": "object"
 }

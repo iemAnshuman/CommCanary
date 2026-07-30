@@ -444,6 +444,10 @@
           "{input:qualification-materialization-manifest}",
           "--replay-program",
           "{input:qualification-replay-program}",
+          "--source-capture-evidence",
+          "{input:source-capture-evidence}",
+          "--source-capture-stdout",
+          "{input:source-capture-stdout}",
           "--device",
           "cuda",
           "--backend",
@@ -464,6 +468,10 @@
         "expected_rank_compute_operations_per_pass": [8, 8, 8, 8],
         "expected_rank_tensor_bytes": [135397376, 135495680, 135561216, 135659520],
         "expected_request_id": "62dd77fd2f7bb01f45368d909036c09e61870b477c9cc15a58b30bdd5918af60",
+        "expected_source_capture_diagnostic_id": "d-overlap-capture-a7a0b25e-91846023-r3",
+        "expected_source_job_id": "177966",
+        "expected_source_node": "toranj1",
+        "expected_source_partition": "cuda-A100",
         "global_ranks": [0, 1, 2, 3],
         "iterations": 20,
         "operation": "all_reduce",
@@ -510,7 +518,8 @@
         "qualification-request-manifest",
         "qualification-source-trace",
         "rostam-catalog",
-        "source-capture-evidence"
+        "source-capture-evidence",
+        "source-capture-stdout"
       ],
       "workload_ids": ["qualification-exact"]
     }

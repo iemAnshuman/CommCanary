@@ -183,18 +183,22 @@ the node that produced the preserved source capture. The cell collects twenty
 maximum-rank whole-program samples internally; campaign repetitions remain
 one. Freezing requires the exact request manifest, source trace, canary,
 fidelity verification, materialization manifest, replay program, and preserved
-source-capture evidence as separately named inputs. The physical producer
-revalidates the complete request/materialization chain independently on every
-rank before initializing `torch.distributed`, then executes only asynchronous
-collective issue, the source-bound rank-local rectangular GEMM, and immediate
-explicit wait.
+source-capture evidence **and raw source-timing stdout** as separately named
+inputs. The evidence file's committed stdout hash and timing summary must
+recompute from those exact raw bytes. The physical producer revalidates the
+complete request/materialization chain and source observation independently on
+every rank before initializing `torch.distributed`, then executes only
+asynchronous collective issue, the source-bound rank-local rectangular GEMM,
+and immediate explicit wait.
 
-The source-capture input is bound for the later byte-verifiable diagnostic
-comparison; it is not treated as a measurement emitted by the new cell.
-Executor success proves neither timing fidelity nor a qualification verdict.
-Do not add an acceptance tolerance or issue a verdict until the same-node
-measurement and the later multi-configuration ranking gate provide a reviewed
-basis for that policy.
+The cell measurement retains both twenty-sample distributions, proves that
+their maximum-rank timing semantics match, requires the observed execution
+node to equal the source node, and deterministically reports signed and
+relative median error. This is a byte-verifiable single-configuration
+diagnostic, not an acceptance decision. Executor success and a same-node
+timing comparison prove neither physical fidelity nor a qualification verdict.
+Do not add an acceptance tolerance or issue a verdict until the later
+multi-configuration ranking gate provides a reviewed basis for that policy.
 
 ## Historical physical execution boundary
 

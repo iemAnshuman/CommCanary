@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import builtins
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -71,6 +72,71 @@ def _qualification_sources(tmp_path: Path) -> dict[str, Path]:
     return sources
 
 
+def _source_capture_files(tmp_path: Path) -> tuple[Path, Path]:
+    rank_timings = [
+        [1.0, 5.0, 3.0],
+        [2.0, 4.0, 6.0],
+        [3.0, 3.0, 4.0],
+        [4.0, 2.0, 5.0],
+    ]
+    timings = [4.0, 5.0, 6.0]
+    stdout_payload = {
+        "schema": qualification_physical.SOURCE_CAPTURE_STDOUT_SCHEMA,
+        "rank": 0,
+        "world_size": 4,
+        "tokens": 2,
+        "layers": 4,
+        "hidden": 8192,
+        "gemm_m_rank0": 12,
+        "gemm_n": 8192,
+        "dtype": "bf16",
+        "msg_sizes_bytes": [65536, 131072],
+        "inject_skew": 0.25,
+        "distributed_timeout_seconds": 300,
+        "execution_semantics": "async-all-reduce-then-gemm-then-explicit-wait",
+        "warmup_programs": 5,
+        "measurement_iterations": 3,
+        "profile_warmup_programs": 1,
+        "profiled_programs": 1,
+        "rank_timings_us": rank_timings,
+        "timings_us": timings,
+        "timing_semantics": qualification_physical.SOURCE_TIMING_SEMANTICS,
+        "metrics": {"count": 3, "median_us": 5.0, "iqr_us": 2.0},
+        "profiles": [],
+    }
+    stdout_path = tmp_path / "capture.stdout.json"
+    stdout_path.write_text(
+        json.dumps(stdout_payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    stdout_bytes = stdout_path.read_bytes()
+    evidence_payload = {
+        "schema": qualification_physical.SOURCE_CAPTURE_EVIDENCE_SCHEMA,
+        "diagnostic_id": "source-diagnostic",
+        "attempt_id": "a-000001",
+        "scheduler": {"job_id": "177966", "node": "toranj1", "partition": "cuda-A100"},
+        "input_bindings": {},
+        "capture": {
+            "execution_semantics": "async-all-reduce-then-gemm-then-explicit-wait",
+            "measurement_iterations": 3,
+            "metrics": {"count": 3, "median_us": 5.0, "iqr_us": 2.0},
+            "timing_range_us": {"min": 4.0, "max": 6.0},
+            "timing_semantics": qualification_physical.SOURCE_TIMING_SEMANTICS,
+        },
+        "import": {},
+        "artifacts": {
+            "capture.stdout.json": {
+                "sha256": hashlib.sha256(stdout_bytes).hexdigest(),
+                "size_bytes": len(stdout_bytes),
+            }
+        },
+        "claims": {},
+    }
+    evidence_path = tmp_path / "capture-evidence.json"
+    evidence_path.write_text(json.dumps(evidence_payload), encoding="utf-8")
+    return evidence_path, stdout_path
+
+
 def test_qualification_inputs_are_rank_local_canonical_and_non_overwriting(tmp_path: Path) -> None:
     sources = _qualification_sources(tmp_path)
     request, materialization = qualification_physical.stage_qualification_inputs(
@@ -113,6 +179,33 @@ def test_qualification_staging_refuses_symlinked_and_empty_sources(tmp_path: Pat
             empty_sources,
             rank=1,
             workspace=tmp_path,
+        )
+
+
+def test_qualification_source_observation_is_hash_bound_and_recomputed(tmp_path: Path) -> None:
+    evidence_path, stdout_path = _source_capture_files(tmp_path)
+    observed = qualification_physical.load_source_capture_observation(
+        evidence_path,
+        stdout_path,
+        world_size=4,
+        iterations=3,
+    )
+
+    assert observed["timings_us"] == [4.0, 5.0, 6.0]
+    assert observed["metrics"] == {
+        "count": 3,
+        "median_us": 5.0,
+        "iqr_us": 2.0,
+        "min_us": 4.0,
+        "max_us": 6.0,
+    }
+    stdout_path.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(SystemExit, match="bytes disagree"):
+        qualification_physical.load_source_capture_observation(
+            evidence_path,
+            stdout_path,
+            world_size=4,
+            iterations=3,
         )
 
 

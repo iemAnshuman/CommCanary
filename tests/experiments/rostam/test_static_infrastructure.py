@@ -40,6 +40,7 @@ from experiments.rostam.lib.physical_results import (
     QUALIFICATION_MEASUREMENT_SCHEMA,
     QUALIFICATION_PRODUCER_SCHEMA,
     QUALIFICATION_STDOUT_SCHEMA,
+    REFERENCE_EXECUTION_STDOUT_SCHEMA,
     PhysicalResultError,
     adapt_physical_measurement,
     validate_param_trace,
@@ -165,13 +166,17 @@ def _qualification_parameters() -> dict[str, object]:
         "expected_rank_compute_operations_per_pass": [8, 8, 8, 8],
         "expected_rank_tensor_bytes": [16, 16, 16, 16],
         "expected_request_id": "a" * 64,
+        "expected_source_capture_diagnostic_id": "source-diagnostic",
+        "expected_source_job_id": "177966",
+        "expected_source_node": "toranj0",
+        "expected_source_partition": "cuda-A100",
         "iterations": 3,
         "replay_mode": "source-bound-exact-rank-work",
         "warmup": 1,
     }
 
 
-def _qualification_payload() -> dict[str, object]:
+def _qualification_execution_payload() -> dict[str, object]:
     rank_timings = {
         "0": [1.0, 5.0, 3.0],
         "1": [2.0, 4.0, 6.0],
@@ -193,7 +198,7 @@ def _qualification_payload() -> dict[str, object]:
         for rank in range(4)
     }
     return {
-        "schema": QUALIFICATION_STDOUT_SCHEMA,
+        "schema": REFERENCE_EXECUTION_STDOUT_SCHEMA,
         "request_id": "a" * 64,
         "materialization_id": "b" * 64,
         "program_sha256": "c" * 64,
@@ -240,6 +245,46 @@ def _qualification_payload() -> dict[str, object]:
         "claims": {
             "physical_execution": "self_reported_reference_executor",
             "physical_fidelity": "unproven",
+            "qualification_verdict": "not_issued",
+        },
+    }
+
+
+def _qualification_payload() -> dict[str, object]:
+    rank_timings = [
+        [1.0, 5.0, 3.0],
+        [2.0, 4.0, 6.0],
+        [3.0, 3.0, 4.0],
+        [4.0, 2.0, 5.0],
+    ]
+    return {
+        "schema": QUALIFICATION_STDOUT_SCHEMA,
+        "source_capture": {
+            "evidence_sha256": "d" * 64,
+            "stdout_sha256": "e" * 64,
+            "diagnostic_id": "source-diagnostic",
+            "scheduler": {
+                "job_id": "177966",
+                "node": "toranj0",
+                "partition": "cuda-A100",
+            },
+            "execution_semantics": "async-all-reduce-then-gemm-then-explicit-wait",
+            "timing_semantics": "maximum-rank-unprofiled-whole-program-duration",
+            "rank_timings_us": rank_timings,
+            "timings_us": [4.0, 5.0, 6.0],
+            "metrics": {
+                "count": 3,
+                "median_us": 5.0,
+                "iqr_us": 2.0,
+                "min_us": 4.0,
+                "max_us": 6.0,
+            },
+        },
+        "execution": _qualification_execution_payload(),
+        "claims": {
+            "single_configuration_timing_comparison": "diagnostic",
+            "physical_fidelity": "unproven",
+            "multi_configuration_ranking": "not_measured",
             "qualification_verdict": "not_issued",
         },
     }
@@ -446,6 +491,10 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
     assert qualification["materialization_id"] == "b" * 64
     assert qualification["program_sha256"] == "c" * 64
     assert qualification["correctness_check_count"] == 4
+    assert qualification["source_samples_us"] == [4.0, 5.0, 6.0]
+    assert qualification["signed_median_error_us"] == 0.0
+    assert qualification["relative_median_error_pct"] == 0.0
+    assert qualification["source_capture_evidence_sha256"] == "d" * 64
     qualification_scalar = validate_scalar_measurement(
         PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
         QUALIFICATION_PRODUCER_SCHEMA,
@@ -455,9 +504,16 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
     assert qualification_scalar.samples_us == (4.0, 5.0, 6.0)
     assert qualification_scalar.physical is not None
     assert qualification_scalar.physical.attributes["replay_mode"] == ("source-bound-exact-rank-work")
+    assert qualification_scalar.physical.attributes["comparison_claims"] == {
+        "single_configuration_timing_comparison": "diagnostic",
+        "physical_fidelity": "unproven",
+        "multi_configuration_ranking": "not_measured",
+        "qualification_verdict": "not_issued",
+    }
 
     stale_qualification = _qualification_payload()
-    stale_qualification["request_id"] = "d" * 64
+    assert isinstance(stale_qualification["execution"], dict)
+    stale_qualification["execution"]["request_id"] = "f" * 64
     with pytest.raises(PhysicalResultError, match="disagrees with the frozen workload"):
         adapt_physical_measurement(
             measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
@@ -471,8 +527,9 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
         )
 
     inconsistent_makespan = _qualification_payload()
-    assert isinstance(inconsistent_makespan["program_makespan"], dict)
-    inconsistent_makespan["program_makespan"]["timings_us"] = [4.0, 5.0, 5.0]
+    assert isinstance(inconsistent_makespan["execution"], dict)
+    assert isinstance(inconsistent_makespan["execution"]["program_makespan"], dict)
+    inconsistent_makespan["execution"]["program_makespan"]["timings_us"] = [4.0, 5.0, 5.0]
     with pytest.raises(PhysicalResultError, match="disagree with rank timings"):
         adapt_physical_measurement(
             measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
@@ -486,10 +543,11 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
         )
 
     inconsistent_aggregate = _qualification_payload()
-    assert isinstance(inconsistent_aggregate["aggregate"], dict)
-    inconsistent_aggregate["aggregate"]["timings_us"] = [3.0, 4.0, 4.0]
-    inconsistent_aggregate["aggregate"]["median_us"] = 4.0
-    inconsistent_aggregate["aggregate"]["max_us"] = 4.0
+    assert isinstance(inconsistent_aggregate["execution"], dict)
+    assert isinstance(inconsistent_aggregate["execution"]["aggregate"], dict)
+    inconsistent_aggregate["execution"]["aggregate"]["timings_us"] = [3.0, 4.0, 4.0]
+    inconsistent_aggregate["execution"]["aggregate"]["median_us"] = 4.0
+    inconsistent_aggregate["execution"]["aggregate"]["max_us"] = 4.0
     with pytest.raises(PhysicalResultError, match="disagree with rank operation samples"):
         adapt_physical_measurement(
             measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
@@ -500,6 +558,20 @@ def test_physical_adapters_emit_distinct_strict_measurements() -> None:
             stderr="",
             wall_time_s=1.25,
             runtime=_runtime(),
+        )
+
+    not_same_node = _runtime()
+    not_same_node["hostname"] = "toranj1"
+    with pytest.raises(PhysicalResultError, match="not same-node"):
+        adapt_physical_measurement(
+            measurement_schema=QUALIFICATION_MEASUREMENT_SCHEMA,
+            producer_schema=QUALIFICATION_PRODUCER_SCHEMA,
+            attempt_id="a-000011",
+            parameters=_qualification_parameters(),
+            stdout=_qualification_stdout(),
+            stderr="",
+            wall_time_s=1.25,
+            runtime=not_same_node,
         )
 
     with pytest.raises(PhysicalResultError, match="requires producer"):
@@ -767,6 +839,7 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
         "qualification-request-manifest",
         "qualification-source-trace",
         "source-capture-evidence",
+        "source-capture-stdout",
     ):
         path = tmp_path / f"{input_id}.json"
         path.write_text(json.dumps({"input_id": input_id}) + "\n", encoding="utf-8")
@@ -797,6 +870,7 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
         "qualification-source-trace",
         "rostam-catalog",
         "source-capture-evidence",
+        "source-capture-stdout",
     }
     frozen = freeze_campaign(campaign, tmp_path / "qualification-results")
     plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True)
