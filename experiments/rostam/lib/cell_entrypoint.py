@@ -410,9 +410,10 @@ def _runtime_environment(configuration: Any, experiment_directory: Path, nccl_li
         if not isinstance(key, str) or not isinstance(value, str):
             raise CellEntrypointError("configuration environment must contain strings")
         result[key] = value
+    repository_root = experiment_directory.parent.parent
     third_party = experiment_directory / "third_party"
     result["LD_LIBRARY_PATH"] = str(nccl_library.parent)
-    result["PYTHONPATH"] = os.pathsep.join((str(third_party), str(third_party / "param")))
+    result["PYTHONPATH"] = os.pathsep.join((str(repository_root), str(third_party), str(third_party / "param")))
     return result
 
 

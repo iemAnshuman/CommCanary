@@ -5,6 +5,7 @@ import importlib
 import io
 import os
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Sequence
@@ -124,6 +125,45 @@ def test_pipeline_final_check_truncates_direct_log_path_writes(
     assert exceeded is True
     assert reason == "stdout or stderr exceeded 256 bytes"
     assert stdout_path.stat().st_size == 256
+
+
+def test_runtime_environment_exposes_bound_experiment_modules_from_workspace(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    experiment_directory = Path(cell_entrypoint.__file__).resolve().parents[1]
+    repository_root = experiment_directory.parent.parent
+    monkeypatch.setenv("PYTHONPATH", "/unreviewed/inherited/path")
+    configuration = SimpleNamespace(environment=SimpleNamespace(to_value=lambda: {}))
+
+    environment = cell_entrypoint._runtime_environment(
+        configuration,
+        experiment_directory,
+        tmp_path / "nccl" / "libnccl.so.2",
+    )
+
+    assert environment["PYTHONPATH"].split(os.pathsep) == [
+        str(repository_root),
+        str(experiment_directory / "third_party"),
+        str(experiment_directory / "third_party" / "param"),
+    ]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib.util; "
+                "spec = importlib.util.find_spec('experiments.rostam.qualification_physical'); "
+                "raise SystemExit(spec is None)"
+            ),
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
 
 
 def test_runtime_probe_enforces_its_memory_cap_with_mocked_process(
