@@ -17,8 +17,8 @@ reference-workload runs preserve all of that but need model code, data, and a
 cluster. CommCanary occupies the space between: a portable request distilled
 from *your* workload's trace, carrying no weights or prompts, whose source
 correspondence a receiving lab can recompute before target-specific replay.
-Physical fidelity on imported profiles remains the deciding open experiment,
-not an implied property of the file format.
+Cross-configuration decision fidelity on imported profiles remains the
+deciding open experiment, not an implied property of the file format.
 
 ![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
 table, the threshold reasons that tripped, and per-phase and per-operation regression
@@ -104,9 +104,12 @@ source + canary + fidelity ──▶ qualification request
                                       │ bounded reference executor
                                       ▼
                           self-reported diagnostic
-                                      │ GPU conformance + observation contract pending
+                                      │ bound raw observation
                                       ▼
                            verifiable physical observation
+                                      │ decision matrix pending
+                                      ▼
+                         qualification verdict (not issued)
 ```
 
 The physical path is intentionally staged. A portable request contains the
@@ -119,14 +122,16 @@ qualification verdict.
 
 ### What this is not
 
-- **Not yet a validated physical NCCL executor.** The bundled replay engine is
-  a deterministic simulator. A separate `execute-materialization` reference
-  runner now exercises torch.distributed, but its control flow has only local
-  injected-runtime coverage; GPU conformance remains unproven.
-- **Not yet a source of defensible hardware numbers.** The reference runner
-  emits a request/materialization-bound diagnostic, not a versioned physical
-  observation or qualification verdict. Claims about hardware still require
-  GPU validation, retained raw measurements, and cross-system evaluation.
+- **Not yet a validated hardware-qualification decision tool.** The
+  `execute-materialization` reference path has run exact source-derived work on
+  four A100s and passed 32/32 deterministic data checks. Its one-configuration
+  same-node timing difference was +7.4533578967%, but no tolerance was declared
+  before observation and no configuration ordering was measured. It therefore
+  issued no qualification verdict.
+- **Not a source of portable hardware numbers.** The physical observation is
+  bound to one request, materialization, node, software stack, and pair of raw
+  twenty-sample distributions. Other hardware still requires its own retained
+  measurements and reviewed decision policy.
 - **Not yet validated against a multi-node cluster.** That campaign is
   specified in [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md)
   and has not run.
