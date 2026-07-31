@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import platform
+import socket
+import statistics
+from datetime import datetime, timezone
+from pathlib import Path
+
+import torch
+
+
+def quartiles(values: list[float]) -> tuple[float, float, float]:
+    q1, median, q3 = statistics.quantiles(
+        values, n=4, method="inclusive"
+    )
+    return q1, median, q3
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--output-directory", required=True)
+parser.add_argument("--expected-head", required=True)
+parser.add_argument("--expected-script-sha256", required=True)
+args = parser.parse_args()
+
+script_path = Path(__file__).resolve()
+script_sha256 = hashlib.sha256(script_path.read_bytes()).hexdigest()
+if script_sha256 != args.expected_script_sha256:
+    raise SystemExit("STOP: calibration script changed before execution")
+
+if not torch.cuda.is_available():
+    raise SystemExit("STOP: CUDA is unavailable")
+
+device_count = torch.cuda.device_count()
+if device_count != 4:
+    raise SystemExit(f"STOP: expected 4 visible GPUs, found {device_count}")
+
+dimension = 1024
+warmup_batches = 200
+operations_per_batch = 200
+samples_per_gpu = 41
+dtype = torch.bfloat16
+
+torch.set_grad_enabled(False)
+per_gpu = []
+
+for device_index in range(device_count):
+    torch.cuda.set_device(device_index)
+    if not torch.cuda.is_bf16_supported():
+        raise SystemExit(
+            f"STOP: GPU {device_index} does not report BF16 support"
+        )
+
+    device = torch.device("cuda", device_index)
+    left = torch.randn(
+        (dimension, dimension), device=device, dtype=dtype
+    )
+    right = torch.randn(
+        (dimension, dimension), device=device, dtype=dtype
+    )
+
+    for _ in range(warmup_batches):
+        for _ in range(operations_per_batch):
+            torch.mm(left, right)
+        torch.cuda.synchronize(device)
+
+    samples_us = []
+    for _ in range(samples_per_gpu):
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+        start.record()
+        for _ in range(operations_per_batch):
+            torch.mm(left, right)
+        end.record()
+        end.synchronize()
+        samples_us.append(
+            start.elapsed_time(end) * 1000.0 / operations_per_batch
+        )
+
+    q1, median, q3 = quartiles(samples_us)
+    properties = torch.cuda.get_device_properties(device_index)
+    per_gpu.append(
+        {
+            "device_index": device_index,
+            "device_name": properties.name,
+            "compute_capability": [
+                properties.major,
+                properties.minor,
+            ],
+            "median_us": round(median, 6),
+            "iqr_us": round(q3 - q1, 6),
+            "minimum_us": round(min(samples_us), 6),
+            "maximum_us": round(max(samples_us), 6),
+            "samples_us": [round(value, 6) for value in samples_us],
+        }
+    )
+
+device_medians = [row["median_us"] for row in per_gpu]
+recommended_us = round(statistics.median(device_medians), 6)
+
+record = {
+    "schema": "commcanary.rostam.gemm-calibration.v1",
+    "created_at_utc": datetime.now(timezone.utc).isoformat(),
+    "host": socket.gethostname(),
+    "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+    "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),
+    "slurm_node_list": os.environ.get("SLURM_JOB_NODELIST"),
+    "repository_head": args.expected_head,
+    "script_sha256": script_sha256,
+    "python_version": platform.python_version(),
+    "torch_version": torch.__version__,
+    "torch_cuda_version": torch.version.cuda,
+    "calibration": {
+        "operation": "torch.mm",
+        "dtype": "bfloat16",
+        "dimension": dimension,
+        "warmup_batches": warmup_batches,
+        "operations_per_batch": operations_per_batch,
+        "samples_per_gpu": samples_per_gpu,
+        "visible_gpu_count": device_count,
+        "per_gpu": per_gpu,
+        "recommended_us_per_gemm": recommended_us,
+        "selection_rule": "median of the four per-GPU medians",
+    },
+}
+
+output_directory = Path(args.output_directory)
+output_directory.mkdir(parents=True, exist_ok=True)
+job_id = os.environ.get("SLURM_JOB_ID", "unknown")
+output_path = output_directory / f"gemm-bf16-1024-job-{job_id}.json"
+if output_path.exists():
+    raise SystemExit(f"STOP: calibration output already exists: {output_path}")
+
+temporary_path = output_path.with_suffix(".json.tmp")
+temporary_path.write_text(
+    json.dumps(record, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+os.replace(temporary_path, output_path)
+
+print("GEMM_CALIBRATION_COMPLETE")
+print("output:", output_path)
+print("script_sha256:", script_sha256)
+print("device_medians_us:", device_medians)
+print("recommended_us_per_gemm:", recommended_us)
+print(
+    "output_sha256:",
+    hashlib.sha256(output_path.read_bytes()).hexdigest(),
+)

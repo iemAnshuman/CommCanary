@@ -1,0 +1,6 @@
+GEMM_CALIBRATION_COMPLETE
+output: /home/aagrawal/CommCanary/experiments/rostam/results/calibrations/bf16-gemm-1024/gemm-bf16-1024-job-173393.json
+script_sha256: 63e054f703ab3dca33e5cba9517ceefa3513ed88e5e6c4aee4dd5744b032eeb0
+device_medians_us: [19.09248, 19.010561, 19.174401, 19.08736]
+recommended_us_per_gemm: 19.08992
+output_sha256: cc4952da314e43f9885fd24dd85afa97440b0007edb2b0d6773d96f2b2deeecf
