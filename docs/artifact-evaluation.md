@@ -377,6 +377,17 @@ issue to the exact contiguous GEMMs before its explicit wait. Target
 materialization reproduces that issue/work/wait program without fitting source
 durations or applying a target calibration.
 
+The reviewed target environment contract has SHA-256
+`b51cffac1c66eeef636c034a40a80cd9b418969cf8c7b7a26a43f902e48f8d19`.
+It binds wheel
+`6511cca9c660992121e799a6aa999927d610b425794e428be9d85b35ef3be1b3`
+and the complete CPython 3.12.3 / torch 2.4.1 environments with freeze hashes
+`720014e3ea11675c48f6b7a2ba98814448e6d67d1ba5cfb7fd9244b1ab180dae`
+for NCCL 2.19.3 and
+`455bfa17975edee1da5e5328128608b46d42fdfda9de5450b6566381cdb8173b`
+for NCCL 2.20.5. The resolver report, hash-complete locks, wheel, source
+archive, checksums, inventory, and SBOM are retained with the results.
+
 Two failed integration campaigns remain preserved. Job `178513` launched the
 qualification file by path; job `178514` used module mode without exposing the
 manifest-bound repository package to the isolated child. Their attempt-record
