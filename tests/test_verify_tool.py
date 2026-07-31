@@ -51,7 +51,6 @@ def test_installed_source_mirror_rejects_stale_build_members(tmp_path: Path) -> 
         "src/commcanary.egg-info/PKG-INFO",
         ".benchmark-data/results.json",
         "release-metadata/SHA256SUMS",
-        "experiments/rostam/results/run/result.json",
     ),
 )
 def test_repository_hygiene_rejects_private_and_generated_paths(raw_path: str) -> None:
@@ -61,6 +60,11 @@ def test_repository_hygiene_rejects_private_and_generated_paths(raw_path: str) -
 def test_repository_hygiene_allows_reviewed_source_and_golden_fixtures() -> None:
     assert not verify._forbidden_tracked_path(Path("src/commcanary/schema.py"))
     assert not verify._forbidden_tracked_path(Path("tests/fixtures/experiments/golden/aggregate.json"))
+    assert not verify._forbidden_tracked_path(Path("experiments/rostam/results/run/result.json"))
+
+
+def test_source_validation_excludes_published_physical_results() -> None:
+    assert verify._excluded_validation_path(Path("experiments/rostam/results/run/result.json"))
 
 
 def test_coverage_gate_emits_json_and_runs_authoritative_policy(
@@ -484,7 +488,9 @@ def test_static_gate_includes_benchmark_package() -> None:
 
 def test_release_source_policy_excludes_unregenerable_historical_paper() -> None:
     assert "paper" not in verify.RELEASE_SOURCE_DIRS
-    assert not any(path.parts[0] == "paper" for path in verify._release_repository_files())
+    release_files = verify._release_repository_files()
+    assert not any(path.parts[0] == "paper" for path in release_files)
+    assert not any(path.parts[:3] == ("experiments", "rostam", "results") for path in release_files)
     assert "recursive-include paper" not in (verify.ROOT / "MANIFEST.in").read_text(encoding="utf-8")
     assert verify._forbidden_sdist_member("commcanary-0.3.0/paper/draft.md")
 

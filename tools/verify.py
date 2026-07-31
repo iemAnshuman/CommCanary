@@ -262,10 +262,10 @@ def _iter_files(paths: Iterable[Path]) -> Iterable[Path]:
         stack = [root]
         while stack:
             for path in stack.pop().iterdir():
-                # Prune generated and vendored trees at the directory level so
-                # a cluster checkout (results, third_party, venvs) is neither
-                # validated nor walked.
-                if _forbidden_tracked_path(path.relative_to(ROOT)):
+                # Prune independently verified physical evidence plus generated
+                # and vendored trees at the directory level so a cluster checkout
+                # is neither validated as source nor needlessly walked.
+                if _excluded_validation_path(path.relative_to(ROOT)):
                     continue
                 if path.is_symlink():
                     continue
@@ -305,14 +305,23 @@ def _forbidden_tracked_path(path: Path) -> bool:
         return True
     if path.suffix in {".pyc", ".pyo"} or any(part.endswith(".egg-info") for part in path.parts):
         return True
-    # Cluster-side working state: generated results, vendored reviewed
-    # checkouts, and built virtualenvs live inside the experiment tree on the
-    # target machine but are never tracked or staged into a source release.
+    # Vendored reviewed checkouts and built virtualenvs live inside the
+    # experiment tree on the target machine but are never tracked or staged
+    # into a source release. Reviewed physical results may be force-added even
+    # though .gitignore keeps ordinary generated result state out of staging;
+    # the distribution gate rejects the entire results tree separately.
     return path.parts[:2] == ("experiments", "rostam") and path.parts[2:3] in {
-        ("results",),
         ("third_party",),
         ("venvs",),
     }
+
+
+def _excluded_validation_path(path: Path) -> bool:
+    """Return whether source-oriented validators must prune *path*."""
+
+    return _forbidden_tracked_path(path) or (
+        path.parts[:2] == ("experiments", "rostam") and path.parts[2:3] == ("results",)
+    )
 
 
 def _validate_json_files() -> None:
@@ -589,7 +598,7 @@ def _published_schema_files() -> List[Path]:
 
 
 def _release_path_is_ignored(relative: Path) -> bool:
-    if _forbidden_tracked_path(relative):
+    if _excluded_validation_path(relative):
         return True
     if relative.name == ".gitignore":
         return True
