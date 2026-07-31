@@ -340,24 +340,27 @@ commcanary compile trace.json -o canary.json --require-behavior-verification
 
 For research minimization, use behavior-search mode. It compiles every timing
 sample limit in the requested range, runs behavior verification for each
-candidate, rejects failures, selects the smallest serialized passing artifact,
-and then greedily lowers timing budgets for individual signature groups only
-when the canary remains source-corresponding and preserves declared model
-behavior and rankings:
+candidate, rejects failures, selects the smallest verified candidate found in
+that declared space by canonical candidate bytes before the fixed search
+summary, and then greedily lowers timing budgets for individual signature
+groups only when the canary remains source-corresponding and preserves declared
+model behavior and rankings:
 
 ```bash
 commcanary compile trace.json -o canary.json \
   --behavior-search \
+  --search-evidence-output search-evidence.json \
   --behavior-search-min-sample-limit 2 \
   --timing-sample-limit 128
 ```
 
-The selected canary records every uniform-budget candidate, the per-group
-refinement attempts, the accepted lower group budgets, and the selected timing
-limit mode. It is still not a full per-window/Pareto optimizer, but it gives a
-fail-closed model-relative minimization path for the current compiler and avoids
-forcing quiet groups to carry the same sample budget as ranking-sensitive
-windows.
+The canary contains only the search method, declared space and objective,
+selected parameters, final verification summary, and a SHA-256/byte-size
+identity for `search-evidence.json`. The detached sidecar contains every
+uniform-budget candidate and per-group refinement attempt. The final canary
+size, detached evidence size, and source size are separate quantities; search
+does not claim to minimize their sum or the final canary after summary bytes are
+added. It is not a full per-window/Pareto optimizer.
 
 The compiler reports both event compression and serialized-byte compression.
 A smaller event count is not described as compression when the artifact is
@@ -470,7 +473,7 @@ field-level compression is not enough. It constructs an isolated collective
 baseline, random-sampling, frequency-representative, and clustering controls,
 and a full decode-like workload whose queue-reset gaps and high-overlap tail
 windows change configuration ranking. A canary that is too small is labelled
-unproven; behavior-search finds the smallest model-preserving timing budget in the
+unproven; behavior-search finds a compact model-preserving timing budget in the
 declared range, and a lossless compact canary preserves the workload ranking.
 
 ```bash
@@ -776,6 +779,10 @@ global thresholds.
 - `commcanary.report_verification.v1`
 - `commcanary.qualification_request.v1`
 - `commcanary.qualification_materialization.v1`
+
+Behavior-search candidate ledgers use the explicitly experimental
+`commcanary.behavior_search_evidence.experimental.v1` sidecar and are not part
+of the stable `format_capabilities()` matrix.
 
 Exact read/write/validation/migration support and the published JSON Schemas are
 listed in [`docs/formats/compatibility.md`](docs/formats/compatibility.md).

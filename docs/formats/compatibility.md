@@ -23,6 +23,14 @@ matrix together with `commcanary.canonical-json.v1` and the replay model.
 | Qualification request | `commcanary.qualification_request.v1` | `commcanary.qualification_request.v1.schema.json` | Yes | Yes | `validate_qualification_request` plus directory-level `verify_qualification_request` | None |
 | Qualification materialization | `commcanary.qualification_materialization.v1` | `commcanary.qualification_materialization.v1.schema.json` | Yes | Yes | `validate_qualification_materialization` plus request-assisted `verify_qualification_materialization` | None |
 
+Behavior search additionally emits the explicitly experimental
+`commcanary.behavior_search_evidence.experimental.v1` sidecar. It is omitted
+from `format_capabilities()` because it is research evidence rather than a
+stable product interchange format. Its portable shape is published as
+`commcanary.behavior_search_evidence.experimental.v1.schema.json`, and
+`validate_behavior_search_evidence` verifies its exact-byte digest and selected
+executable identity against the canary.
+
 “Consumed” means that a supported CLI or Python workflow accepts the artifact
 as input. A JSON file being loadable is not a format-support promise. No format
 currently has an automatic migration path, and load/validation never mutates an
@@ -47,6 +55,7 @@ declared format. The runtime layer remains authoritative for semantic checks.
 | Report | replay-protocol digest, model/protocol/backend agreement, count derivation, quantile ordering, breakdown and sample reconciliation, deterministic scheduling equations |
 | Comparison | embedded metric deltas, compatibility consistency, policy evaluation derivation, uncertainty effects, final verdict derivation |
 | Verification outputs | agreement between individual checks, aggregate status, and assurance state |
+| Experimental behavior-search evidence | exact canonical-byte digest bound by the canary, selected executable identity, and separation from executable canary bytes |
 | Qualification request | canonical request ID, closed inventory references, byte identities, canary commitment bindings, exact fidelity recomputation, request-only claim boundary, supported execution materializability, communication dtype/reduction-operator agreement, exact Kineto input/output message-shape evidence, equal-split-only `all_to_all`, canonical exact rank-local GEMM-recipe projection, disabled timestamp pacing, and explicit shape/dtype privacy disclosure |
 | Qualification materialization | canonical materialization ID, exact request-manifest binding, exact source-work projection and per-rank operation counts, source kernel observations, mathematical FLOPs, closed two-file inventory, exact program bytes/count, deterministic request-assisted regeneration, source-bound rank-aware issue/work/wait semantics, and no-execution/no-verdict claim boundary |
 

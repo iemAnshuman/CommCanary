@@ -242,6 +242,7 @@ def test_expensive_commands_emit_bounded_work_progress(
 ) -> None:
     trace = Path(__file__).parent / "fixtures" / "contracts" / "trace.valid.json"
     canary = tmp_path / "searched.canary.json"
+    search_evidence = tmp_path / "search-evidence.json"
     reduced = tmp_path / "reduced.trace.json"
 
     assert (
@@ -253,6 +254,8 @@ def test_expensive_commands_emit_bounded_work_progress(
                 "--output",
                 str(canary),
                 "--behavior-search",
+                "--search-evidence-output",
+                str(search_evidence),
                 "--behavior-search-min-sample-limit",
                 "2",
                 "--timing-sample-limit",

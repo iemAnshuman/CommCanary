@@ -7,6 +7,7 @@ from typing import Any, List, Mapping, MutableMapping, Sequence, Tuple
 from ..errors import SchemaError
 from ..formats import (
     ARTIFACT_PROVENANCE_ALGORITHM,
+    BEHAVIOR_SEARCH_EVIDENCE_FORMAT,
     CANARY_FORMAT,
     CANARY_INTEGRITY_PROFILE,
 )
@@ -385,6 +386,7 @@ def validate_canary(
     ):
         if integer_key in compiler and as_int(compiler.get(integer_key)) < 0:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
+    _validate_behavior_search_summary(compiler)
     timing_limit_mode = compiler.get("timing_sample_limit_mode")
     if timing_limit_mode is not None and timing_limit_mode not in {"uniform", "per_group"}:
         raise SchemaError("canary compiler.timing_sample_limit_mode is invalid")
@@ -461,6 +463,52 @@ def validate_canary(
         raise SchemaError("canary compiler.tail_signal requires observed timing records")
     if tail_signal == "structural-proxy" and has_observed:
         raise SchemaError("canary compiler.tail_signal contradicts observed timing records")
+
+
+def _validate_behavior_search_summary(compiler: Mapping[str, Any]) -> None:
+    summary = compiler.get("behavior_search")
+    if summary is None:
+        return
+    if not isinstance(summary, Mapping):
+        raise SchemaError("canary compiler.behavior_search must be an object")
+    for key in ("method", "objective", "selection_metric"):
+        validate_nonempty_string(summary.get(key), f"canary compiler.behavior_search.{key}")
+    search_space = summary.get("search_space")
+    if not isinstance(search_space, Mapping):
+        raise SchemaError("canary compiler.behavior_search.search_space must be an object")
+    min_limit = as_int(search_space.get("min_timing_sample_limit"), 0)
+    max_limit = as_int(search_space.get("max_timing_sample_limit"), 0)
+    if min_limit < 2 or max_limit < min_limit:
+        raise SchemaError("canary compiler.behavior_search search limits are invalid")
+    if as_int(search_space.get("uniform_candidate_count"), 0) != max_limit - min_limit + 1:
+        raise SchemaError("canary compiler.behavior_search uniform candidate count is inconsistent")
+    if as_int(summary.get("accepted_candidates"), 0) < 1:
+        raise SchemaError("canary compiler.behavior_search must record an accepted candidate")
+    selected = summary.get("selected_candidate")
+    if not isinstance(selected, Mapping):
+        raise SchemaError("canary compiler.behavior_search.selected_candidate must be an object")
+    validate_sha256(
+        selected.get("execution_semantic_sha256"),
+        "canary compiler.behavior_search.selected_candidate.execution_semantic_sha256",
+    )
+    if selected.get("execution_semantic_sha256") != compiler.get("execution_semantic_sha256"):
+        raise SchemaError("canary compiler.behavior_search selected executable semantics do not match")
+    for key in ("candidate_bytes_before_search_summary", "stored_timing_records", "stored_events"):
+        if as_int(selected.get(key), -1) < 0:
+            raise SchemaError(f"canary compiler.behavior_search.selected_candidate.{key} must be non-negative")
+    evidence = summary.get("evidence")
+    if not isinstance(evidence, Mapping):
+        raise SchemaError("canary compiler.behavior_search.evidence must be an object")
+    if evidence.get("format") != BEHAVIOR_SEARCH_EVIDENCE_FORMAT:
+        raise SchemaError("canary compiler.behavior_search evidence format is unsupported")
+    validate_sha256(evidence.get("sha256"), "canary compiler.behavior_search.evidence.sha256")
+    if as_int(evidence.get("canonical_bytes"), 0) < 1:
+        raise SchemaError("canary compiler.behavior_search evidence canonical_bytes must be positive")
+    verification = summary.get("verification_summary")
+    if not isinstance(verification, Mapping):
+        raise SchemaError("canary compiler.behavior_search.verification_summary must be an object")
+    if verification.get("status") != "model_behavior_preserved":
+        raise SchemaError("canary compiler.behavior_search selected verification must preserve model behavior")
 
 
 def _event_approximate_record_count(event: Mapping[str, Any]) -> int:

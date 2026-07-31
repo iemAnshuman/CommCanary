@@ -56,9 +56,10 @@
   operation ratios, dtype-derived bytes, and skipped-size inventory, binds an
   equal-split-only `all_to_all` policy, and refuses explicit or ambiguous split
   evidence rather than generating a different executable shape.
-- Added explicit assurance states for structural validity, internal
-  consistency, source correspondence, model recomputation, and behavioral
-  verification; documented that embedded hashes are not authenticity.
+- Added explicit integrity/correspondence summaries and independent claim
+  dimensions. Simulator-relative success is now `model_behavior_preserved`;
+  physical execution, conformance, decision fidelity, and authenticity remain
+  separately unobserved or unproven.
 - Recompute profiled canary provenance and source commitments recursively,
   including motif wrappers/children, and independently verify source IDs,
   bounds, and digests so a producer-side rehash cannot forge source
@@ -75,6 +76,12 @@
   are detached from caller-owned nested input.
 
 ### Contracts and API
+
+- Split behavior-search candidate/refinement ledgers from executable canaries.
+  The compact canary summary binds an experimental evidence sidecar by exact
+  canonical byte hash and selected executable identity, and the documented
+  objective now says "smallest verified candidate found in the declared search
+  space" rather than claiming to minimize the enlarged final artifact.
 
 - Added `commcanary.qualification_request.v1` and the
   `prepare-qualification`/`verify-qualification` owner-to-lab workflow. A new,

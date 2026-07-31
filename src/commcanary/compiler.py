@@ -12,7 +12,11 @@ from .compilation import important_timing_indices as _important_timing_indices  
 from .compilation.metrics import json_size as _json_size
 from .compilation.metrics import source_segment_sha256 as _source_segment_sha256  # noqa: F401 - golden seam
 from .compilation.metrics import update_size_metrics
-from .services.behavior_search import BehaviorSearchSizeKey, synthesize_behavioral_canary
+from .services.behavior_search import (
+    BehaviorSearchSizeKey,
+    synthesize_behavioral_canary,
+    validate_behavior_search_evidence,
+)
 from .services.behavior_search import behavior_search_size_key as _behavior_search_size_key  # noqa: F401
 from .services.compile import compile_trace
 from .verification.canary import verify_canary_behavior, verify_canary_fidelity
@@ -30,6 +34,7 @@ __all__ = [
     "TimingPriorityTier",
     "compile_trace",
     "synthesize_behavioral_canary",
+    "validate_behavior_search_evidence",
     "verify_canary_behavior",
     "verify_canary_fidelity",
 ]

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
+import hashlib
+from typing import Any, Dict, List, Mapping, MutableMapping, NamedTuple, Optional, Sequence, Tuple
 
 from ..artifacts.canary import validate_canary
+from ..artifacts.json_codec import canonical_json_bytes
 from ..artifacts.trace import validate_trace
-from ..artifacts.wire import JsonDict, as_int
+from ..artifacts.wire import JsonDict, as_int, validate_sha256
 from ..behavior_config import BehaviorConfiguration, parse_behavior_configurations, preflight_behavior_ranking_work
 from ..compilation import DEFAULT_TIMING_SAMPLE_LIMIT, compile_trace_core
 from ..compilation.metrics import compiler_timing_group_limits, refresh_canary_hashes_and_size
 from ..errors import SchemaError
-from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
+from ..formats import BEHAVIOR_SEARCH_EVIDENCE_FORMAT
+from ..resources import DEFAULT_RESOURCE_LIMITS, JsonResourceError, ResourceLimits, validate_json_mapping
 from ..verification.behavior import verify_canary_behavior
 
 
@@ -23,6 +26,14 @@ class BehaviorSearchSizeKey(NamedTuple):
     stored_timing_records: int
     stored_events: int
     timing_limit_sum: int
+
+
+_SEARCH_METHOD = "exhaustive_timing_sample_limit_search_with_greedy_per_group_refinement"
+_SEARCH_OBJECTIVE = (
+    "smallest verified candidate found in the declared search space by canonical candidate bytes before the "
+    "fixed search summary"
+)
+_SEARCH_SELECTION_METRIC = "candidate_bytes_then_stored_timing_records_then_stored_events_then_timing_limit_sum"
 
 
 def synthesize_behavioral_canary(
@@ -48,6 +59,7 @@ def synthesize_behavioral_canary(
     hidden_tolerance_points: float = 5.0,
     tail_recall_threshold: float = 0.80,
     ranking_tie_tolerance_us: float = 0.001,
+    evidence_output: Optional[MutableMapping[str, Any]] = None,
     limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
 ) -> JsonDict:
     """Search for a compact canary that preserves declared model behavior.
@@ -56,9 +68,11 @@ def synthesize_behavioral_canary(
     every candidate in the requested timing-sample range is compiled, replayed
     against the lossless source canary, and rejected unless source fidelity,
     deterministic-model behavior and pairwise configuration ranking all pass. The
-    chosen artifact minimises serialized canary bytes, then stored event count,
-    then timing sample limit. It is a research-mode compiler path; it trades
-    speed for a fail-closed, model-relative behavior claim.
+    chosen candidate minimises canonical bytes before the fixed search summary,
+    then stored timing records, stored events, and timing budgets. The final
+    artifact may be larger after its compact summary is added. If
+    ``evidence_output`` is supplied, it must be empty and receives the detached
+    candidate/refinement ledger whose digest is bound by the canary.
     """
 
     validate_trace(trace, require_known_overlap=True, limits=limits)
@@ -68,6 +82,8 @@ def synthesize_behavioral_canary(
         raise SchemaError("allow_empty must be a boolean")
     if not isinstance(enable_sequence_motifs, bool):
         raise SchemaError("enable_sequence_motifs must be a boolean")
+    if evidence_output is not None and len(evidence_output) != 0:
+        raise SchemaError("behavior search evidence_output must be empty")
     min_limit = as_int(min_timing_sample_limit)
     max_limit = as_int(max_timing_sample_limit)
     if min_limit < 2:
@@ -194,31 +210,124 @@ def synthesize_behavioral_canary(
     )
     compiler = selected["compiler"]
     accepted = [row for row in rows if row.get("status") == "model_behavior_preserved"]
+    selected_candidate_bytes = as_int(compiler.get("canary_bytes"))
+    selected_candidate = {
+        "execution_semantic_sha256": str(compiler.get("execution_semantic_sha256")),
+        "timing_sample_limit": as_int(compiler.get("timing_sample_limit")),
+        "timing_sample_limit_mode": str(compiler.get("timing_sample_limit_mode", "uniform")),
+        "timing_sample_limits_by_group": dict(compiler.get("timing_sample_limits_by_group", {})),
+        "candidate_bytes_before_search_summary": selected_candidate_bytes,
+        "stored_timing_records": as_int(compiler.get("stored_recursive_timing_records")),
+        "stored_events": as_int(compiler.get("canary_events")),
+    }
+    evidence: JsonDict = {
+        "format": BEHAVIOR_SEARCH_EVIDENCE_FORMAT,
+        "method": _SEARCH_METHOD,
+        "objective": _SEARCH_OBJECTIVE,
+        "selection_metric": _SEARCH_SELECTION_METRIC,
+        "search_space": {
+            "min_timing_sample_limit": min_limit,
+            "max_timing_sample_limit": max_limit,
+            "uniform_candidate_count": len(rows),
+        },
+        "selected_candidate": copy.deepcopy(selected_candidate),
+        "selected_verification": copy.deepcopy(dict(verification)),
+        "uniform_candidates": copy.deepcopy(rows),
+        "per_group_refinement": copy.deepcopy(refinement),
+    }
+    evidence_bytes = canonical_json_bytes(evidence)
+    evidence_sha256 = hashlib.sha256(evidence_bytes).hexdigest()
     compiler["model_behavior_verification_status"] = verification["status"]
     compiler["configuration_ranking_status"] = verification["configuration_ranking_status"]
     compiler["model_behavior_preservation_status"] = verification["model_behavior_preservation_status"]
     compiler["behavior_search"] = {
-        "mode": "exhaustive_timing_sample_limit_search_with_per_group_refinement",
-        "objective": "minimize serialized canary bytes subject to source, behavioral, and ranking verification",
-        "selection_metric": "canary_bytes_then_stored_timing_records_then_stored_events_then_timing_limits",
-        "min_timing_sample_limit": min_limit,
-        "max_timing_sample_limit": max_limit,
-        "candidate_count": len(rows),
+        "method": _SEARCH_METHOD,
+        "objective": _SEARCH_OBJECTIVE,
+        "selection_metric": _SEARCH_SELECTION_METRIC,
+        "search_space": {
+            "min_timing_sample_limit": min_limit,
+            "max_timing_sample_limit": max_limit,
+            "uniform_candidate_count": len(rows),
+        },
         "accepted_candidates": len(accepted),
-        "selected_timing_sample_limit": as_int(compiler.get("timing_sample_limit")),
-        "selected_timing_sample_limit_mode": str(compiler.get("timing_sample_limit_mode", "uniform")),
-        "selected_timing_sample_limits_by_group": dict(compiler.get("timing_sample_limits_by_group", {})),
-        "selected_canary_bytes_without_search_metadata": as_int(compiler.get("canary_bytes")),
-        "selected_canary_events": as_int(compiler.get("canary_events")),
-        "ranking_status": verification["configuration_ranking_status"],
-        "model_behavior_status": verification["model_behavior_preservation_status"],
-        "source_verified_status": verification["source_verified_status"],
-        "per_group_refinement": refinement,
-        "candidates": rows,
+        "selected_candidate": selected_candidate,
+        "verification_summary": {
+            "status": verification["status"],
+            "source_verified_status": verification["source_verified_status"],
+            "model_behavior_preservation_status": verification["model_behavior_preservation_status"],
+            "configuration_ranking_status": verification["configuration_ranking_status"],
+        },
+        "evidence": {
+            "format": BEHAVIOR_SEARCH_EVIDENCE_FORMAT,
+            "sha256": evidence_sha256,
+            "canonical_bytes": len(evidence_bytes),
+        },
     }
     refresh_canary_hashes_and_size(selected, limits=limits)
     validate_canary(selected, limits=limits)
+    if evidence_output is not None:
+        evidence_output.update(copy.deepcopy(evidence))
     return selected
+
+
+def validate_behavior_search_evidence(
+    evidence: Mapping[str, Any],
+    canary: Mapping[str, Any],
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> None:
+    """Verify the detached search ledger against its selected canary."""
+
+    try:
+        validate_json_mapping(evidence, limits=limits)
+    except JsonResourceError as exc:
+        raise SchemaError(f"behavior search evidence violates JSON resource constraints: {exc}") from exc
+    if evidence.get("format") != BEHAVIOR_SEARCH_EVIDENCE_FORMAT:
+        raise SchemaError("behavior search evidence format is unsupported")
+    validate_canary(canary, limits=limits)
+    compiler = canary.get("compiler")
+    if not isinstance(compiler, Mapping):
+        raise SchemaError("behavior search canary must contain compiler metadata")
+    summary = compiler.get("behavior_search")
+    if not isinstance(summary, Mapping):
+        raise SchemaError("canary does not bind behavior search evidence")
+    evidence_identity = summary.get("evidence")
+    if not isinstance(evidence_identity, Mapping):
+        raise SchemaError("canary behavior search summary is missing evidence identity")
+    validate_sha256(evidence_identity.get("sha256"), "canary behavior search evidence sha256")
+    encoded = canonical_json_bytes(evidence)
+    if hashlib.sha256(encoded).hexdigest() != evidence_identity.get("sha256"):
+        raise SchemaError("behavior search evidence sha256 does not match the canary")
+    if len(encoded) != as_int(evidence_identity.get("canonical_bytes"), -1):
+        raise SchemaError("behavior search evidence byte size does not match the canary")
+    for key in ("method", "objective", "selection_metric", "search_space"):
+        if evidence.get(key) != summary.get(key):
+            raise SchemaError(f"behavior search evidence {key} does not match the canary summary")
+    selected = evidence.get("selected_candidate")
+    if not isinstance(selected, Mapping):
+        raise SchemaError("behavior search evidence selected_candidate must be an object")
+    if selected != summary.get("selected_candidate"):
+        raise SchemaError("behavior search evidence selected candidate does not match the canary summary")
+    if selected.get("execution_semantic_sha256") != compiler.get("execution_semantic_sha256"):
+        raise SchemaError("behavior search evidence selects different executable semantics")
+    rows = evidence.get("uniform_candidates")
+    search_space = evidence.get("search_space")
+    if not isinstance(rows, list) or not isinstance(search_space, Mapping):
+        raise SchemaError("behavior search evidence candidate ledger is invalid")
+    if len(rows) != as_int(search_space.get("uniform_candidate_count"), -1):
+        raise SchemaError("behavior search evidence candidate count is inconsistent")
+    verification = evidence.get("selected_verification")
+    verification_summary = summary.get("verification_summary")
+    if not isinstance(verification, Mapping) or not isinstance(verification_summary, Mapping):
+        raise SchemaError("behavior search evidence selected verification is invalid")
+    for key in (
+        "status",
+        "source_verified_status",
+        "model_behavior_preservation_status",
+        "configuration_ranking_status",
+    ):
+        if verification.get(key) != verification_summary.get(key):
+            raise SchemaError(f"behavior search evidence verification {key} does not match the canary summary")
 
 
 def _refine_behavior_search_timing_groups(
@@ -435,9 +544,7 @@ def _behavior_search_row(
         "timing_sample_limit": timing_sample_limit,
         "status": str(verification.get("status")),
         "source_verified_status": str(verification.get("source_verified_status", "unknown")),
-        "model_behavior_preservation_status": str(
-            verification.get("model_behavior_preservation_status", "unknown")
-        ),
+        "model_behavior_preservation_status": str(verification.get("model_behavior_preservation_status", "unknown")),
         "configuration_ranking_status": str(verification.get("configuration_ranking_status", "unknown")),
         "canary_bytes": as_int(compiler.get("canary_bytes"), 0),
         "canary_events": as_int(compiler.get("canary_events"), 0),
@@ -454,4 +561,5 @@ __all__ = [
     "BehaviorSearchSizeKey",
     "behavior_search_size_key",
     "synthesize_behavioral_canary",
+    "validate_behavior_search_evidence",
 ]

@@ -14,7 +14,13 @@ from commcanary.artifacts import (
     validate_qualification_request,
 )
 from commcanary.compare import compare_reports
-from commcanary.compiler import compile_trace, verify_canary_behavior, verify_canary_fidelity
+from commcanary.compiler import (
+    compile_trace,
+    synthesize_behavioral_canary,
+    validate_behavior_search_evidence,
+    verify_canary_behavior,
+    verify_canary_fidelity,
+)
 from commcanary.replay import replay_canary, verify_report_against_canary
 from commcanary.schema import (
     SchemaError,
@@ -25,7 +31,7 @@ from commcanary.schema import (
 )
 from commcanary.services import prepare_qualification_request
 from commcanary.workflows import materialize_qualification
-from tests.builders import qualification_trace
+from tests.builders import qualification_trace, small_trace
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas"
@@ -195,3 +201,26 @@ def test_current_producers_match_published_schemas(
         if _schema_errors(schema_validators[artifact], document)
     }
     assert failures == {}
+
+
+def test_behavior_search_producer_matches_experimental_sidecar_schema() -> None:
+    trace = small_trace()
+    evidence: Dict[str, Any] = {}
+    canary = synthesize_behavioral_canary(
+        trace,
+        min_timing_sample_limit=2,
+        max_timing_sample_limit=4,
+        evidence_output=evidence,
+    )
+    validate_behavior_search_evidence(evidence, canary)
+
+    documents = {path.name: _load_json(path) for path in SCHEMA_DIR.glob("*.schema.json")}
+    registry = Registry().with_resources(
+        (document["$id"], Resource.from_contents(document)) for document in documents.values()
+    )
+    validator = Draft202012Validator(
+        documents["commcanary.behavior_search_evidence.experimental.v1.schema.json"],
+        registry=registry,
+    )
+
+    assert _schema_errors(validator, evidence) == []

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.behavior_search_evidence.experimental.v1.schema.json",
+  "title": "CommCanary experimental behavior-search evidence v1",
+  "description": "Detached research ledger for a behavior-search canary. The canary binds the canonical bytes and selected executable semantics.",
+  "type": "object",
+  "required": [
+    "format",
+    "method",
+    "objective",
+    "selection_metric",
+    "search_space",
+    "selected_candidate",
+    "selected_verification",
+    "uniform_candidates",
+    "per_group_refinement"
+  ],
+  "properties": {
+    "format": {
+      "const": "commcanary.behavior_search_evidence.experimental.v1"
+    },
+    "method": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "objective": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "selection_metric": {
+      "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+    },
+    "search_space": {
+      "type": "object",
+      "required": [
+        "min_timing_sample_limit",
+        "max_timing_sample_limit",
+        "uniform_candidate_count"
+      ],
+      "properties": {
+        "min_timing_sample_limit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "max_timing_sample_limit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "uniform_candidate_count": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "selected_candidate": {
+      "type": "object",
+      "required": [
+        "execution_semantic_sha256",
+        "timing_sample_limit",
+        "timing_sample_limit_mode",
+        "timing_sample_limits_by_group",
+        "candidate_bytes_before_search_summary",
+        "stored_timing_records",
+        "stored_events"
+      ],
+      "properties": {
+        "execution_semantic_sha256": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+        },
+        "timing_sample_limit": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "timing_sample_limit_mode": {
+          "enum": ["uniform", "per_group"]
+        },
+        "timing_sample_limits_by_group": {
+          "type": "object"
+        },
+        "candidate_bytes_before_search_summary": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "stored_timing_records": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        },
+        "stored_events": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "selected_verification": {
+      "$ref": "https://commcanary.dev/schemas/commcanary.behavior_verification.v1.schema.json"
+    },
+    "uniform_candidates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object"
+      }
+    },
+    "per_group_refinement": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
+

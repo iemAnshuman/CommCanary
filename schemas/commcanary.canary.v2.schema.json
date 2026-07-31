@@ -136,6 +136,9 @@
             "maximum": 9223372036854775807
           }
         },
+        "behavior_search": {
+          "$ref": "#/$defs/behaviorSearch"
+        },
         "fidelity": {
           "$ref": "#/$defs/fidelity"
         },
@@ -162,6 +165,112 @@
         }
       },
       "additionalProperties": true
+    },
+    "behaviorSearch": {
+      "type": "object",
+      "required": [
+        "method",
+        "objective",
+        "selection_metric",
+        "search_space",
+        "accepted_candidates",
+        "selected_candidate",
+        "verification_summary",
+        "evidence"
+      ],
+      "properties": {
+        "method": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "objective": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "selection_metric": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
+        },
+        "search_space": {
+          "type": "object",
+          "required": ["min_timing_sample_limit", "max_timing_sample_limit", "uniform_candidate_count"],
+          "properties": {
+            "min_timing_sample_limit": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+            },
+            "max_timing_sample_limit": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+            },
+            "uniform_candidate_count": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+            }
+          },
+          "additionalProperties": false
+        },
+        "accepted_candidates": {
+          "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+        },
+        "selected_candidate": {
+          "type": "object",
+          "required": [
+            "execution_semantic_sha256",
+            "timing_sample_limit",
+            "timing_sample_limit_mode",
+            "timing_sample_limits_by_group",
+            "candidate_bytes_before_search_summary",
+            "stored_timing_records",
+            "stored_events"
+          ],
+          "properties": {
+            "execution_semantic_sha256": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+            },
+            "timing_sample_limit": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+            },
+            "timing_sample_limit_mode": { "enum": ["uniform", "per_group"] },
+            "timing_sample_limits_by_group": { "type": "object" },
+            "candidate_bytes_before_search_summary": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+            },
+            "stored_timing_records": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+            },
+            "stored_events": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"
+            }
+          },
+          "additionalProperties": false
+        },
+        "verification_summary": {
+          "type": "object",
+          "required": [
+            "status",
+            "source_verified_status",
+            "model_behavior_preservation_status",
+            "configuration_ranking_status"
+          ],
+          "properties": {
+            "status": { "const": "model_behavior_preserved" },
+            "source_verified_status": { "const": "source_verified" },
+            "model_behavior_preservation_status": { "const": "pass" },
+            "configuration_ranking_status": { "const": "pass" }
+          },
+          "additionalProperties": false
+        },
+        "evidence": {
+          "type": "object",
+          "required": ["format", "sha256", "canonical_bytes"],
+          "properties": {
+            "format": { "const": "commcanary.behavior_search_evidence.experimental.v1" },
+            "sha256": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"
+            },
+            "canonical_bytes": {
+              "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "errorVector": {
       "type": "object",

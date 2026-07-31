@@ -25,6 +25,7 @@ from commcanary.cli import main as cli_main
 from commcanary.compare import compare_reports
 from commcanary.compiler import (
     compile_trace,
+    validate_behavior_search_evidence,
     verify_canary_behavior,
 )
 from commcanary.html_report import render_compare_html, render_report_html
@@ -48,6 +49,7 @@ class CommCanaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             trace_path = os.path.join(tmp, "trace.json")
             canary_path = os.path.join(tmp, "canary.json")
+            evidence_path = os.path.join(tmp, "search-evidence.json")
             write_json(trace_path, small_trace())
             exit_code = cli_main(
                 [
@@ -56,16 +58,45 @@ class CommCanaryTests(unittest.TestCase):
                     "--output",
                     canary_path,
                     "--behavior-search",
+                    "--search-evidence-output",
+                    evidence_path,
                     "--timing-sample-limit",
                     "4",
                 ]
             )
             self.assertEqual(exit_code, 0)
             canary = load_json(canary_path)
+            evidence = load_json(evidence_path)
             self.assertIn("behavior_search", canary["compiler"])
+            validate_behavior_search_evidence(evidence, canary)
             self.assertEqual(
                 canary["compiler"]["model_behavior_verification_status"],
                 "model_behavior_preserved",
+            )
+
+    def test_compile_behavior_search_cli_requires_distinct_evidence_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = os.path.join(tmp, "trace.json")
+            canary_path = os.path.join(tmp, "canary.json")
+            write_json(trace_path, small_trace())
+
+            self.assertNotEqual(
+                cli_main(["compile", trace_path, "-o", canary_path, "--behavior-search"]),
+                0,
+            )
+            self.assertNotEqual(
+                cli_main(
+                    [
+                        "compile",
+                        trace_path,
+                        "-o",
+                        canary_path,
+                        "--behavior-search",
+                        "--search-evidence-output",
+                        canary_path,
+                    ]
+                ),
+                0,
             )
 
     def test_html_escapes_once_and_allowlists_verdict_class(self):

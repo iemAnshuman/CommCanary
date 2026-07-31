@@ -7,6 +7,7 @@ from pathlib import Path
 from commcanary.compiler import (
     compile_trace,
     synthesize_behavioral_canary,
+    validate_behavior_search_evidence,
     verify_canary_behavior,
     verify_canary_fidelity,
 )
@@ -97,26 +98,38 @@ class CompilationTests(unittest.TestCase):
 
     def test_behavior_search_finds_smallest_verified_candidate(self):
         trace = adversarial_ranking_trace()
+        evidence = {}
         canary = synthesize_behavioral_canary(
             trace,
             min_timing_sample_limit=2,
             max_timing_sample_limit=32,
             behavior_configurations=adversarial_ranking_configs(),
             ranking_tie_tolerance_us=0.0,
+            evidence_output=evidence,
         )
         search = canary["compiler"]["behavior_search"]
+        validate_behavior_search_evidence(evidence, canary)
         self.assertEqual(canary["compiler"]["model_behavior_verification_status"], "model_behavior_preserved")
-        self.assertEqual(search["ranking_status"], "pass")
+        self.assertEqual(search["verification_summary"]["configuration_ranking_status"], "pass")
         self.assertGreater(search["accepted_candidates"], 0)
-        self.assertGreaterEqual(search["selected_timing_sample_limit"], 2)
-        self.assertLessEqual(search["selected_timing_sample_limit"], 32)
+        self.assertGreaterEqual(search["selected_candidate"]["timing_sample_limit"], 2)
+        self.assertLessEqual(search["selected_candidate"]["timing_sample_limit"], 32)
+        self.assertNotIn("uniform_candidates", search)
+        self.assertNotIn("per_group_refinement", search)
         selected_rows = [
             row
-            for row in search["candidates"]
+            for row in evidence["uniform_candidates"]
             if row["status"] == "model_behavior_preserved"
-            and row["canary_bytes"] == search["selected_canary_bytes_without_search_metadata"]
+            and row["canary_bytes"] == search["selected_candidate"]["candidate_bytes_before_search_summary"]
         ]
         self.assertTrue(selected_rows)
+        self.assertGreater(
+            canary["compiler"]["canary_bytes"], search["selected_candidate"]["candidate_bytes_before_search_summary"]
+        )
+        tampered_evidence = copy.deepcopy(evidence)
+        tampered_evidence["uniform_candidates"][0]["status"] = "forged"
+        with self.assertRaisesRegex(SchemaError, "sha256"):
+            validate_behavior_search_evidence(tampered_evidence, canary)
         self.assertEqual(
             verify_canary_behavior(
                 trace,
@@ -128,6 +141,8 @@ class CompilationTests(unittest.TestCase):
         )
 
     def test_behavior_search_fails_when_budget_cannot_preserve_ranking(self):
+        with self.assertRaisesRegex(SchemaError, "must be empty"):
+            synthesize_behavioral_canary(small_trace(), evidence_output={"stale": True})
         with self.assertRaises(SchemaError):
             synthesize_behavioral_canary(
                 adversarial_ranking_trace(),
@@ -429,6 +444,7 @@ class CompilationTests(unittest.TestCase):
 
     def test_behavior_search_refines_per_group_timing_budgets(self):
         trace = two_group_refinement_trace()
+        evidence = {}
         canary = synthesize_behavioral_canary(
             trace,
             min_timing_sample_limit=2,
@@ -439,9 +455,10 @@ class CompilationTests(unittest.TestCase):
             hidden_tolerance_points=100.0,
             tail_recall_threshold=0.0,
             ranking_tie_tolerance_us=0.0,
+            evidence_output=evidence,
         )
-        search = canary["compiler"]["behavior_search"]
-        refinement = search["per_group_refinement"]
+        refinement = evidence["per_group_refinement"]
+        validate_behavior_search_evidence(evidence, canary)
         self.assertEqual(canary["compiler"]["timing_sample_limit_mode"], "per_group")
         self.assertEqual(refinement["status"], "refined")
         self.assertGreaterEqual(refinement["accepted_candidates"], 1)

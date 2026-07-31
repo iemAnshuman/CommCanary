@@ -167,6 +167,23 @@ They are not promoted to the stable top level. Persisted experimental records
 carry their own schema IDs; consume those schemas rather than relying on
 internal Python classes.
 
+Behavior search is also an experimental evidence-producing API:
+
+```python
+from commcanary.compiler import (
+    synthesize_behavioral_canary,
+    validate_behavior_search_evidence,
+)
+
+evidence = {}
+canary = synthesize_behavioral_canary(trace, evidence_output=evidence)
+validate_behavior_search_evidence(evidence, canary)
+```
+
+The canary remains executable without the ledger, but it contains only a
+compact search summary and the ledger's exact canonical-byte identity. Retain
+the detached evidence when the synthesis history must be audited.
+
 ## Version and capabilities
 
 `commcanary.__version__` comes from installed distribution metadata. In an

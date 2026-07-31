@@ -73,6 +73,7 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
     assert formats.__all__ == [
         "ARTIFACT_PROVENANCE_ALGORITHM",
         "BEHAVIOR_VERIFICATION_FORMAT",
+        "BEHAVIOR_SEARCH_EVIDENCE_FORMAT",
         "CANARY_FORMAT",
         "CANARY_INTEGRITY_PROFILE",
         "CANONICAL_JSON_VERSION",

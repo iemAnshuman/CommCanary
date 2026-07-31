@@ -107,12 +107,14 @@ def main() -> None:
     frequency_baseline = compile_trace(frequency_baseline_trace, timing_sample_limit=16)
     cluster_baseline = compile_trace(cluster_baseline_trace, timing_sample_limit=16)
     exact_small = compile_trace(workload_trace, timing_sample_limit=32, require_lossless_timing=True)
+    behavior_search_evidence = {}
     behavior_search = synthesize_behavioral_canary(
         workload_trace,
         min_timing_sample_limit=2,
         max_timing_sample_limit=32,
         behavior_configurations=RANKING_CONFIGS,
         ranking_tie_tolerance_us=0.0,
+        evidence_output=behavior_search_evidence,
     )
 
     write_json(str(out / "isolated.canary.json"), isolated)
@@ -126,6 +128,7 @@ def main() -> None:
     write_json(str(out / "clustering_representative_baseline.canary.json"), cluster_baseline)
     write_json(str(out / "verified_small.canary.json"), exact_small)
     write_json(str(out / "behavior_search.canary.json"), behavior_search)
+    write_json(str(out / "behavior_search.evidence.json"), behavior_search_evidence)
 
     lossy_verification = verify_canary_behavior(
         workload_trace,

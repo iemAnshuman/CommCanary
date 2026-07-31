@@ -22,9 +22,9 @@ from ..artifacts import (
     validate_trace,
     write_json,
 )
-from ..artifacts.wire import as_float, as_int
+from ..artifacts.wire import JsonDict, as_float, as_int
 from ..comparison import compare_reports
-from ..errors import CommCanaryError
+from ..errors import CommCanaryError, SchemaError
 from ..execution import (
     distributed_execution_environment,
     execute_qualification_materialization,
@@ -69,6 +69,12 @@ def compile_command(
     diagnostic_emitter: DiagnosticEmitter,
     elapsed_clock: ElapsedClock,
 ) -> int:
+    if args.behavior_search and not args.search_evidence_output:
+        raise SchemaError("--search-evidence-output is required with --behavior-search")
+    if not args.behavior_search and args.search_evidence_output:
+        raise SchemaError("--search-evidence-output requires --behavior-search")
+    if args.search_evidence_output and os.path.abspath(args.search_evidence_output) == os.path.abspath(args.output):
+        raise SchemaError("canary and search evidence outputs must be different paths")
     trace = load_json(args.trace)
     common_kwargs = {
         "max_events": args.max_events,
@@ -100,10 +106,12 @@ def compile_command(
                 f"behavior search: evaluating up to {candidates_planned} uniform candidates plus per-group refinement",
                 file=sys.stderr,
             )
+        search_evidence: JsonDict = {}
         canary = synthesize_behavioral_canary(
             trace,
             min_timing_sample_limit=args.behavior_search_min_sample_limit,
             max_timing_sample_limit=args.timing_sample_limit,
+            evidence_output=search_evidence,
             **common_kwargs,
         )
         search = canary.get("compiler", {}).get("behavior_search", {})
@@ -115,9 +123,9 @@ def compile_command(
                 phase="behavior_search",
                 status="completed",
                 elapsed_seconds=elapsed_clock(phase_started),
-                uniform_candidates_evaluated=search.get("candidate_count"),
+                uniform_candidates_evaluated=search.get("search_space", {}).get("uniform_candidate_count"),
                 accepted_candidates=search.get("accepted_candidates"),
-                selected_timing_sample_limit=search.get("selected_timing_sample_limit"),
+                selected_timing_sample_limit=search.get("selected_candidate", {}).get("timing_sample_limit"),
             )
     else:
         canary = compile_trace(
@@ -126,6 +134,8 @@ def compile_command(
             require_behavior_verification=args.require_behavior_verification,
             **common_kwargs,
         )
+    if args.behavior_search:
+        write_json(args.search_evidence_output, search_evidence)
     write_json(args.output, canary)
     compiler = canary["compiler"]
     fidelity = compiler.get("fidelity", {})
@@ -137,6 +147,15 @@ def compile_command(
         f"byte ratio={compiler['byte_compression_ratio']}x, "
         f"timing={fidelity.get('mode', 'unknown')}"
     )
+    if args.behavior_search:
+        evidence_identity = compiler["behavior_search"]["evidence"]
+        print(
+            "behavior search sizes: "
+            f"executable_canary_bytes={compiler['canary_bytes']} "
+            f"search_evidence_bytes={evidence_identity['canonical_bytes']} "
+            f"source_trace_bytes={compiler['source_bytes']} "
+            "physical_execution_duration=not_observed"
+        )
     if fidelity.get("mode") == "bounded_approximate":
         print(
             "approximation: "

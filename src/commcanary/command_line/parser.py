@@ -115,16 +115,17 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     compile_parser.add_argument(
         "--behavior-search",
         action="store_true",
-        help=(
-            "search timing sample limits up to --timing-sample-limit and choose the smallest "
-            "model-behavior-preserving canary"
-        ),
+        help=("search timing sample limits and choose the smallest verified candidate found in the declared space"),
     )
     compile_parser.add_argument(
         "--behavior-search-min-sample-limit",
         type=int,
         default=2,
         help="lowest timing sample limit to try in --behavior-search mode",
+    )
+    compile_parser.add_argument(
+        "--search-evidence-output",
+        help="required with --behavior-search; detached candidate and refinement ledger",
     )
     compile_parser.set_defaults(func=handlers.compile)
 
