@@ -136,6 +136,10 @@ qualification verdict.
   specified in [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md)
   and has not run.
 
+The manifests, failed-attempt records, selections, completeness verdicts, raw
+archives, and generated tables behind the physical statements above are
+published in [`experiments/rostam/results/`](experiments/rostam/results/README.md).
+
 What the simulator *does* buy you is determinism, which is what makes the
 verification story checkable at all: `verify-report` recomputes a report
 bit-identically, so an edited number fails validation instead of surviving as
