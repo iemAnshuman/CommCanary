@@ -12,9 +12,10 @@
   complete NCCL kernel intervals and the union of concurrent compute kernels
   on other streams of the same device. Missing/malformed/ambiguous evidence
   remains explicitly unknown, per-event reasons and totals are recorded, and
-  physical proxy fidelity remains an uncompleted experiment. Both ranks of the
-  public 2-GPU ResNet-50 profile from PyTorch issue #131462 import with 7/7
-  overlap-known events and compile losslessly as a real-format check.
+  cross-configuration physical decision fidelity remains an uncompleted
+  experiment. Both ranks of the public 2-GPU ResNet-50 profile from PyTorch
+  issue #131462 import with 7/7 overlap-known events and compile losslessly as
+  a real-format check.
 - `import-kineto` now accepts multiple rank-local profiles and reconciles them
   through the existing fail-closed capture contract. Missing or conflicting
   rank contributions fail; rank-local compute values are retained; arrival
@@ -114,6 +115,12 @@
   positive distributed timeout (300 seconds by default, capped at 3,600 by
   `ResourceLimits`) and the rank-0 diagnostic records it, instead of inheriting
   PyTorch's backend-dependent 10- or 30-minute defaults.
+- Executed the exact-work reference path on four A100-PCIE-40GB GPUs. The
+  request/materialization-bound source and replay medians were 1,434.112 us and
+  1,541.0015 us (+7.4533578967%), with 32/32 deterministic data checks passing.
+  The retained observation deliberately issues no qualification verdict: one
+  configuration and a post-observation tolerance cannot establish decision
+  fidelity.
 - Corrected the interoperability boundary: current upstream PARAM removed
   `basic` and Kineto trace parsing in favor of Chakra host execution traces,
   while CommCanary's pinned historical basic replayer is blocking. Legacy
@@ -192,6 +199,10 @@
   respectively, persisted zero-issue completeness verdicts, verified normalized
   raw archives, and byte-identical regenerated JSON/CSV/Markdown publications.
   The trusted join over all 280 selected cells also regenerates byte-for-byte.
+- Published the complete non-workspace Rostam control plane, normalized raw
+  archives, target environment evidence, exact-work bundle, and generated
+  publications. Large normalized archives use Git LFS; redundant cluster
+  staging workspaces remain excluded.
 - Fixed the trusted-join guard so campaigns of different catalog profiles can
   be joined: it compares the analysis-relevant policy subset instead of whole
   policy documents, whose `catalog_profile` and `input_paths` differ by
