@@ -67,3 +67,23 @@ the campaign manifest, selection, and completeness-verdict identities. The
 analysis tooling validates the normalized member inventory; publications embed
 their regeneration command. [`../../../docs/artifact-evaluation.md`](../../../docs/artifact-evaluation.md)
 documents the fail-closed analysis and reproduction procedure.
+
+Historical publication bytes must be regenerated with the analyzer source that
+created them. `analyzer-sources/` preserves deterministic `git archive` exports
+for the two historical analyzer identities that are not otherwise recoverable
+from a fresh checkout of the current branch:
+
+- r6: commit `0911bbab808a3999b09b0a51a74c38db3ebf82a0`, archive SHA-256
+  `1c308f69162cd6366a51f0eba05562a04020074ce543a8ba36281e6bfea0db65`
+- trusted 280-cell join: commit
+  `6757c8323056adda0e7df5b21c471abbed40590d`, archive SHA-256
+  `93cf45cdea9c971a9f6553c74f40a61648514de441c38cea7472f29ff47d0f15`
+
+These are analyzer-source conveniences, not replacements for a campaign's
+manifest-bound submission source archive. In particular, Rostam no longer had
+the original r6 submission tar whose SHA-256 is recorded as
+`cd6dfc0fdec3604ee547e9316b1e0edbafefce26a6087c3f59e047e43ff7eccc`.
+The exact r6 commit source, normalized selected evidence, descriptor, and all
+three publication files are present, and the publication regenerates
+byte-for-byte from them; the absent historical submission-tar bytes must not be
+silently reconstructed or claimed as recovered.
