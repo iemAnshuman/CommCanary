@@ -217,7 +217,7 @@ class VerificationTests(unittest.TestCase):
         trace = small_trace()
         canary = compile_trace(trace)
         verification = verify_canary_behavior(trace, canary)
-        self.assertEqual(verification["status"], "behaviorally_verified")
+        self.assertEqual(verification["status"], "model_behavior_preserved")
         self.assertEqual(verification["ranking"]["status"], "pass")
 
         changed = copy.deepcopy(canary)
@@ -229,6 +229,19 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(
             any(check["status"] == "fail" for row in verification["configurations"] for check in row["checks"])
         )
+
+    def test_behavior_verification_keeps_uncertain_capture_model_relative(self):
+        trace = small_trace()
+        trace["events"][0]["compute_fields_uncertain"] = True
+        canary = compile_trace(trace)
+
+        verification = verify_canary_behavior(trace, canary)
+
+        self.assertEqual(verification["status"], "model_behavior_unproven")
+        self.assertEqual(verification["claims"]["source_correspondence"], "pass")
+        self.assertEqual(verification["claims"]["model_behavior_preservation"], "unproven")
+        self.assertEqual(verification["claims"]["physical_execution"], "not_observed")
+        self.assertEqual(verification["claims"]["physical_conformance"], "unproven")
 
     def test_behavior_verification_distinguishes_statuses_and_ranking_inversion(self):
         trace = adversarial_ranking_trace()
@@ -245,7 +258,7 @@ class VerificationTests(unittest.TestCase):
         )
         self.assertEqual(verification["representation_fidelity_status"], "bounded_approximate")
         self.assertEqual(verification["source_verified_status"], "source_verified")
-        self.assertEqual(verification["behavioral_fidelity_status"], "pass")
+        self.assertEqual(verification["model_behavior_preservation_status"], "pass")
         self.assertEqual(verification["configuration_ranking_status"], "fail")
         self.assertEqual(verification["status"], "failed")
         self.assertTrue(
@@ -262,7 +275,7 @@ class VerificationTests(unittest.TestCase):
             configurations=adversarial_ranking_configs(),
             ranking_tie_tolerance_us=0.0,
         )
-        self.assertEqual(verification["status"], "behaviorally_verified")
+        self.assertEqual(verification["status"], "model_behavior_preserved")
         self.assertEqual(verification["configuration_ranking_status"], "pass")
 
     def test_behavior_verification_replays_full_source_not_candidate_prefix(self):
@@ -296,7 +309,10 @@ class VerificationTests(unittest.TestCase):
             require_behavior_verification=True,
             behavior_configurations=adversarial_ranking_configs(),
         )
-        self.assertEqual(faithful["compiler"]["behavior_verification_status"], "behaviorally_verified")
+        self.assertEqual(
+            faithful["compiler"]["model_behavior_verification_status"],
+            "model_behavior_preserved",
+        )
         self.assertEqual(faithful["compiler"]["configuration_ranking_status"], "pass")
 
     def test_fidelity_budgets_fail_closed(self):

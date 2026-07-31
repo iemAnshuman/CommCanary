@@ -2,16 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://commcanary.dev/schemas/commcanary.behavior_verification.v1.schema.json",
   "title": "CommCanary behavior verification v1",
-  "description": "Portable output shape for behavioral verification. Rankings, tolerance calculations, source-verification nesting, and aggregate status agreement require producer/runtime semantics.",
+  "description": "Portable output shape for deterministic-model behavior verification. It does not claim physical execution, conformance, decision fidelity, or producer authenticity.",
   "type": "object",
   "required": [
     "format",
     "status",
     "assurance_state",
+    "claims",
     "representation_fidelity_status",
     "source_verified_status",
     "source_coverage_status",
-    "behavioral_fidelity_status",
+    "model_behavior_preservation_status",
     "configuration_ranking_status",
     "source_events",
     "relative_tolerance_pct",
@@ -30,17 +31,19 @@
     },
     "status": {
       "enum": [
-        "behaviorally_verified",
-        "behaviorally_unverified",
+        "model_behavior_preserved",
+        "model_behavior_unproven",
         "failed"
       ]
     },
     "assurance_state": {
       "enum": [
-        "behaviorally_verified",
         "source_corresponding",
         "internally_consistent"
       ]
+    },
+    "claims": {
+      "$ref": "#/$defs/claims"
     },
     "representation_fidelity_status": {
       "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
@@ -54,7 +57,7 @@
         "partial_source"
       ]
     },
-    "behavioral_fidelity_status": {
+    "model_behavior_preservation_status": {
       "$ref": "#/$defs/passFail"
     },
     "configuration_ranking_status": {
@@ -99,6 +102,30 @@
   },
   "additionalProperties": true,
   "$defs": {
+    "claims": {
+      "type": "object",
+      "required": [
+        "structural_validity",
+        "internal_integrity",
+        "source_correspondence",
+        "model_behavior_preservation",
+        "physical_execution",
+        "physical_conformance",
+        "physical_decision_fidelity",
+        "producer_authenticity"
+      ],
+      "properties": {
+        "structural_validity": { "const": "pass" },
+        "internal_integrity": { "const": "pass" },
+        "source_correspondence": { "enum": ["pass", "partial", "fail"] },
+        "model_behavior_preservation": { "enum": ["pass", "unproven", "fail"] },
+        "physical_execution": { "const": "not_observed" },
+        "physical_conformance": { "const": "unproven" },
+        "physical_decision_fidelity": { "const": "not_measured" },
+        "producer_authenticity": { "const": "unsigned" }
+      },
+      "additionalProperties": false
+    },
     "captureUncertainty": {
       "type": "object",
       "required": [

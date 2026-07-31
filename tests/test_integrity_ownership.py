@@ -78,7 +78,7 @@ def refresh_producer_hashes(canary: dict) -> None:
 
 
 class IntegrityProfileTests(unittest.TestCase):
-    def test_assurance_ladder_is_machine_readable_without_changing_status(self) -> None:
+    def test_assurance_summary_and_claim_dimensions_are_machine_readable(self) -> None:
         trace = nested_trace()
         canary = compile_trace(trace)
         fidelity = verify_canary_fidelity(trace, canary)
@@ -93,13 +93,16 @@ class IntegrityProfileTests(unittest.TestCase):
                 "internally_consistent",
                 "source_corresponding",
                 "model_recomputed",
-                "behaviorally_verified",
             ),
         )
         self.assertEqual(fidelity["status"], "source_verified")
         self.assertEqual(fidelity["assurance_state"], "source_corresponding")
-        self.assertEqual(behavior["status"], "behaviorally_verified")
-        self.assertEqual(behavior["assurance_state"], "behaviorally_verified")
+        self.assertEqual(behavior["status"], "model_behavior_preserved")
+        self.assertEqual(behavior["assurance_state"], "source_corresponding")
+        self.assertEqual(behavior["claims"]["model_behavior_preservation"], "pass")
+        self.assertEqual(behavior["claims"]["physical_execution"], "not_observed")
+        self.assertEqual(behavior["claims"]["physical_decision_fidelity"], "not_measured")
+        self.assertEqual(behavior["claims"]["producer_authenticity"], "unsigned")
         self.assertEqual(report_verification["status"], "model_recomputed")
         self.assertEqual(report_verification["assurance_state"], "model_recomputed")
 

@@ -46,7 +46,6 @@ ASSURANCE_STATES = (
     "internally_consistent",
     "source_corresponding",
     "model_recomputed",
-    "behaviorally_verified",
 )
 FIDELITY_ERROR_FIELDS = (
     "max_gap_error_us",

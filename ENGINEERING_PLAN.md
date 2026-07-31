@@ -665,15 +665,20 @@ work before staging anything.
 
 **Priority:** P0. **Estimate:** 3-5 focused days. **Precedes structural refactors.**
 
-### 1.1 Define an assurance ladder
+### 1.1 Define integrity summaries and independent claim dimensions
 
-Use distinct machine-readable states and documentation:
+Use distinct machine-readable integrity/correspondence summaries:
 
 1. `structurally_valid` — shape/types/ranges are accepted;
 2. `internally_consistent` — derived fields and stored commitments recompute;
 3. `source_corresponding` — source commitments match a supplied source;
-4. `model_recomputed` — a report matches a rerun of the declared model;
-5. `behaviorally_verified` — declared behavior/ranking checks pass.
+4. `model_recomputed` — a report matches a rerun of the declared model.
+
+Do not extend this ordered list into physical product claims. Behavior
+verification separately reports source correspondence, deterministic-model
+behavior preservation, physical execution, physical conformance, physical
+decision fidelity, and producer authenticity. A successful simulator-relative
+status is `model_behavior_preserved`, never an assertion about hardware.
 
 None of these is authenticity. SHA-256 detects changed content relative to a
 known digest; it does not establish who produced the artifact. Use signatures or

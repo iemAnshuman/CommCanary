@@ -9,8 +9,7 @@
         "structurally_valid",
         "internally_consistent",
         "source_corresponding",
-        "model_recomputed",
-        "behaviorally_verified"
+        "model_recomputed"
       ]
     },
     "check": {

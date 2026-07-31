@@ -63,7 +63,10 @@ class CommCanaryTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             canary = load_json(canary_path)
             self.assertIn("behavior_search", canary["compiler"])
-            self.assertEqual(canary["compiler"]["behavior_verification_status"], "behaviorally_verified")
+            self.assertEqual(
+                canary["compiler"]["model_behavior_verification_status"],
+                "model_behavior_preserved",
+            )
 
     def test_html_escapes_once_and_allowlists_verdict_class(self):
         canary = compile_trace(small_trace())
@@ -130,7 +133,7 @@ class CommCanaryTests(unittest.TestCase):
             )
             self.assertTrue(os.path.exists(html_path))
             self.assertEqual(load_json(verification_path)["status"], "source_verified")
-            self.assertEqual(load_json(behavior_path)["status"], "behaviorally_verified")
+            self.assertEqual(load_json(behavior_path)["status"], "model_behavior_preserved")
             self.assertEqual(load_json(report_verification_path)["status"], "model_recomputed")
 
     def test_clustering_baseline_trace_is_valid_negative_control(self):
@@ -153,7 +156,7 @@ class CommCanaryTests(unittest.TestCase):
             ranking_tie_tolerance_us=0.0,
         )
         self.assertEqual(verification["source_verified_status"], "failed")
-        self.assertNotEqual(verification["status"], "behaviorally_verified")
+        self.assertNotEqual(verification["status"], "model_behavior_preserved")
 
     def test_only_isolated_baseline_may_deliberately_zero_unknown_overlap(self):
         trace = small_trace()
@@ -210,8 +213,8 @@ class CommCanaryTests(unittest.TestCase):
         )
         self.assertEqual(random_verification["source_verified_status"], "failed")
         self.assertEqual(frequency_verification["source_verified_status"], "failed")
-        self.assertNotEqual(random_verification["status"], "behaviorally_verified")
-        self.assertNotEqual(frequency_verification["status"], "behaviorally_verified")
+        self.assertNotEqual(random_verification["status"], "model_behavior_preserved")
+        self.assertNotEqual(frequency_verification["status"], "model_behavior_preserved")
 
     def test_baseline_cli_generates_frequency_trace(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -274,7 +277,7 @@ class CommCanaryTests(unittest.TestCase):
             ranking_tie_tolerance_us=0.0,
         )
         self.assertEqual(verification["source_verified_status"], "failed")
-        self.assertNotEqual(verification["status"], "behaviorally_verified")
+        self.assertNotEqual(verification["status"], "model_behavior_preserved")
 
     def test_baseline_cli_generates_stratified_trace(self):
         with tempfile.TemporaryDirectory() as tmp:

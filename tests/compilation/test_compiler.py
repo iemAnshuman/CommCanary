@@ -105,7 +105,7 @@ class CompilationTests(unittest.TestCase):
             ranking_tie_tolerance_us=0.0,
         )
         search = canary["compiler"]["behavior_search"]
-        self.assertEqual(canary["compiler"]["behavior_verification_status"], "behaviorally_verified")
+        self.assertEqual(canary["compiler"]["model_behavior_verification_status"], "model_behavior_preserved")
         self.assertEqual(search["ranking_status"], "pass")
         self.assertGreater(search["accepted_candidates"], 0)
         self.assertGreaterEqual(search["selected_timing_sample_limit"], 2)
@@ -113,7 +113,7 @@ class CompilationTests(unittest.TestCase):
         selected_rows = [
             row
             for row in search["candidates"]
-            if row["status"] == "behaviorally_verified"
+            if row["status"] == "model_behavior_preserved"
             and row["canary_bytes"] == search["selected_canary_bytes_without_search_metadata"]
         ]
         self.assertTrue(selected_rows)
@@ -124,7 +124,7 @@ class CompilationTests(unittest.TestCase):
                 configurations=adversarial_ranking_configs(),
                 ranking_tie_tolerance_us=0.0,
             )["status"],
-            "behaviorally_verified",
+            "model_behavior_preserved",
         )
 
     def test_behavior_search_fails_when_budget_cannot_preserve_ranking(self):
@@ -459,7 +459,7 @@ class CompilationTests(unittest.TestCase):
             ranking_tie_tolerance_us=0.0,
         )
         self.assertEqual(fidelity["status"], "source_verified")
-        self.assertEqual(behavior["status"], "behaviorally_verified")
+        self.assertEqual(behavior["status"], "model_behavior_preserved")
 
     def test_compile_rejects_invalid_per_group_timing_budget(self):
         with self.assertRaises(SchemaError):

@@ -117,7 +117,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         action="store_true",
         help=(
             "search timing sample limits up to --timing-sample-limit and choose the smallest "
-            "behaviorally verified canary"
+            "model-behavior-preserving canary"
         ),
     )
     compile_parser.add_argument(

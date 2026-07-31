@@ -191,13 +191,17 @@ Current producers emit `commcanary.canary-integrity.v1` with
 Runtime canary validation recomputes internal semantic, calibration, and
 artifact projections. Source-assisted fidelity verification separately
 reconstructs source correspondence and catches an internally rehashed producer
-mutation. The assurance ladder remains:
+mutation. The integrity/correspondence summary remains:
 
 1. `structurally_valid`;
 2. `internally_consistent`;
 3. `source_corresponding`;
-4. `model_recomputed`;
-5. `behaviorally_verified`.
+4. `model_recomputed`.
+
+Deterministic-model behavior preservation and physical/authenticity properties
+are independent claim dimensions. In particular,
+`model_behavior_preserved` does not assert physical execution, conformance, or
+decision fidelity.
 
 Legacy unprofiled canary v2 is readable only via the explicit
 `allow_legacy_unverified=True` opt-in and does not satisfy the published current

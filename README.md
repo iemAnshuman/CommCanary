@@ -51,7 +51,7 @@ $ commcanary verify-behavior out/research_scaffold/adversarial_decode.trace.json
 behavior verification: failed
 - representation fidelity: lossless_timing
 - source verified: failed
-- behavioral fidelity: fail
+- deterministic-model behavior: fail
 - configuration ranking: pass        # <- the ranking survived. Nothing else did.
 ```
 
@@ -65,7 +65,7 @@ refusing its answer.
 
 What makes it different:
 
-- **Optional behavior-gated compilation.** Source/timing fidelity is always
+- **Optional model-behavior-gated compilation.** Source/timing fidelity is always
   audited; callers can additionally require a canary to preserve declared
   simulator verdicts, pairwise rankings, and tail behavior. The distinction
   matters—a generic ddmin reducer with a ranking-only oracle happily collapses
@@ -329,9 +329,9 @@ Require a completely lossless timing representation with:
 commcanary compile trace.json -o canary.json --lossless-timing
 ```
 
-Compiled canaries can also be behavior-gated. This is intentionally stricter
+Compiled canaries can also be model-behavior-gated. This is intentionally stricter
 than field-level fidelity: compilation fails unless the generated canary passes
-source verification, behavioral checks, and pairwise configuration-ranking
+source verification, deterministic-model checks, and pairwise configuration-ranking
 verification under the verifier's backend set.
 
 ```bash
@@ -342,7 +342,8 @@ For research minimization, use behavior-search mode. It compiles every timing
 sample limit in the requested range, runs behavior verification for each
 candidate, rejects failures, selects the smallest serialized passing artifact,
 and then greedily lowers timing budgets for individual signature groups only
-when the canary remains source-, behavior-, and ranking-verified:
+when the canary remains source-corresponding and preserves declared model
+behavior and rankings:
 
 ```bash
 commcanary compile trace.json -o canary.json \
@@ -354,7 +355,7 @@ commcanary compile trace.json -o canary.json \
 The selected canary records every uniform-budget candidate, the per-group
 refinement attempts, the accepted lower group budgets, and the selected timing
 limit mode. It is still not a full per-window/Pareto optimizer, but it gives a
-fail-closed behavioral minimization path for the current compiler and avoids
+fail-closed model-relative minimization path for the current compiler and avoids
 forcing quiet groups to carry the same sample budget as ranking-sensitive
 windows.
 
@@ -394,9 +395,10 @@ preserve measured p99 latency.
 ## Behavioral verification
 
 `verify-fidelity` answers whether a canary's representation-level claims can be
-recomputed from the source trace. `verify-behavior` answers a different
-question: whether the compressed artifact preserves simulator-visible workload
-behavior. It replays a lossless normalized source canary and the candidate
+recomputed from the source trace. `verify-behavior` answers a different,
+strictly model-relative question: whether the compressed artifact preserves
+workload behavior in CommCanary's deterministic simulator. It replays a
+lossless normalized source canary and the candidate
 canary across multiple backend configurations, then reports four separate
 statuses:
 
@@ -405,7 +407,7 @@ statuses:
 - `source_verified_status`: whether source-to-canary commitments recompute;
 - `source_coverage_status`: whether the candidate covers the full normalized
   source trace or only a prefix/subset;
-- `behavioral_fidelity_status`: whether p50/p95/p99/max/mean, queue-wait
+- `model_behavior_preservation_status`: whether p50/p95/p99/max/mean, queue-wait
   distributions, hidden communication, phase metrics, operation metrics, and
   tail-event recall are within tolerance;
 - `configuration_ranking_status`: whether pairwise backend rankings are
@@ -421,14 +423,18 @@ commcanary verify-behavior trace.json canary.json -o behavior.json \
 ```
 
 `compile --require-behavior-verification` uses this verifier as a fail-closed
-compiler gate. This is meant for research claims, not for fastest iteration.
+compiler gate. A successful status is `model_behavior_preserved`; it is meant
+for research claims and never establishes physical execution or conformance.
 `verify-behavior` compares against the full normalized source trace by default.
 Canaries generated from a prefix or subset of the trace are labelled
-`partial_source_verified` and cannot receive a strong behavioral claim.
+`partial_source_verified` and cannot receive a model-behavior preservation claim.
 
-A canary with rank-local compute uncertainty can still be replayed, but strong
-behavioral claims are downgraded to `behaviorally_unverified` rather than
-`behaviorally_verified`.
+A canary with rank-local compute uncertainty can still be replayed, but its
+status is `model_behavior_unproven` rather than `model_behavior_preserved`.
+Every behavior-verification record also carries independent claim dimensions;
+physical execution is `not_observed`, physical conformance is `unproven`,
+physical decision fidelity is `not_measured`, and producer authenticity is
+`unsigned`.
 
 ## Replay ablations
 
@@ -464,7 +470,7 @@ field-level compression is not enough. It constructs an isolated collective
 baseline, random-sampling, frequency-representative, and clustering controls,
 and a full decode-like workload whose queue-reset gaps and high-overlap tail
 windows change configuration ranking. A canary that is too small is labelled
-unverified; behavior-search finds the smallest verified timing budget in the
+unproven; behavior-search finds the smallest model-preserving timing budget in the
 declared range, and a lossless compact canary preserves the workload ranking.
 
 ```bash
@@ -500,8 +506,8 @@ commitments. `stratified` is the kill-condition control named in
 cut into deterministic timing strata, and one seeded random member is drawn
 per stratum; every event is replaced by its stratum's sample. These baselines
 are intentionally not source-verified against the original trace;
-`verify-behavior` should label them unverified unless they actually pass the
-full source, behavioral, and ranking gates.
+`verify-behavior` should label them unproven unless they actually pass the full
+source, deterministic-model, and ranking gates.
 
 ## Decision-preserving reduction baseline
 
@@ -509,10 +515,10 @@ full source, behavioral, and ranking gates.
 behavior-search compilation. Its oracle preserves only the decision: a
 candidate event subset is accepted when compiling and replaying it across the
 configuration set reproduces the full trace's pairwise latency-metric
-rankings. It deliberately does not enforce behavioral fidelity, so it shows
+rankings. It deliberately does not enforce model-behavior preservation, so it shows
 what decision-only reduction gives up: on the synthetic ranking-inversion
 scaffold it happily collapses 100 events to a single event while keeping the
-ranking, which is precisely why the fail-closed behavioral verifier gates on
+ranking, which is precisely why the fail-closed model-behavior verifier gates on
 tail recall, queue waits, hidden communication, and distribution agreement in
 addition to rankings.
 

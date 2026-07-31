@@ -198,46 +198,62 @@ def verify_canary_behavior(
         metrics=BEHAVIORAL_RANKING_METRICS,
         tie_tolerance_us=ranking_tie_tolerance_us,
     )
-    behavioral_fidelity_status = "pass" if all(row["status"] == "pass" for row in config_rows) else "fail"
+    model_behavior_preservation_status = "pass" if all(row["status"] == "pass" for row in config_rows) else "fail"
     configuration_ranking_status = ranking["status"]
     uncertainty = _behavior_capture_uncertainty(canary)
 
-    passed = (
+    model_behavior_preserved = (
         source_coverage_status == "full_source"
         and source_verified_status == "source_verified"
-        and behavioral_fidelity_status == "pass"
+        and model_behavior_preservation_status == "pass"
         and configuration_ranking_status == "pass"
         and uncertainty["status"] == "certain"
     )
-    if passed:
-        status = "behaviorally_verified"
-    elif (
+    model_behavior_unproven = (
         source_coverage_status == "full_source"
         and source_verified_status == "source_verified"
-        and behavioral_fidelity_status == "pass"
+        and model_behavior_preservation_status == "pass"
         and configuration_ranking_status == "pass"
         and uncertainty["status"] != "certain"
-    ):
-        status = "behaviorally_unverified"
+    )
+    if model_behavior_preserved:
+        status = "model_behavior_preserved"
+    elif model_behavior_unproven:
+        status = "model_behavior_unproven"
     else:
         status = "failed"
+
+    if source_verified_status == "source_verified" and source_coverage_status == "full_source":
+        source_correspondence_claim = "pass"
+    elif source_verified_status in {"source_verified", "partial_source_verified"}:
+        source_correspondence_claim = "partial"
+    else:
+        source_correspondence_claim = "fail"
+
+    model_behavior_claim = "pass" if model_behavior_preserved else ("unproven" if model_behavior_unproven else "fail")
 
     return {
         "format": BEHAVIOR_VERIFICATION_FORMAT,
         "status": status,
         "assurance_state": (
-            "behaviorally_verified"
-            if status == "behaviorally_verified"
-            else (
-                "source_corresponding"
-                if source_verified_status in {"source_verified", "partial_source_verified"}
-                else "internally_consistent"
-            )
+            "source_corresponding"
+            if source_verified_status in {"source_verified", "partial_source_verified"}
+            else "internally_consistent"
         ),
+        "claims": {
+            "structural_validity": "pass",
+            "internal_integrity": "pass",
+            "source_correspondence": source_correspondence_claim,
+            "model_behavior_preservation": model_behavior_claim,
+            "physical_execution": "not_observed",
+            "physical_conformance": "unproven",
+            "physical_decision_fidelity": "not_measured",
+            "producer_authenticity": "unsigned",
+        },
         "representation_fidelity_status": representation_fidelity_status,
         "source_verified_status": source_verified_status,
         "source_coverage_status": source_coverage_status,
-        "behavioral_fidelity_status": behavioral_fidelity_status,
+        "model_behavior_preservation_status": model_behavior_preservation_status,
         "configuration_ranking_status": configuration_ranking_status,
         "source_events": source_events,
         "relative_tolerance_pct": relative_tolerance_pct,

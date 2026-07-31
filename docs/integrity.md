@@ -1,8 +1,9 @@
-# Integrity and assurance
+# Integrity and claim dimensions
 
-CommCanary reports assurance as a ladder. The `assurance_state` field names the
-highest level demonstrated by that operation; existing `status` values remain
-unchanged for API and CLI compatibility.
+CommCanary uses `assurance_state` as a compact compatibility summary for
+structure, integrity, source correspondence, and deterministic report
+recomputation. Product claims are independent dimensions, not further rungs on
+that sequence.
 
 | `assurance_state` | What was demonstrated |
 | --- | --- |
@@ -10,19 +11,25 @@ unchanged for API and CLI compatibility.
 | `internally_consistent` | Stored commitments and derived canary fields recompute from the artifact. |
 | `source_corresponding` | A supplied source trace independently reproduces the protected source-derived fields and commitments. |
 | `model_recomputed` | A report matches a deterministic rerun of its declared model and protocol. |
-| `behaviorally_verified` | The declared behavior, tail, and configuration-ranking checks pass against the full source. |
 
-The ladder is cumulative only for the artifact being checked. For example, a
+The summary is cumulative only for the artifact being checked. For example, a
 report that fails model recomputation may still be structurally valid, while
 its referenced canary may separately be internally consistent.
 
 The verification APIs expose the ladder as follows:
 
-| API | Existing successful `status` | Successful `assurance_state` |
+| API | Successful `status` | Successful `assurance_state` |
 | --- | --- | --- |
 | `verify_canary_fidelity` | `source_verified` | `source_corresponding` |
 | `verify_report_against_canary` | `model_recomputed` | `model_recomputed` |
-| `verify_canary_behavior` | `behaviorally_verified` | `behaviorally_verified` |
+| `verify_canary_behavior` | `model_behavior_preserved` | `source_corresponding` |
+
+Behavior verification carries a separate `claims` object. Its successful
+simulator comparison sets `model_behavior_preservation: pass`, while
+`physical_execution`, `physical_conformance`, `physical_decision_fidelity`,
+and `producer_authenticity` remain respectively `not_observed`, `unproven`,
+`not_measured`, and `unsigned`. Those values cannot be upgraded by simulator
+replay.
 
 Profiled v2 canaries must pass internal hash recomputation during
 `validate_canary`. Legacy artifacts are accepted only with

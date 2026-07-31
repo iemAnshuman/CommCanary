@@ -90,14 +90,14 @@ def compile_trace(
             limits=limits,
         )
         compiler = canary["compiler"]
-        compiler["behavior_verification_status"] = behavior["status"]
+        compiler["model_behavior_verification_status"] = behavior["status"]
         compiler["configuration_ranking_status"] = behavior["configuration_ranking_status"]
-        compiler["behavioral_fidelity_status"] = behavior["behavioral_fidelity_status"]
+        compiler["model_behavior_preservation_status"] = behavior["model_behavior_preservation_status"]
         compiler["artifact_provenance_sha256"] = canary_artifact_provenance_sha256(canary)
         update_size_metrics(canary)
         validate_canary(canary, limits=limits)
-        if behavior["status"] != "behaviorally_verified":
-            raise SchemaError("compiled canary failed required behavior verification")
+        if behavior["status"] != "model_behavior_preserved":
+            raise SchemaError("compiled canary failed required model-behavior verification")
     return canary
 
 

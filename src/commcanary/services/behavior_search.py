@@ -50,15 +50,15 @@ def synthesize_behavioral_canary(
     ranking_tie_tolerance_us: float = 0.001,
     limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
 ) -> JsonDict:
-    """Search for the smallest behaviorally and ranking-verified canary.
+    """Search for a compact canary that preserves declared model behavior.
 
     This is deliberately verification-driven rather than field-budget-driven:
     every candidate in the requested timing-sample range is compiled, replayed
     against the lossless source canary, and rejected unless source fidelity,
-    behavioral fidelity, and pairwise configuration ranking all pass. The
+    deterministic-model behavior and pairwise configuration ranking all pass. The
     chosen artifact minimises serialized canary bytes, then stored event count,
     then timing sample limit. It is a research-mode compiler path; it trades
-    speed for a fail-closed behavioral claim.
+    speed for a fail-closed, model-relative behavior claim.
     """
 
     validate_trace(trace, require_known_overlap=True, limits=limits)
@@ -145,7 +145,7 @@ def synthesize_behavioral_canary(
             verification = {
                 "status": "failed",
                 "source_verified_status": "failed",
-                "behavioral_fidelity_status": "failed",
+                "model_behavior_preservation_status": "failed",
                 "configuration_ranking_status": "failed",
             }
             status = "failed"
@@ -154,14 +154,14 @@ def synthesize_behavioral_canary(
             row["reason"] = str(exc)
         rows.append(row)
 
-        if status != "behaviorally_verified":
+        if status != "model_behavior_preserved":
             continue
         key = _behavior_search_size_key(candidate)
         if best is None or key < best[0]:
             best = (key, candidate, verification)
 
     if best is None:
-        raise SchemaError("no behaviorally verified canary found in the requested timing sample limit range")
+        raise SchemaError("no model-behavior-preserving canary found in the requested timing sample limit range")
 
     _key, selected, verification = best
     selected = copy.deepcopy(selected)
@@ -193,10 +193,10 @@ def synthesize_behavioral_canary(
         ledger_budget=limits.max_retained_ledger_rows - len(rows),
     )
     compiler = selected["compiler"]
-    accepted = [row for row in rows if row.get("status") == "behaviorally_verified"]
-    compiler["behavior_verification_status"] = verification["status"]
+    accepted = [row for row in rows if row.get("status") == "model_behavior_preserved"]
+    compiler["model_behavior_verification_status"] = verification["status"]
     compiler["configuration_ranking_status"] = verification["configuration_ranking_status"]
-    compiler["behavioral_fidelity_status"] = verification["behavioral_fidelity_status"]
+    compiler["model_behavior_preservation_status"] = verification["model_behavior_preservation_status"]
     compiler["behavior_search"] = {
         "mode": "exhaustive_timing_sample_limit_search_with_per_group_refinement",
         "objective": "minimize serialized canary bytes subject to source, behavioral, and ranking verification",
@@ -211,7 +211,7 @@ def synthesize_behavioral_canary(
         "selected_canary_bytes_without_search_metadata": as_int(compiler.get("canary_bytes")),
         "selected_canary_events": as_int(compiler.get("canary_events")),
         "ranking_status": verification["configuration_ranking_status"],
-        "behavioral_status": verification["behavioral_fidelity_status"],
+        "model_behavior_status": verification["model_behavior_preservation_status"],
         "source_verified_status": verification["source_verified_status"],
         "per_group_refinement": refinement,
         "candidates": rows,
@@ -345,7 +345,7 @@ def _refine_behavior_search_timing_groups(
                 candidate_verification = {
                     "status": "failed",
                     "source_verified_status": "failed",
-                    "behavioral_fidelity_status": "failed",
+                    "model_behavior_preservation_status": "failed",
                     "configuration_ranking_status": "failed",
                 }
                 row = {
@@ -353,14 +353,14 @@ def _refine_behavior_search_timing_groups(
                     "timing_sample_limit": candidate_limit,
                     "status": "failed",
                     "source_verified_status": "failed",
-                    "behavioral_fidelity_status": "failed",
+                    "model_behavior_preservation_status": "failed",
                     "configuration_ranking_status": "failed",
                     "reason": str(exc),
                 }
                 rows.append(row)
                 continue
             rows.append(row)
-            if candidate_verification.get("status") != "behaviorally_verified":
+            if candidate_verification.get("status") != "model_behavior_preserved":
                 continue
             candidate_key = _behavior_search_size_key(candidate)
             if candidate_key >= current_key:
@@ -435,7 +435,9 @@ def _behavior_search_row(
         "timing_sample_limit": timing_sample_limit,
         "status": str(verification.get("status")),
         "source_verified_status": str(verification.get("source_verified_status", "unknown")),
-        "behavioral_fidelity_status": str(verification.get("behavioral_fidelity_status", "unknown")),
+        "model_behavior_preservation_status": str(
+            verification.get("model_behavior_preservation_status", "unknown")
+        ),
         "configuration_ranking_status": str(verification.get("configuration_ranking_status", "unknown")),
         "canary_bytes": as_int(compiler.get("canary_bytes"), 0),
         "canary_events": as_int(compiler.get("canary_events"), 0),

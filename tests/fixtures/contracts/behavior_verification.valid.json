@@ -1,7 +1,17 @@
 {
   "absolute_tolerance_us": 1.0,
-  "assurance_state": "behaviorally_verified",
-  "behavioral_fidelity_status": "pass",
+  "assurance_state": "source_corresponding",
+  "claims": {
+    "internal_integrity": "pass",
+    "model_behavior_preservation": "pass",
+    "physical_conformance": "unproven",
+    "physical_decision_fidelity": "not_measured",
+    "physical_execution": "not_observed",
+    "producer_authenticity": "unsigned",
+    "source_correspondence": "pass",
+    "structural_validity": "pass"
+  },
+  "model_behavior_preservation_status": "pass",
   "capture_uncertainty": {
     "compute_fields_uncertain_events": 0,
     "status": "certain"
@@ -126,6 +136,6 @@
     "status": "source_verified"
   },
   "source_verified_status": "source_verified",
-  "status": "behaviorally_verified",
+  "status": "model_behavior_preserved",
   "tail_recall_threshold": 0.8
 }

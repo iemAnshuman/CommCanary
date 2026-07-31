@@ -559,12 +559,12 @@ def verify_behavior_command(args: Any) -> int:
     print(f"behavior verification: {verification['status']}")
     print(f"- representation fidelity: {verification['representation_fidelity_status']}")
     print(f"- source verified: {verification['source_verified_status']}")
-    print(f"- behavioral fidelity: {verification['behavioral_fidelity_status']}")
+    print(f"- deterministic-model behavior: {verification['model_behavior_preservation_status']}")
     print(f"- configuration ranking: {verification['configuration_ranking_status']}")
     for row in verification["configurations"]:
         print(f"- {row['name']}: {row['status']}")
     print(f"- ranking: {verification['ranking']['status']}")
-    return 0 if verification["status"] == "behaviorally_verified" else 1
+    return 0 if verification["status"] == "model_behavior_preserved" else 1
 
 
 def verify_report_command(args: Any) -> int:

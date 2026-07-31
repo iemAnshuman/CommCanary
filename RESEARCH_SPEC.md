@@ -157,12 +157,12 @@ compilation fails instead of silently violating the contract.
 
 When measured exposed latency is absent, “tail-aware” means structural tail
 preservation, not demonstrated p99 preservation. The report labels this mode
-`structural-proxy`. `verify-behavior` is the gate for stronger behavioral
-claims: without a passing source verification, full-source coverage, behavioral
-metric comparison, and pairwise ranking check, the artifact must be described as
-behaviorally unverified. `verify-behavior` compares against the full normalized
-source trace by default; prefix-only or subset canaries are labelled
-`partial_source_verified` and cannot receive a strong behavioral claim.
+`structural-proxy`. `verify-behavior` is a deterministic-model gate, not a
+physical-fidelity gate: without passing source verification, full-source
+coverage, model-metric comparison, and pairwise ranking checks, the artifact
+cannot be described as `model_behavior_preserved`. `verify-behavior` compares
+against the full normalized source trace by default; prefix-only or subset
+canaries are labelled `partial_source_verified` and cannot receive that claim.
 `compile --require-behavior-verification` applies that same gate at
 artifact-generation time. `compile --behavior-search` goes further by searching
 the declared timing sample limit range, then greedily lowering per-group timing
