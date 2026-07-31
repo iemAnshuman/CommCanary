@@ -138,6 +138,9 @@ injected and naturally occurring regressions.
   fidelity toward the existing explicit-overlap result; unit tests establish
   interval/linkage semantics but do not establish hardware fidelity;
 - synthetic compute kernels calibrated to preserve interference;
+- simulator-side compute scheduling: after readiness is normalized,
+  `compute_before_us` is descriptive and does not create a compute queue,
+  shared-SM or memory-bandwidth contention, or compute/network dependencies;
 - dependency-graph and communicator reconstruction;
 - full per-window/per-motif optimisation that directly minimises canary size
   subject to ranking preservation across multiple target configurations;

@@ -148,7 +148,11 @@ published in [`experiments/rostam/results/`](experiments/rostam/results/README.m
 What the simulator *does* buy you is determinism, which is what makes the
 verification story checkable at all: `verify-report` recomputes a report
 bit-identically, so an edited number fails validation instead of surviving as
-a screenshot. The research contract, including what is deliberately *not*
+a screenshot. It does not schedule a compute resource: `compute_before_us` is
+preserved and reported, and can supply readiness only when a trace has neither
+timestamps nor explicit gaps, but it does not otherwise create a compute queue,
+shared-SM contention, memory-bandwidth contention, or a compute-to-network
+dependency. The research contract, including what is deliberately *not*
 claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
 
 ## Quick start
