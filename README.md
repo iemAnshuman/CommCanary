@@ -1,12 +1,17 @@
 # CommCanary
 
 [![CI](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml/badge.svg)](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/commcanary)](https://pypi.org/project/commcanary/)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
+> **Research alpha.** CommCanary 0.3.0 is unreleased. It is a
+> source-verifiable research framework for synthesizing and evaluating
+> workload-shaped distributed-communication canaries, with an experimental
+> hardware-qualification workflow. It is not yet a validated hardware-
+> qualification decision tool.
+
 **Turn distributed workload profiles into a model-free, source-verifiable
-hardware-qualification request—without shipping weights or prompts.**
+qualification experiment—without shipping weights or prompts.**
 
 Isolated collective microbenchmarks are known to mislead: `nccl-tests` can
 report healthy numbers while the real workload ships a 20% regression
@@ -148,11 +153,18 @@ claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
 
 ## Quick start
 
+CommCanary is not currently published on PyPI. Install the research alpha from
+a reviewed source checkout; pin the checkout to the commit your experiment is
+intended to use before creating durable evidence:
+
 ```bash
-pip install commcanary
+git clone https://github.com/iemAnshuman/commcanary.git
+cd commcanary
+git checkout <reviewed-commit-sha>
+python -m pip install .
 ```
 
-Then, from a clone of this repository (for the bundled example traces):
+Then, from that checkout (for the bundled example traces):
 
 ```bash
 commcanary compile examples/traces/llama70b_tp8_trace.json \
