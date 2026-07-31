@@ -259,10 +259,11 @@ equivalent.
 
 The following newly frozen campaigns were executed on Rostam at clean
 repository commit `2855275288e67a1a2d0bbefff0740841fdf0ecf0`. Their generated
-physical results remain on Rostam; the identities below were read from the
-immutable manifests, selections, completeness verdicts, raw-archive
-descriptors, and byte-regenerated publications rather than copied from
-scheduler output.
+physical results, normalized raw archives, and publications are preserved under
+[`experiments/rostam/results/`](../experiments/rostam/results/README.md). The
+identities below were independently rehashed from the immutable manifests,
+selections, completeness verdicts, archive descriptors, and byte-regenerated
+publications rather than copied from scheduler output.
 
 ### Shared replay
 
@@ -367,3 +368,60 @@ pipeline itself produced from validated evidence.
 Reproducing the join requires the recorded regeneration command verbatim,
 including argument order, because that string is embedded in the aggregate and
 therefore in its hash.
+
+## Exact-work same-node diagnostic (2026-07-31)
+
+The duration-fitted qualification path was replaced with a source-bound
+rank-local work recipe. Kineto evidence now binds each asynchronous collective
+issue to the exact contiguous GEMMs before its explicit wait. Target
+materialization reproduces that issue/work/wait program without fitting source
+durations or applying a target calibration.
+
+Two failed integration campaigns remain preserved. Job `178513` launched the
+qualification file by path; job `178514` used module mode without exposing the
+manifest-bound repository package to the isolated child. Their attempt-record
+SHA-256 values are
+`c07874af4d3be28e151560a5ebd8e8561670faf9b451aad5e9bf4b95c65cc636`
+and
+`1fffb8d92dcc5b55cdf700d2f117f227b45f931b3e8c4c477d4246d87e500240`.
+Neither campaign was mutated after its bound script changed; r3 was frozen as a
+replacement.
+
+`qualification-exact-20260730-r3` selected one successful terminal attempt and
+has a zero-issue completeness verdict:
+
+- manifest SHA-256:
+  `c0bc2e6a9ecb1da691a3caa083bd5842f054c770300a855a9ac69500a2834552`
+- immutable plan SHA-256:
+  `24b739986ad4c44bd70f581557b9929463ff861f07030bff6269c0fb61f1519e`
+- attempt-record SHA-256:
+  `43c41dac3423bfe5dfb7339842cb8cfd1b858559541565453e6302557ea55c79`
+- selection SHA-256:
+  `bf23480f39dd49794aa3d81b23a13d5576388563aeef12e8e77681877dd4ce9b`
+- attempt-inventory SHA-256:
+  `2099a1f3906867b3f70d2802d5fec4aec4c09fbb227e72e3d93414bfb2c4412c`
+- completeness-verdict SHA-256:
+  `593772c0902024443dd3e457f0e59003eea41a59014821417f629f5a34ff97b8`
+- raw archive: 532,480 bytes, SHA-256
+  `92ddc56f7ecbe5a7b162a7df749eeb01f4fd343eeab224be3c4f9d9996453bbe`
+- raw-archive descriptor SHA-256:
+  `b3e0293ded1f287a484d1883d2ba75c4b9cadc6082dcd14b761127db7ce68601`
+- regenerated publication SHA-256 values: JSON
+  `b42d4aea0451812cb1a7ff3d15a36cbcfaeadc47e0a8163725c7163b3bb80218`,
+  CSV
+  `853cb15b9ceafc96afaf315b29f719aef7a219256f534616aad77d7e99b0110d`,
+  Markdown
+  `c35446ce7c252c682bf83db8966ca6d4d521c3782eb192ba039037c04ca371cd`
+
+Source job `177966` and replay job `178515` both ran on `toranj1` with twenty
+whole-program samples. Source median/IQR were 1,434.112/9.216 us; replay
+median/IQR were 1,541.0015/8.9725 us. The signed difference was +106.8895 us,
+or +7.4533578967%, and all 32 deterministic data checks passed on four
+A100-PCIE-40GB devices under NCCL 2.20.5.
+
+This is a successful diagnostic execution, not an acceptance verdict. No
+tolerance was declared before observation and no multi-configuration ranking
+was measured. The trusted analyzer therefore reports
+`not-applicable-no-full-workload`, and the preserved claims remain
+`physical_fidelity: unproven`, `multi_configuration_ranking: not_measured`, and
+`qualification_verdict: not_issued`.
