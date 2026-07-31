@@ -299,6 +299,12 @@ def _validate_repository_hygiene() -> None:
 
 
 def _forbidden_tracked_path(path: Path) -> bool:
+    # The ignored physical-results tree is a deliberate, force-added evidence
+    # publication boundary. It may preserve exact build artifacts and their
+    # original directory names; source-release staging and source-oriented
+    # validation exclude the entire tree separately.
+    if path.parts[:3] == ("experiments", "rostam", "results"):
+        return False
     if FORBIDDEN_TRACKED_PARTS.intersection(path.parts):
         return True
     if path.name in FORBIDDEN_TRACKED_NAMES or path.name.startswith("repomix-output."):
@@ -319,9 +325,7 @@ def _forbidden_tracked_path(path: Path) -> bool:
 def _excluded_validation_path(path: Path) -> bool:
     """Return whether source-oriented validators must prune *path*."""
 
-    return _forbidden_tracked_path(path) or (
-        path.parts[:2] == ("experiments", "rostam") and path.parts[2:3] == ("results",)
-    )
+    return _forbidden_tracked_path(path) or path.parts[:3] == ("experiments", "rostam", "results")
 
 
 def _validate_json_files() -> None:

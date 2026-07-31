@@ -61,6 +61,7 @@ def test_repository_hygiene_allows_reviewed_source_and_golden_fixtures() -> None
     assert not verify._forbidden_tracked_path(Path("src/commcanary/schema.py"))
     assert not verify._forbidden_tracked_path(Path("tests/fixtures/experiments/golden/aggregate.json"))
     assert not verify._forbidden_tracked_path(Path("experiments/rostam/results/run/result.json"))
+    assert not verify._forbidden_tracked_path(Path("experiments/rostam/results/artifacts/dist/package.whl"))
 
 
 def test_source_validation_excludes_published_physical_results() -> None:
