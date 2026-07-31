@@ -223,7 +223,7 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
     weight = len(segment)
     gap_sum_us = sum(as_float(sample.get("gap_us"), 0.0) for sample in segment)
     average_gap_us = gap_sum_us / weight
-    representative = _joint_medoid_sample(segment, average_gap_us)
+    representative = _nearest_componentwise_median_sample(segment, average_gap_us)
     representative_source_index = start + next(
         offset for offset, sample in enumerate(segment) if sample is representative
     )
@@ -313,7 +313,7 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
         )
     record["source_segment_sha256"] = _source_segment_sha256(segment)
     record["representative_selection_method"] = (
-        "joint_medoid_normalized_l1_gap_skew_offsets_compute_overlap_pressure_observed"
+        "nearest_componentwise_median_normalized_l1_gap_skew_compute_overlap_pressure_observed_v1"
     )
     error_fields = (
         "max_gap_error_us",
@@ -330,7 +330,7 @@ def _aggregate_interval_record(samples: List[JsonDict], start: int, end: int) ->
     return record
 
 
-def _joint_medoid_sample(samples: List[JsonDict], average_gap_us: float) -> JsonDict:
+def _nearest_componentwise_median_sample(samples: List[JsonDict], average_gap_us: float) -> JsonDict:
     gap_scale = max(1.0, max(as_float(sample.get("gap_us"), 0.0) for sample in samples))
     skew_scale = max(1.0, max(as_float(sample.get("arrival_skew_us"), 0.0) for sample in samples))
     before_scale = max(1.0, max(as_float(sample.get("compute_before_us"), 0.0) for sample in samples))

@@ -243,7 +243,7 @@ class CompilationTests(unittest.TestCase):
         for event in canary["events"]:
             self.assertLessEqual(len(event["timing_samples"]), 8)
 
-    def test_bounded_compression_uses_joint_medoid_and_exact_gap_sum(self):
+    def test_bounded_compression_uses_nearest_componentwise_median_and_exact_gap_sum(self):
         trace = {"format": TRACE_FORMAT, "workload": {"name": "outlier"}, "events": []}
         expected_gap = 0.0
         for index in range(100):

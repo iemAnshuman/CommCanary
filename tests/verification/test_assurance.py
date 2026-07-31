@@ -191,6 +191,10 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("source_segment_sha256", interval)
         self.assertIn("source_gap_sum_us", interval)
         self.assertIn("representative_selection_method", interval)
+        self.assertEqual(
+            interval["representative_selection_method"],
+            "nearest_componentwise_median_normalized_l1_gap_skew_compute_overlap_pressure_observed_v1",
+        )
         self.assertIn("error_vector", interval)
         self.assertEqual(verify_canary_fidelity(trace, canary)["status"], "source_verified")
 
