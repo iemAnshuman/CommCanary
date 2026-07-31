@@ -105,9 +105,7 @@ class BenchmarkFixtureTests(unittest.TestCase):
             self.assertEqual(len(merged["events"]), 12)
             self.assertEqual(merged["system"]["shards"], 4)
             self.assertTrue(all(event["recorder_ranks"] == ["0", "1", "2", "3"] for event in merged["events"]))
-            self.assertTrue(
-                all(set(event["rank_arrival_us"]) == {"0", "1", "2", "3"} for event in merged["events"])
-            )
+            self.assertTrue(all(set(event["rank_arrival_us"]) == {"0", "1", "2", "3"} for event in merged["events"]))
 
 
 if __name__ == "__main__":

@@ -155,9 +155,7 @@ class BenchmarkRunnerTests(unittest.TestCase):
                 {(record["case_id"], record["operation"], record["iteration"]) for record in suite["skipped"]},
                 {("trace-8", "replay", 0), ("trace-8", "replay", 1)},
             )
-            self.assertTrue(
-                all(record["reason_code"] == "unsupported_fixture_kind" for record in suite["skipped"])
-            )
+            self.assertTrue(all(record["reason_code"] == "unsupported_fixture_kind" for record in suite["skipped"]))
 
     def test_manifest_runner_rejects_duplicate_requested_operations(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
