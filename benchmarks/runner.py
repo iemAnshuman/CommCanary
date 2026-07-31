@@ -43,6 +43,7 @@ from .fixtures import (
 )
 
 BENCHMARK_RESULT_FORMAT = "commcanary.benchmark-result.v1"
+BENCHMARK_SKIP_FORMAT = "commcanary.benchmark-skip.v1"
 BENCHMARK_SUITE_FORMAT = "commcanary.benchmark-suite.v1"
 RESULT_HASH_ALGORITHM = "sha256-canonical-json-v1"
 
@@ -360,11 +361,16 @@ def run_manifest(
         unknown = sorted(set(requested) - set(_OPERATIONS))
         if unknown:
             raise ValueError(f"unknown benchmark operation {unknown[0]!r}")
+        if len(set(requested)) != len(requested):
+            raise ValueError("requested benchmark operations must be unique")
     results: List[JsonDict] = []
+    skipped: List[JsonDict] = []
     for case in cases:
         case_operations = requested if requested is not None else DEFAULT_OPERATIONS[case.kind]
         for operation in case_operations:
-            if operation not in _OPERATIONS or case.kind not in _OPERATIONS[operation][0]:
+            if case.kind not in _OPERATIONS[operation][0]:
+                for iteration in range(repeats):
+                    skipped.append(_skip_record(case, operation, iteration=iteration))
                 continue
             for iteration in range(repeats):
                 result = (
@@ -373,7 +379,7 @@ def run_manifest(
                     else run_case(case, operation, iteration=iteration)
                 )
                 results.append(result)
-    return _suite_result(profile=profile, results=results)
+    return _suite_result(profile=profile, results=results, skipped=skipped)
 
 
 def run_smoke(*, isolate: bool = True) -> JsonDict:
@@ -565,7 +571,25 @@ def _stable_report_projection(report: Mapping[str, Any]) -> JsonDict:
     return {key: report[key] for key in keys if key in report}
 
 
-def _suite_result(*, profile: str, results: Sequence[Mapping[str, Any]]) -> JsonDict:
+def _skip_record(case: FixtureCase, operation: str, *, iteration: int) -> JsonDict:
+    return {
+        "format": BENCHMARK_SKIP_FORMAT,
+        "case_id": case.case_id,
+        "input_kind": case.kind,
+        "input_sha256": case.sha256,
+        "operation": operation,
+        "iteration": iteration,
+        "status": "skipped",
+        "reason_code": "unsupported_fixture_kind",
+    }
+
+
+def _suite_result(
+    *,
+    profile: str,
+    results: Sequence[Mapping[str, Any]],
+    skipped: Sequence[Mapping[str, Any]],
+) -> JsonDict:
     semantic_rows = [
         {
             "case_id": result.get("case_id"),
@@ -575,13 +599,31 @@ def _suite_result(*, profile: str, results: Sequence[Mapping[str, Any]]) -> Json
         }
         for result in results
     ]
+    skipped_rows = [
+        {
+            "case_id": record.get("case_id"),
+            "operation": record.get("operation"),
+            "iteration": record.get("iteration"),
+            "reason_code": record.get("reason_code"),
+        }
+        for record in skipped
+    ]
+    executed_count = len(results)
+    skipped_count = len(skipped)
+    requested_count = executed_count + skipped_count
     return {
         "format": BENCHMARK_SUITE_FORMAT,
         "profile": profile,
-        "result_count": len(results),
+        "result_count": executed_count,
+        "requested_cell_count": requested_count,
+        "executed_cell_count": executed_count,
+        "skipped_cell_count": skipped_count,
+        "failed_cell_count": 0,
+        "completeness_verdict": "complete" if skipped_count == 0 else "complete_with_explicit_skips",
         "environment": benchmark_environment(),
-        "semantic_set_sha256": _mapping_sha256({"results": semantic_rows}),
+        "semantic_set_sha256": _mapping_sha256({"results": semantic_rows, "skipped": skipped_rows}),
         "results": list(results),
+        "skipped": list(skipped),
     }
 
 

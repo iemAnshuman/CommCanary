@@ -53,6 +53,13 @@ python -m benchmarks run .benchmark-data/fixtures/manifest.json \
   --operation behavior_search
 ```
 
+An explicit operation request defines a Cartesian set of fixture, operation,
+and repetition cells. The suite records requested, executed, skipped, and
+failed counts plus a completeness verdict. An operation incompatible with a
+fixture is retained in `skipped` with the stable reason code
+`unsupported_fixture_kind`; it is never silently omitted. Duplicate operation
+requests are rejected.
+
 For a quick local or future PR-CI check:
 
 ```console

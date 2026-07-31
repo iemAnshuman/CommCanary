@@ -117,7 +117,51 @@ class BenchmarkRunnerTests(unittest.TestCase):
             suite = run_manifest(manifest, operations=("validate",), isolate=True, profile="test")
             self.assertEqual(suite["format"], BENCHMARK_SUITE_FORMAT)
             self.assertEqual(suite["result_count"], 1)
+            self.assertEqual(suite["requested_cell_count"], 1)
+            self.assertEqual(suite["executed_cell_count"], 1)
+            self.assertEqual(suite["skipped_cell_count"], 0)
+            self.assertEqual(suite["failed_cell_count"], 0)
+            self.assertEqual(suite["completeness_verdict"], "complete")
+            self.assertEqual(suite["skipped"], [])
             self.assertEqual(suite["results"][0]["operation"], "validate")
+
+    def test_manifest_runner_records_every_incompatible_requested_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest = materialize_fixture_set(
+                Path(temp_dir),
+                stored_event_counts=(8,),
+                compressed_logical_counts=(16,),
+            )
+            suite = run_manifest(
+                manifest,
+                repeats=2,
+                operations=("validate", "replay"),
+                isolate=False,
+                profile="test",
+            )
+
+            self.assertEqual(suite["requested_cell_count"], 8)
+            self.assertEqual(suite["executed_cell_count"], 6)
+            self.assertEqual(suite["skipped_cell_count"], 2)
+            self.assertEqual(suite["failed_cell_count"], 0)
+            self.assertEqual(suite["completeness_verdict"], "complete_with_explicit_skips")
+            self.assertEqual(
+                {(record["case_id"], record["operation"], record["iteration"]) for record in suite["skipped"]},
+                {("trace-8", "replay", 0), ("trace-8", "replay", 1)},
+            )
+            self.assertTrue(
+                all(record["reason_code"] == "unsupported_fixture_kind" for record in suite["skipped"])
+            )
+
+    def test_manifest_runner_rejects_duplicate_requested_operations(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manifest = materialize_fixture_set(
+                Path(temp_dir),
+                stored_event_counts=(8,),
+                compressed_logical_counts=(),
+            )
+            with self.assertRaisesRegex(ValueError, "must be unique"):
+                run_manifest(manifest, operations=("validate", "validate"), isolate=False)
 
     def test_smoke_suite_is_fast_and_covers_required_operation_families(self) -> None:
         suite = run_smoke(isolate=False)
