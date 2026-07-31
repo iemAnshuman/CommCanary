@@ -68,9 +68,12 @@ not a regression threshold.
 
 The reviewed local observation is
 [`benchmarks/baselines/local-arm64-macos-cpython310-20260711.json`](../benchmarks/baselines/local-arm64-macos-cpython310-20260711.json).
-It stores only compact results and environment metadata, not the generated 25
-MB fixture set. It explicitly contains no regression thresholds. A single local
-run is evidence for investigation, not a portable performance promise.
+Its [raw before/after observations](../benchmarks/evidence/local-arm64-macos-cpython310-20260711/README.md)
+are preserved with an independent SHA-256 inventory. The compact baseline and
+raw records do not duplicate the generated 25 MB fixture set; the committed
+generator and fixture manifest reproduce and bind those inputs. The baseline
+explicitly contains no regression thresholds. A single local run is evidence
+for investigation, not a portable performance promise.
 
 That campaign completed capture merge at 1K, 10K, and 100K stored events and
 PARAM export and compare at 1K, 10K, and 100K logical events. Capture merge took
