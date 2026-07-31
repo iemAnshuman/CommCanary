@@ -623,8 +623,10 @@ kernels do not count; overlapping compute intervals are unioned rather than
 double-counted. Missing, malformed, or non-unique linkage leaves that event at
 `compute_overlap_unknown: true`, and `compile` fails closed unless every event
 is known. The output records derived/unknown counts plus a reason on every
-event. This derivation is unit-tested against Kineto-shaped events but has not
-yet passed the physical fidelity experiment described in `STRATEGY.md`. As a
+event. This derivation is unit-tested against Kineto-shaped events and has been
+exercised by the single-configuration same-node diagnostic described in
+[`ROADMAP.md`](ROADMAP.md); that run does not establish cross-configuration
+decision fidelity. As a
 format reality check, both ranks in the public 2-GPU ResNet-50 profile attached
 to [PyTorch issue #131462](https://github.com/pytorch/pytorch/issues/131462)
 merge from 14 rank-local records into 7 logical events with 7/7 known overlap

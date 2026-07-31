@@ -23,8 +23,9 @@ examples in one command as Phase 2 required.
 elegant, verifiable artifact and it did. What it never contained is a claim that
 anyone should *use* the result, and the physical evidence recorded in the
 checkpoint below says the headline configuration does not yet earn that. The
-successor document is `STRATEGY.md`, which owns the product question. This file
-stays the authority for code, contracts, and the release gate only.
+successor document is [`ROADMAP.md`](ROADMAP.md), which owns the public product
+question and evidence gates. This file stays the authority for code, contracts,
+and the release gate only.
 
 ### Open items owned by this file
 
