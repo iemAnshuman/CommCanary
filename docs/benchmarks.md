@@ -30,15 +30,21 @@ hashes exclude descriptive timestamps and host labels, so correctness can be
 compared across machines even though performance measurements cannot.
 
 Preparation is deliberately outside `wall_time_seconds`: compare prepares two
-reports, capture merge prepares two valid rank-local shards, and behavior search
-prepares a compressible two-record motif trace. Preparation remains resident,
-and `peak_rss_baseline_bytes` is sampled after it, so the memory envelope still
-accounts for that state. `python_peak_allocated_bytes` covers only the registered
-operation. PARAM export consumes the manifest canary directly.
+reports, capture merge prepares valid rank-local shards, and behavior search
+prepares a compressible two-record motif trace. Capture has two named workloads:
+`capture_merge_singleton_fast_path` partitions unique collective identities
+between two shards, while `capture_merge_coalescing` creates one calibrated,
+partial observation per rank for every shared collective identity. The latter
+measures contribution reconciliation, clock correction, partial-arrival merge,
+and N-rank coalescing. Preparation remains resident, and
+`peak_rss_baseline_bytes` is sampled after it, so the memory envelope still
+accounts for that state. `python_peak_allocated_bytes` covers only the
+registered operation. PARAM export consumes the manifest canary directly.
 
 The default registry now measures all Phase 8 families:
 
-- trace: load, validate, hash, compile, capture merge, and behavior search;
+- trace: load, validate, hash, compile, singleton-fast-path capture merge,
+  cross-rank coalescing capture merge, and behavior search;
 - canary: load, validate, hash, replay, independent report verification,
   compare, and PARAM export.
 
@@ -48,7 +54,7 @@ Use repeated `--operation` flags to select a bounded campaign. For example:
 python -m benchmarks run .benchmark-data/fixtures/manifest.json \
   --output .benchmark-data/new-families.json \
   --operation compare \
-  --operation capture_merge \
+  --operation capture_merge_coalescing \
   --operation param_export \
   --operation behavior_search
 ```
@@ -82,7 +88,10 @@ generator and fixture manifest reproduce and bind those inputs. The baseline
 explicitly contains no regression thresholds. A single local run is evidence
 for investigation, not a portable performance promise.
 
-That campaign completed capture merge at 1K, 10K, and 100K stored events and
+The historical `capture_merge` label in that preserved campaign measured what
+is now named `capture_merge_singleton_fast_path`; it did not measure cross-rank
+contribution reconciliation. That campaign completed the singleton fast path
+at 1K, 10K, and 100K stored events and
 PARAM export and compare at 1K, 10K, and 100K logical events. Capture merge took
 approximately 0.177 s, 1.808 s, and 18.260 s, while peak RSS reached about 675 MB
 at 100K. PARAM export took approximately 0.254 s, 2.704 s, and 27.916 s and

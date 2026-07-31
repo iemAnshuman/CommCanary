@@ -13,6 +13,7 @@ from benchmarks.fixtures import (
     generate_behavior_search_trace,
     generate_compressed_canary,
     generate_trace,
+    materialize_capture_coalescing_shards,
     materialize_capture_shards,
     materialize_fixture_set,
 )
@@ -91,6 +92,22 @@ class BenchmarkFixtureTests(unittest.TestCase):
             merged = merge_trace_shards(first_dir, workload_name="benchmark")
             self.assertEqual(len(merged["events"]), 12)
             self.assertEqual(merged["system"]["shards"], 2)
+
+    def test_capture_coalescing_preparation_exercises_cross_rank_merge(self) -> None:
+        trace = generate_trace(12)
+        with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
+            first = materialize_capture_coalescing_shards(trace, Path(first_dir))
+            second = materialize_capture_coalescing_shards(trace, Path(second_dir))
+
+            self.assertEqual(len(first), 4)
+            self.assertEqual([path.read_bytes() for path in first], [path.read_bytes() for path in second])
+            merged = merge_trace_shards(first_dir, workload_name="benchmark-coalescing")
+            self.assertEqual(len(merged["events"]), 12)
+            self.assertEqual(merged["system"]["shards"], 4)
+            self.assertTrue(all(event["recorder_ranks"] == ["0", "1", "2", "3"] for event in merged["events"]))
+            self.assertTrue(
+                all(set(event["rank_arrival_us"]) == {"0", "1", "2", "3"} for event in merged["events"])
+            )
 
 
 if __name__ == "__main__":

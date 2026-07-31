@@ -63,7 +63,8 @@ class BenchmarkRunnerTests(unittest.TestCase):
             )
             trace_case, canary_case = load_fixture_manifest(manifest)
             cases = (
-                (trace_case, "capture_merge"),
+                (trace_case, "capture_merge_singleton_fast_path"),
+                (trace_case, "capture_merge_coalescing"),
                 (trace_case, "behavior_search"),
                 (canary_case, "compare"),
                 (canary_case, "param_export"),
@@ -79,7 +80,12 @@ class BenchmarkRunnerTests(unittest.TestCase):
                 self.assertEqual(first["measurement_scope"], "registered-operation-only")
                 self.assertFalse(first["preparation_included_in_wall_time"])
                 self.assertTrue(first["rss_baseline_after_preparation"])
-                if operation in {"capture_merge", "behavior_search", "compare"}:
+                if operation in {
+                    "capture_merge_singleton_fast_path",
+                    "capture_merge_coalescing",
+                    "behavior_search",
+                    "compare",
+                }:
                     self.assertEqual(len(first["prepared_input_semantic_sha256"]), 64)
 
     def test_adversarial_resource_operations_reject_in_preflight(self) -> None:
@@ -175,7 +181,8 @@ class BenchmarkRunnerTests(unittest.TestCase):
                 "hash",
                 "replay",
                 "compare",
-                "capture_merge",
+                "capture_merge_singleton_fast_path",
+                "capture_merge_coalescing",
                 "param_export",
                 "behavior_search",
                 "capture_merge_preflight",

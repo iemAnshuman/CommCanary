@@ -38,6 +38,7 @@ from commcanary.version import package_version
 from .fixtures import (
     FIXTURE_MANIFEST_FORMAT,
     generate_behavior_search_trace,
+    materialize_capture_coalescing_shards,
     materialize_capture_shards,
     materialize_fixture_set,
 )
@@ -139,9 +140,18 @@ def _compare(context: OperationContext) -> Mapping[str, Any]:
     return compare_reports(baseline, candidate)
 
 
-@benchmark_operation("capture_merge", kinds=("trace",))
-def _capture_merge(context: OperationContext) -> Mapping[str, Any]:
-    prepared = _require_prepared(context, "capture_merge")
+@benchmark_operation("capture_merge_singleton_fast_path", kinds=("trace",))
+def _capture_merge_singleton_fast_path(context: OperationContext) -> Mapping[str, Any]:
+    return _merge_prepared_capture(context, "capture_merge_singleton_fast_path")
+
+
+@benchmark_operation("capture_merge_coalescing", kinds=("trace",))
+def _capture_merge_coalescing(context: OperationContext) -> Mapping[str, Any]:
+    return _merge_prepared_capture(context, "capture_merge_coalescing")
+
+
+def _merge_prepared_capture(context: OperationContext, operation: str) -> Mapping[str, Any]:
+    prepared = _require_prepared(context, operation)
     shard_dir = prepared.get("shard_dir")
     workload_name = prepared.get("workload_name")
     if not isinstance(shard_dir, str) or not isinstance(workload_name, str):
@@ -216,7 +226,15 @@ def _behavior_search_preflight(context: OperationContext) -> Mapping[str, Any]:
 
 
 DEFAULT_OPERATIONS: Mapping[str, Tuple[str, ...]] = {
-    "trace": ("load", "validate", "hash", "compile", "capture_merge", "behavior_search"),
+    "trace": (
+        "load",
+        "validate",
+        "hash",
+        "compile",
+        "capture_merge_singleton_fast_path",
+        "capture_merge_coalescing",
+        "behavior_search",
+    ),
     "canary": ("load", "validate", "hash", "replay", "verify", "compare", "param_export"),
 }
 
@@ -295,9 +313,17 @@ def _prepare_operation(
         prepared_compare: JsonDict = {"baseline": report, "candidate": report}
         return prepared_compare, _mapping_sha256({"baseline": stable_report, "candidate": stable_report})
 
-    if operation in {"capture_merge", "capture_merge_preflight"}:
-        shard_dir = workspace / "capture-shards"
-        shard_paths = materialize_capture_shards(document, shard_dir)
+    if operation in {
+        "capture_merge_singleton_fast_path",
+        "capture_merge_coalescing",
+        "capture_merge_preflight",
+    }:
+        fixture_mode = "coalescing" if operation == "capture_merge_coalescing" else "singleton_fast_path"
+        shard_dir = workspace / f"capture-shards-{fixture_mode}"
+        if fixture_mode == "coalescing":
+            shard_paths = materialize_capture_coalescing_shards(document, shard_dir)
+        else:
+            shard_paths = materialize_capture_shards(document, shard_dir)
         workload = document.get("workload")
         workload_name = "commcanary-benchmark-capture"
         if isinstance(workload, Mapping) and isinstance(workload.get("name"), str):
@@ -305,11 +331,12 @@ def _prepare_operation(
         prepared_capture: JsonDict = {
             "shard_dir": str(shard_dir),
             "workload_name": workload_name,
+            "fixture_mode": fixture_mode,
         }
         shard_hashes = [
             {"name": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in shard_paths
         ]
-        return prepared_capture, _mapping_sha256({"shards": shard_hashes})
+        return prepared_capture, _mapping_sha256({"fixture_mode": fixture_mode, "shards": shard_hashes})
 
     if operation in {"behavior_search", "behavior_search_preflight"}:
         behavior_trace = generate_behavior_search_trace(case.stored_events)
@@ -399,7 +426,8 @@ def run_smoke(*, isolate: bool = True) -> JsonDict:
                 "hash",
                 "replay",
                 "compare",
-                "capture_merge",
+                "capture_merge_singleton_fast_path",
+                "capture_merge_coalescing",
                 "param_export",
                 "behavior_search",
                 "capture_merge_preflight",
@@ -535,9 +563,9 @@ def _semantic_output_sha256(operation: str, context: OperationContext, output: A
         if not isinstance(output, Mapping):
             raise RuntimeError("compare operation did not return a comparison")
         return _mapping_sha256({key: value for key, value in output.items() if key != "created_at"})
-    if operation == "capture_merge":
+    if operation in {"capture_merge_singleton_fast_path", "capture_merge_coalescing"}:
         if not isinstance(output, Mapping):
-            raise RuntimeError("capture_merge operation did not return a trace")
+            raise RuntimeError(f"{operation} operation did not return a trace")
         return _mapping_sha256({key: value for key, value in output.items() if key != "created_at"})
     if operation == "param_export":
         if not isinstance(output, list):

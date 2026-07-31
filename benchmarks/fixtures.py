@@ -196,6 +196,72 @@ def materialize_capture_shards(
     return tuple(paths)
 
 
+def materialize_capture_coalescing_shards(
+    trace: Mapping[str, Any],
+    output_dir: Path,
+    *,
+    rank_count: int = 4,
+) -> Tuple[Path, ...]:
+    """Prepare deterministic rank contributions for the real coalescing path.
+
+    Every logical collective is represented once by every participating rank,
+    with a shared collective identity, a calibrated per-shard clock, and only
+    that recorder's partial arrival observation. Unlike
+    :func:`materialize_capture_shards`, this deliberately expands the prepared
+    input to exercise cross-rank reconciliation rather than the singleton
+    bucket fast path.
+    """
+
+    validate_trace(trace)
+    count = _positive_count(rank_count, "rank_count")
+    raw_events = trace.get("events")
+    if not isinstance(raw_events, list) or not raw_events:
+        raise ValueError("capture coalescing preparation needs at least one event")
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    session_id = "commcanary-benchmark-capture-coalescing-v1"
+    ranks = list(range(count))
+    buckets: List[List[JsonDict]] = [[] for _ in ranks]
+    for index, raw_event in enumerate(raw_events):
+        if not isinstance(raw_event, Mapping):
+            raise ValueError(f"trace event {index} must be an object")
+        aligned_start_us = float(index * 10)
+        for rank in ranks:
+            clock_offset_us = float(-rank) / 4.0
+            event = copy.deepcopy(dict(raw_event))
+            event["id"] = f"coalescing-{index:06d}-rank-{rank}"
+            event["capture_session_id"] = session_id
+            event["collective_id"] = f"coalescing-{index:06d}"
+            event["collective_seq"] = index
+            event["recorder_rank"] = str(rank)
+            event["ranks"] = list(ranks)
+            event["start_us"] = aligned_start_us - clock_offset_us
+            event["rank_arrival_us"] = {str(rank): float((index + rank) % 5)}
+            event["partial_rank_arrival"] = True
+            event.pop("arrival_skew_us", None)
+            buckets[rank].append(event)
+
+    paths = []
+    workload = copy.deepcopy(dict(trace.get("workload", {})))
+    for rank, events in enumerate(buckets):
+        shard: JsonDict = {
+            "format": TRACE_FORMAT,
+            "workload": copy.deepcopy(workload),
+            "system": {
+                "capture_mode": "sharded",
+                "capture_session_id": session_id,
+                "clock_offset_us": float(-rank) / 4.0,
+                "rank": str(rank),
+            },
+            "events": events,
+        }
+        validate_trace(shard, allow_partial_arrivals=True)
+        path = root / f"rank-{rank}.trace.json"
+        write_json(str(path), shard)
+        paths.append(path)
+    return tuple(paths)
+
+
 def materialize_fixture_set(
     output_dir: Path,
     *,
