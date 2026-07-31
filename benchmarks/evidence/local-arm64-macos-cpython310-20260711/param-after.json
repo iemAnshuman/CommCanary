@@ -1,0 +1,78 @@
+{
+  "environment": {
+    "commcanary_version": "0.3.0",
+    "cpu_count": 10,
+    "executable": "/Users/anshumanagrawal/anaconda3/bin/python",
+    "machine": "arm64",
+    "platform": "macOS-15.7.7-arm64-arm-64bit",
+    "processor": "arm",
+    "python_implementation": "CPython",
+    "python_version": "3.10.14"
+  },
+  "format": "commcanary.benchmark-suite.v1",
+  "profile": "full",
+  "result_count": 2,
+  "results": [
+    {
+      "case_id": "canary-compressed-10000",
+      "environment": {
+        "commcanary_version": "0.3.0",
+        "cpu_count": 10,
+        "executable": "/Users/anshumanagrawal/anaconda3/bin/python",
+        "machine": "arm64",
+        "platform": "macOS-15.7.7-arm64-arm-64bit",
+        "processor": "arm",
+        "python_implementation": "CPython",
+        "python_version": "3.10.14"
+      },
+      "format": "commcanary.benchmark-result.v1",
+      "input_kind": "canary",
+      "input_sha256": "f142d1c392c3fee8e888ec4a5a7857f907e5ac808515ad8855e7ae44840c45b9",
+      "iteration": 0,
+      "logical_events": 10000,
+      "measurement_scope": "registered-operation-only",
+      "operation": "param_export",
+      "peak_rss_baseline_bytes": 27181056,
+      "peak_rss_bytes": 82247680,
+      "peak_rss_method": "resource.getrusage.ru_maxrss-bytes",
+      "preparation_included_in_wall_time": false,
+      "python_peak_allocated_bytes": 19201999,
+      "rss_baseline_after_preparation": true,
+      "semantic_hash_algorithm": "sha256-canonical-json-v1",
+      "semantic_sha256": "9d48f6b7e8e864c7e6609b3482345a304ff93e05254da85604f8a5c687681e08",
+      "stored_events": 17,
+      "wall_time_seconds": 1.21986175
+    },
+    {
+      "case_id": "canary-compressed-100000",
+      "environment": {
+        "commcanary_version": "0.3.0",
+        "cpu_count": 10,
+        "executable": "/Users/anshumanagrawal/anaconda3/bin/python",
+        "machine": "arm64",
+        "platform": "macOS-15.7.7-arm64-arm-64bit",
+        "processor": "arm",
+        "python_implementation": "CPython",
+        "python_version": "3.10.14"
+      },
+      "format": "commcanary.benchmark-result.v1",
+      "input_kind": "canary",
+      "input_sha256": "32e9ca362f983af52250d530c3cfc5c4cef40d7f8ba04e5c29684938e5dd54bb",
+      "iteration": 0,
+      "logical_events": 100000,
+      "measurement_scope": "registered-operation-only",
+      "operation": "param_export",
+      "peak_rss_baseline_bytes": 26787840,
+      "peak_rss_bytes": 444694528,
+      "peak_rss_method": "resource.getrusage.ru_maxrss-bytes",
+      "preparation_included_in_wall_time": false,
+      "python_peak_allocated_bytes": 189493190,
+      "rss_baseline_after_preparation": true,
+      "semantic_hash_algorithm": "sha256-canonical-json-v1",
+      "semantic_sha256": "9146c67237ca18f83ad163087fbd438a430fb7b74c80076c2cf71781cfa93fa4",
+      "stored_events": 17,
+      "wall_time_seconds": 12.420074209
+    }
+  ],
+  "semantic_set_sha256": "b919c7050c5a33dc299c8c9f69e8af21a2eea2cfb4424e5a6a148383b1f64105"
+}

@@ -1,0 +1,46 @@
+{
+  "fixtures": [
+    {
+      "case_id": "trace-1000",
+      "kind": "trace",
+      "logical_events": 1000,
+      "path": "trace-001000.json",
+      "sha256": "af4adb36c18bf8726b259266ae659668c7afec13a00d645272aa01ca8fe38f56",
+      "stored_events": 1000
+    },
+    {
+      "case_id": "trace-10000",
+      "kind": "trace",
+      "logical_events": 10000,
+      "path": "trace-010000.json",
+      "sha256": "d2fc9d7006cb4b28214868ea4c2c0386b7f4ce540df54e0775dd8eed737d0277",
+      "stored_events": 10000
+    },
+    {
+      "case_id": "trace-100000",
+      "kind": "trace",
+      "logical_events": 100000,
+      "path": "trace-100000.json",
+      "sha256": "061fbbe1fbb54800bcc108707dac251dae1035d1fc35896d9908a31189df94dc",
+      "stored_events": 100000
+    },
+    {
+      "case_id": "canary-compressed-10000",
+      "kind": "canary",
+      "logical_events": 10000,
+      "path": "canary-compressed-010000.json",
+      "sha256": "f142d1c392c3fee8e888ec4a5a7857f907e5ac808515ad8855e7ae44840c45b9",
+      "stored_events": 17
+    },
+    {
+      "case_id": "canary-compressed-100000",
+      "kind": "canary",
+      "logical_events": 100000,
+      "path": "canary-compressed-100000.json",
+      "sha256": "32e9ca362f983af52250d530c3cfc5c4cef40d7f8ba04e5c29684938e5dd54bb",
+      "stored_events": 17
+    }
+  ],
+  "format": "commcanary.benchmark-fixtures.v1",
+  "generator_version": "1"
+}
