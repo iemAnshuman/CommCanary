@@ -19,6 +19,7 @@ PHYSICAL_PARAM_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.param-measuremen
 PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
 PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
+PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v1"
 RAW_ARCHIVE_DESCRIPTOR_SCHEMA = "commcanary.rostam.raw-archive-descriptor.v1"
 CROSS_COMMIT_COMPATIBILITY_SCHEMA = "commcanary.rostam.cross-commit-compatibility.v1"
 
@@ -34,6 +35,7 @@ _SCHEMA_FILES = {
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: "physical-overlap-measurement-v1.schema.json",
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "physical-capture-measurement-v1.schema.json",
     PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "physical-qualification-measurement-v1.schema.json",
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: "physical-decision-gate-measurement-v1.schema.json",
     RAW_ARCHIVE_DESCRIPTOR_SCHEMA: "raw-archive-descriptor-v1.schema.json",
     CROSS_COMMIT_COMPATIBILITY_SCHEMA: "cross-commit-compatibility-v1.schema.json",
 }
@@ -44,6 +46,7 @@ _PHYSICAL_PRODUCER_CONTRACTS = {
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.overlap-producer.v1",
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.capture-producer.v1",
     PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.qualification-producer.v1",
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.decision-gate-producer.v1",
 }
 _PRODUCER_CONTRACTS = {
     LOCAL_PREPARE_MEASUREMENT_SCHEMA: ("commcanary.experiment.prepare.v1", "success"),
@@ -98,11 +101,36 @@ _PHYSICAL_SPECIFIC_FIELDS = {
         "source_timing_semantics",
         "source_value_us",
     },
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: {
+        "correctness_check_count",
+        "decision_claims",
+        "execution",
+        "materialization",
+        "policy",
+        "representations",
+        "request",
+    },
 }
 _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
 _OVERLAP_REPLAY_MODES = {"explicit-wait-overlap", "fixed-input-explicit-wait-overlap"}
 _ARTIFACT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_DECISION_GATE_REPRESENTATIONS = (
+    "source",
+    "exact_work",
+    "stratified",
+    "isolated",
+    "no_overlap",
+    "no_rank_skew",
+)
+_DECISION_GATE_REPRESENTATION_CONTRACTS = {
+    "source": ("ground_truth", "direct-source-issue-rank-work-wait"),
+    "exact_work": ("product_candidate", "verified-materialization-issue-rank-work-wait"),
+    "stratified": ("kill_condition_baseline", "first-observed-per-collective-shape.v1"),
+    "isolated": ("incumbent_baseline", "full-message-sequence-blocking-all-reduce-no-compute"),
+    "no_overlap": ("causal_ablation", "blocking-all-reduce-then-exact-rank-work"),
+    "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
+}
 
 
 class MeasurementValidationError(ContractError):
@@ -192,6 +220,189 @@ def _iqr(values: Tuple[float, ...]) -> float:
     if not lower or not upper:
         return 0.0
     return _median(upper) - _median(lower)
+
+
+def _strict_object(raw: Any, field: str, expected_fields: set[str]) -> Mapping[str, Any]:
+    if not isinstance(raw, Mapping) or set(raw) != expected_fields:
+        raise MeasurementValidationError(f"{field} does not match its closed schema")
+    return raw
+
+
+def _decision_gate_attributes(
+    raw: Mapping[str, Any],
+    *,
+    world_size: int,
+    samples: Tuple[float, ...],
+) -> Dict[str, Any]:
+    request = _strict_object(raw["request"], "measurement.request", {"format", "request_id"})
+    if request["format"] != "commcanary.qualification_request.v2":
+        raise MeasurementValidationError("decision-gate request format is unsupported")
+    materialization = _strict_object(
+        raw["materialization"],
+        "measurement.materialization",
+        {"materialization_id", "program_sha256"},
+    )
+    policy = _strict_object(raw["policy"], "measurement.policy", {"format", "policy_id"})
+    if policy["format"] != "commcanary.qualification_policy.v1":
+        raise MeasurementValidationError("decision-gate policy format is unsupported")
+    for field, value in (
+        ("measurement.request.request_id", request["request_id"]),
+        ("measurement.materialization.materialization_id", materialization["materialization_id"]),
+        ("measurement.materialization.program_sha256", materialization["program_sha256"]),
+        ("measurement.policy.policy_id", policy["policy_id"]),
+    ):
+        if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+            raise MeasurementValidationError(f"{field} is invalid")
+
+    execution = _strict_object(
+        raw["execution"],
+        "measurement.execution",
+        {
+            "iterations",
+            "order_method",
+            "representation_order_by_iteration",
+            "source_event_count",
+            "stratified_method",
+            "stratified_source_event_indices",
+            "timing_semantics",
+            "warmup",
+            "world_size",
+        },
+    )
+    iterations = execution["iterations"]
+    warmup = execution["warmup"]
+    event_count = execution["source_event_count"]
+    if (
+        isinstance(iterations, bool)
+        or not isinstance(iterations, int)
+        or iterations != len(samples)
+        or not 1 <= iterations <= 1000
+        or isinstance(warmup, bool)
+        or not isinstance(warmup, int)
+        or not 0 <= warmup <= 100
+        or isinstance(event_count, bool)
+        or not isinstance(event_count, int)
+        or event_count <= 0
+        or execution["world_size"] != world_size
+        or execution["timing_semantics"] != "maximum-rank-cuda-event-whole-program-duration"
+        or execution["order_method"] != "iteration-rotated-latin-cycle.v1"
+        or execution["stratified_method"] != "first-observed-per-collective-shape.v1"
+    ):
+        raise MeasurementValidationError("decision-gate execution contract is inconsistent")
+    selected = execution["stratified_source_event_indices"]
+    if (
+        not isinstance(selected, list)
+        or not selected
+        or len(selected) != len(set(selected))
+        or any(
+            isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < event_count for index in selected
+        )
+    ):
+        raise MeasurementValidationError("decision-gate stratified source selection is invalid")
+    orders = execution["representation_order_by_iteration"]
+    if not isinstance(orders, list) or len(orders) != iterations:
+        raise MeasurementValidationError("decision-gate representation order inventory is incomplete")
+    for iteration, order in enumerate(orders):
+        offset = iteration % len(_DECISION_GATE_REPRESENTATIONS)
+        expected = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
+        if order != expected:
+            raise MeasurementValidationError(f"decision-gate representation order is invalid at iteration {iteration}")
+
+    check_count = raw["correctness_check_count"]
+    if isinstance(check_count, bool) or not isinstance(check_count, int) or check_count <= 0:
+        raise MeasurementValidationError("decision-gate correctness_check_count must be positive")
+    representations = _strict_object(
+        raw["representations"],
+        "measurement.representations",
+        set(_DECISION_GATE_REPRESENTATIONS),
+    )
+    normalized_representations: Dict[str, Any] = {}
+    for representation in _DECISION_GATE_REPRESENTATIONS:
+        field = f"measurement.representations.{representation}"
+        value = _strict_object(
+            representations[representation],
+            field,
+            {
+                "category",
+                "executed_event_count",
+                "metrics",
+                "rank_timings_us",
+                "semantics",
+                "template_count",
+                "timings_us",
+            },
+        )
+        expected_category, expected_semantics = _DECISION_GATE_REPRESENTATION_CONTRACTS[representation]
+        expected_event_count = len(selected) if representation == "stratified" else event_count
+        expected_template_count = len(selected) if representation in {"stratified", "isolated"} else event_count
+        if (
+            value["category"] != expected_category
+            or value["semantics"] != expected_semantics
+            or value["executed_event_count"] != expected_event_count
+            or value["template_count"] != expected_template_count
+        ):
+            raise MeasurementValidationError(f"{field} execution semantics are inconsistent")
+        rank_timings_raw = value["rank_timings_us"]
+        if not isinstance(rank_timings_raw, list) or len(rank_timings_raw) != world_size:
+            raise MeasurementValidationError(f"{field}.rank_timings_us does not cover every rank")
+        rank_timings = tuple(
+            tuple(_finite_number(item, f"{field}.rank_timings_us[{rank}][{index}]") for index, item in enumerate(row))
+            if isinstance(row, list)
+            else ()
+            for rank, row in enumerate(rank_timings_raw)
+        )
+        if any(len(row) != iterations for row in rank_timings):
+            raise MeasurementValidationError(f"{field}.rank_timings_us has the wrong sample count")
+        timings_raw = value["timings_us"]
+        if not isinstance(timings_raw, list):
+            raise MeasurementValidationError(f"{field}.timings_us must be an array")
+        timings = tuple(_finite_number(item, f"{field}.timings_us[{index}]") for index, item in enumerate(timings_raw))
+        maxima = tuple(max(rank_timings[rank][index] for rank in range(world_size)) for index in range(iterations))
+        if len(timings) != iterations or timings != maxima:
+            raise MeasurementValidationError(f"{field}.timings_us disagrees with max-rank timings")
+        metrics = _strict_object(
+            value["metrics"],
+            f"{field}.metrics",
+            {"count", "iqr_us", "max_us", "median_us", "min_us"},
+        )
+        expected_metrics = {
+            "count": len(timings),
+            "iqr_us": _iqr(timings),
+            "max_us": max(timings),
+            "median_us": _median(timings),
+            "min_us": min(timings),
+        }
+        if metrics["count"] != expected_metrics["count"]:
+            raise MeasurementValidationError(f"{field}.metrics.count is inconsistent")
+        for metric_name in ("iqr_us", "max_us", "median_us", "min_us"):
+            observed = _finite_number(metrics[metric_name], f"{field}.metrics.{metric_name}")
+            if abs(observed - float(expected_metrics[metric_name])) > 0.001:
+                raise MeasurementValidationError(f"{field}.metrics.{metric_name} is inconsistent")
+        normalized_representations[representation] = dict(value)
+    if tuple(normalized_representations["source"]["timings_us"]) != samples:
+        raise MeasurementValidationError("decision-gate scalar samples must be the source representation")
+
+    claims = _strict_object(
+        raw["decision_claims"],
+        "measurement.decision_claims",
+        {"physical_decision_fidelity", "physical_execution", "qualification_verdict"},
+    )
+    expected_claims = {
+        "physical_execution": "same_allocation_self_reported",
+        "physical_decision_fidelity": "not_analyzed",
+        "qualification_verdict": "policy_bound_not_issued",
+    }
+    if dict(claims) != expected_claims:
+        raise MeasurementValidationError("decision-gate claims exceed the pre-analysis boundary")
+    return {
+        "request": dict(request),
+        "materialization": dict(materialization),
+        "policy": dict(policy),
+        "execution": dict(execution),
+        "correctness_check_count": check_count,
+        "representations": normalized_representations,
+        "decision_claims": expected_claims,
+    }
 
 
 def _physical_measurement(
@@ -431,6 +642,12 @@ def _physical_measurement(
             "absolute_relative_median_error_pct": absolute_error,
             "comparison_claims": expected_claims,
         }
+    elif schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+        physical_attributes = _decision_gate_attributes(
+            raw,
+            world_size=world_size,
+            samples=samples,
+        )
     physical = PhysicalMeasurement(
         operation="all_reduce",
         world_size=world_size,

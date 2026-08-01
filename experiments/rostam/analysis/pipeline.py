@@ -47,6 +47,7 @@ from .schemas import (
     LOCAL_FAIL_ONCE_MEASUREMENT_SCHEMA,
     LOCAL_PREPARE_MEASUREMENT_SCHEMA,
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
     PHYSICAL_FULL_MEASUREMENT_SCHEMA,
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA,
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
@@ -580,7 +581,40 @@ def _physical_binding(
             "qualification_verdict": "not_issued",
         }:
             raise AnalysisValidationError(f"physical qualification claims are stale for cell {cell.id!r}")
-    return {
+    elif workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+        expected_attributes = {
+            "request_id": parameters.get("expected_request_id"),
+            "materialization_id": parameters.get("expected_materialization_id"),
+            "program_sha256": parameters.get("expected_program_sha256"),
+            "policy_id": parameters.get("expected_policy_id"),
+        }
+        observed_attributes = {
+            "request_id": attributes.get("request", {}).get("request_id"),
+            "materialization_id": attributes.get("materialization", {}).get("materialization_id"),
+            "program_sha256": attributes.get("materialization", {}).get("program_sha256"),
+            "policy_id": attributes.get("policy", {}).get("policy_id"),
+        }
+        if observed_attributes != expected_attributes:
+            raise AnalysisValidationError(f"physical decision-gate identities are stale for cell {cell.id!r}")
+        execution = attributes.get("execution")
+        expected_execution = {
+            "iterations": parameters.get("iterations"),
+            "warmup": parameters.get("warmup"),
+            "source_event_count": parameters.get("expected_source_event_count"),
+            "stratified_source_event_indices": parameters.get("expected_stratified_source_event_indices"),
+            "world_size": parameters.get("world_size"),
+        }
+        if not isinstance(execution, Mapping) or any(
+            execution.get(field) != expected for field, expected in expected_execution.items()
+        ):
+            raise AnalysisValidationError(f"physical decision-gate execution is stale for cell {cell.id!r}")
+        if attributes.get("decision_claims") != {
+            "physical_execution": "same_allocation_self_reported",
+            "physical_decision_fidelity": "not_analyzed",
+            "qualification_verdict": "policy_bound_not_issued",
+        }:
+            raise AnalysisValidationError(f"physical decision-gate claims are stale for cell {cell.id!r}")
+    binding = {
         "wall_time_s": physical.wall_time_s,
         "measurement_iqr_us": physical.iqr_us,
         "artifacts": [
@@ -597,6 +631,9 @@ def _physical_binding(
             }
         ),
     }
+    if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+        binding["decision_gate"] = dict(attributes)
+    return binding
 
 
 def _selected_rows(
@@ -968,6 +1005,7 @@ def _build_aggregate(
         PHYSICAL_PARAM_MEASUREMENT_SCHEMA,
         PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
         PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
         PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
     }:
         schema_ids.update(
@@ -977,6 +1015,7 @@ def _build_aggregate(
                 PHYSICAL_PARAM_MEASUREMENT_SCHEMA,
                 PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
                 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
+                PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
                 PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
             }
         )

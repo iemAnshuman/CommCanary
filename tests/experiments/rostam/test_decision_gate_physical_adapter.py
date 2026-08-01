@@ -6,6 +6,11 @@ import json
 import pytest
 
 from experiments.rostam import decision_gate_physical
+from experiments.rostam.analysis.schemas import (
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+    MeasurementValidationError,
+    validate_scalar_measurement,
+)
 from experiments.rostam.lib.physical_results import (
     DECISION_GATE_MEASUREMENT_SCHEMA,
     DECISION_GATE_PRODUCER_SCHEMA,
@@ -103,6 +108,37 @@ def test_decision_gate_adapter_recomputes_every_representation() -> None:
     assert measurement["execution"]["stratified_source_event_indices"] == [0, 1]
     assert measurement["correctness_check_count"] == 8
     assert measurement["decision_claims"]["physical_decision_fidelity"] == "not_analyzed"
+
+
+def test_decision_gate_analysis_revalidates_nested_evidence() -> None:
+    measurement = _adapt(_payload())
+
+    scalar = validate_scalar_measurement(
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+        DECISION_GATE_PRODUCER_SCHEMA,
+        "a-000001",
+        measurement,
+    )
+
+    assert scalar.samples_us == (103.0, 203.0)
+    assert scalar.physical is not None
+    assert scalar.physical.attributes["policy"] == {
+        "format": "commcanary.qualification_policy.v1",
+        "policy_id": POLICY_ID,
+    }
+
+
+def test_decision_gate_analysis_refuses_rank_timing_tamper() -> None:
+    measurement = _adapt(_payload())
+    measurement["representations"]["exact_work"]["rank_timings_us"][3][1] = 999.0
+
+    with pytest.raises(MeasurementValidationError, match="disagrees with max-rank timings"):
+        validate_scalar_measurement(
+            PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+            DECISION_GATE_PRODUCER_SCHEMA,
+            "a-000001",
+            measurement,
+        )
 
 
 @pytest.mark.parametrize(
