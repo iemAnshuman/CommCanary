@@ -10,6 +10,10 @@ from experiments.rostam import decision_gate_physical
 from tests.builders import qualification_policy, qualification_trace
 
 
+class _TorchWithLocalVersion:
+    __version__ = "2.4.1+cu121"
+
+
 def _gate_inputs(tmp_path: Path):
     trace = qualification_trace()
     policy = qualification_policy()
@@ -70,6 +74,10 @@ def test_warmup_order_indices_rotate_before_measured_indices_restart() -> None:
     order_indices = [index if index >= 0 else index + warmup for index in pass_indices]
 
     assert order_indices == [0, 1, 2, 3, 4, 0, 1]
+
+
+def test_runtime_torch_version_matches_the_normalized_cell_observation() -> None:
+    assert decision_gate_physical._normalized_torch_version(_TorchWithLocalVersion()) == "2.4.1"
 
 
 def test_result_payload_recomputes_max_rank_metrics_and_retains_raw_samples(tmp_path: Path) -> None:

@@ -404,6 +404,16 @@ def _runtime_nccl_version_code(torch: Any) -> int:
     raise SystemExit("decision-gate runtime reported an invalid NCCL version")
 
 
+def _normalized_torch_version(torch: Any) -> str:
+    raw = getattr(torch, "__version__", None)
+    if raw is None:
+        raise SystemExit("decision-gate runtime did not report a PyTorch version")
+    version = str(raw).split("+", 1)[0]
+    if not version:
+        raise SystemExit("decision-gate runtime reported an invalid PyTorch version")
+    return version
+
+
 def _execute(
     *,
     plan: QualificationExecutionPlan,
@@ -563,7 +573,7 @@ def _execute(
                 raise SystemExit("decision-gate correctness inventory is inconsistent")
             normalized_checks.append(checks)
         runtime = {
-            "torch_version": str(torch.__version__),
+            "torch_version": _normalized_torch_version(torch),
             "torch_cuda_version": str(torch.version.cuda),
             "runtime_nccl_version_code": _runtime_nccl_version_code(torch),
             "distributed_backend": str(dist.get_backend()),
