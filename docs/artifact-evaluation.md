@@ -200,6 +200,56 @@ timing comparison prove neither physical fidelity nor a qualification verdict.
 Do not add an acceptance tolerance or issue a verdict until the later
 multi-configuration ranking gate provides a reviewed basis for that policy.
 
+### Predeclared decision-fidelity gate
+
+The `decision-gate` profile is the product-claim experiment. Its immutable
+policy is `experiments/rostam/policies/decision-fidelity-gate-v1.json`; the
+policy file itself is a separately hashed campaign input. One cell per
+configuration interleaves all six representations inside one allocation and
+process group:
+
+- direct source execution as ground truth;
+- exact-work materialization as the product candidate;
+- first-observed-per-collective-shape stratified sampling as the explicit kill
+  baseline;
+- the full blocking collective sequence without compute as the isolated
+  incumbent;
+- no-overlap and no-rank-skew causal ablations.
+
+Each cell retains raw per-rank and maximum-rank CUDA-event samples, uses five
+warmups and twenty measured passes in a rotated order, and requires a
+deterministic SUM check for every collective shape. The frozen matrix covers
+the two reviewed NCCL versions plus Ring/Tree by LL/LL128/Simple under NCCL
+2.20.5. A producer or adapter change invalidates that campaign for future
+execution: preserve every terminal attempt and freeze a replacement.
+
+After exactly one successful terminal attempt is selected for every expected
+cell, persist a zero-issue completeness verdict and regenerate the trusted
+aggregate through `experiments.rostam.analyze`. Evaluate only that aggregate
+against the exact bound policy bytes:
+
+```console
+python -m experiments.rostam.evaluate_decision_gate \
+  PUBLICATION/aggregate.json \
+  --policy experiments/rostam/policies/decision-fidelity-gate-v1.json \
+  --output PUBLICATION/decision-fidelity-verdict.json
+```
+
+The evaluator recomputes the frozen policy ID and byte binding, campaign join,
+configuration inventory, same-node execution, request/materialization/policy
+identity, timing contract, bootstrap uncertainty, and stability limits. It
+then reports ranking agreement, Kendall tau-b, false-positive and
+false-negative counts, median/p95 relative error, execution-time ratios, all
+predeclared criteria, and one of `pass`, `fail`, `inconclusive`, or
+`incomparable`. The separate kill/reframe condition is evaluated only for
+complete, comparable, stable evidence; noisy or incomplete evidence cannot
+reframe the project.
+
+Even a `pass` supports only the policy's declared single-node, four-A100,
+single-inflight all-reduce/GEMM/wait domain. This reduced-source campaign does
+not establish cost savings, importer generality, privacy acceptability, or
+independent-operator usability.
+
 ## Historical physical execution boundary
 
 Only after the local gate is green and the site values above have been reviewed
