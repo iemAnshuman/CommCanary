@@ -27,6 +27,8 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _INPUT_RE = re.compile(r"^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)=(.+)$")
 _EXECUTION_FILES = (
     "capture_shared_trace.sbatch",
+    "decision_gate_bootstrap.py",
+    "decision_gate_physical.py",
     "lib/campaign.py",
     "lib/catalog.py",
     "lib/cell_entrypoint.py",

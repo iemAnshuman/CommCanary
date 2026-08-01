@@ -310,7 +310,7 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert catalog.site.partition == "cuda-A100"
     assert catalog.site.node_constraints == ("toranj1",)
     assert len(catalog.configurations) == 8
-    assert len(catalog.workloads) == 9
+    assert len(catalog.workloads) == 10
     core = catalog.profile("core")
     assert core.workload_ids == ("micro", "full", "trace-build", "canary-param")
     assert "canary-overlap" not in core.workload_ids
@@ -367,6 +367,20 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert "{experiment_dir}/qualification_physical.py" not in qualification_command
     assert "{input:qualification-replay-program}" in qualification_command
     assert "source-capture-evidence" in qualification.required_input_ids
+
+    decision_gate = catalog.profile("decision-gate")
+    assert decision_gate.configuration_ids == tuple(configuration.id for configuration in catalog.configurations)
+    assert decision_gate.workload_ids == ("decision-gate",)
+    decision_workload = catalog.selected_workloads(decision_gate)[0]
+    decision_parameters = decision_workload.parameters.to_value()
+    decision_command = decision_parameters["command"]
+    assert decision_workload.wrapper == "qualification"
+    assert decision_command[decision_command.index("--module") + 1] == ("experiments.rostam.decision_gate_bootstrap")
+    assert decision_command[decision_command.index("--wheel") + 1] == "{input:decision-gate-wheel}"
+    assert decision_parameters["expected_stratified_source_event_indices"] == [0, 1]
+    assert decision_parameters["decision_fidelity_policy_id"] == (
+        "43f1daff9a07c3ef4732c67747f409fcdcbf012f7f7115b91b356484a26f4113"
+    )
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
     forged = copy.deepcopy(raw)
@@ -901,6 +915,47 @@ def test_exact_qualification_profile_refuses_unbound_source_capture(tmp_path: Pa
             source_archive_sha256="2" * 64,
             inputs=_campaign_inputs(tmp_path, reviewed=True),
         )
+
+
+def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> None:
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    for input_id in (
+        "decision-fidelity-policy",
+        "decision-gate-canary",
+        "decision-gate-fidelity",
+        "decision-gate-materialization-manifest",
+        "decision-gate-qualification-policy",
+        "decision-gate-replay-program",
+        "decision-gate-request-manifest",
+        "decision-gate-source-trace",
+        "decision-gate-wheel",
+    ):
+        path = tmp_path / input_id
+        path.write_bytes(b"reviewed-decision-input")
+        inputs[input_id] = path
+    campaign = build_campaign(
+        catalog=load_catalog(CATALOG_PATH),
+        catalog_path=CATALOG_PATH,
+        profile_id="decision-gate",
+        run_id="rostam-decision-gate-static-fixture",
+        repetitions=1,
+        repository_commit="1" * 40,
+        repository_dirty=False,
+        repository_patch_sha256=None,
+        source_archive_sha256="2" * 64,
+        inputs=inputs,
+    )
+    manifest = build_run_manifest(campaign)
+
+    assert len(manifest.cells) == 8
+    assert {item.id for item in manifest.campaign.inputs} == {
+        *inputs,
+        "rostam-catalog",
+    }
+    assert {
+        "decision_gate_bootstrap.py",
+        "decision_gate_physical.py",
+    }.issubset(manifest.campaign.policy.to_value()["script_hashes"])
 
 
 def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Path) -> None:

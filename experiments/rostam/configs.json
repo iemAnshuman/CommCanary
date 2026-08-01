@@ -483,6 +483,73 @@
       "producer_schema": "commcanary.rostam.physical.qualification-producer.v1",
       "timeout_seconds": 1800,
       "wrapper": "qualification"
+    },
+    {
+      "depends_on": [],
+      "id": "decision-gate",
+      "measurement_schema": "commcanary.rostam.physical.decision-gate-measurement.v1",
+      "parameters": {
+        "adapter": "torch-json",
+        "backend": "nccl",
+        "command": [
+          "{venv_python}",
+          "-m",
+          "torch.distributed.run",
+          "--standalone",
+          "--nproc_per_node=4",
+          "--module",
+          "experiments.rostam.decision_gate_bootstrap",
+          "--wheel",
+          "{input:decision-gate-wheel}",
+          "--wheel-sha256",
+          "881591e245ce0c434698cd5e8cf2c86f44382bb960162fda137090322d25f6d5",
+          "--request-manifest",
+          "{input:decision-gate-request-manifest}",
+          "--source-trace",
+          "{input:decision-gate-source-trace}",
+          "--canary",
+          "{input:decision-gate-canary}",
+          "--fidelity",
+          "{input:decision-gate-fidelity}",
+          "--qualification-policy",
+          "{input:decision-gate-qualification-policy}",
+          "--materialization-manifest",
+          "{input:decision-gate-materialization-manifest}",
+          "--replay-program",
+          "{input:decision-gate-replay-program}",
+          "--expected-request-id",
+          "3adf59a5a2edbdb333187de2c9fa29a9931df9e85a873a3b3479e8e7fed99b39",
+          "--expected-materialization-id",
+          "e3db603d13fd8699a15af3a5d59c69d5301a97c22b0f8830d5b9b71e04b21f37",
+          "--expected-program-sha256",
+          "2a3e80aed7cdafa78333aa74395fd5e90b37169becde7ea5e53c010cd4ce4005",
+          "--expected-policy-id",
+          "26180cd435f33ec24f212ceb58aea25390320efb311a460554100349ba6e5acb",
+          "--iterations",
+          "20",
+          "--warmup",
+          "5",
+          "--distributed-timeout-seconds",
+          "300"
+        ],
+        "decision_fidelity_policy_id": "43f1daff9a07c3ef4732c67747f409fcdcbf012f7f7115b91b356484a26f4113",
+        "distributed_timeout_seconds": 300,
+        "expected_correctness_checks_per_rank": [2, 2, 2, 2],
+        "expected_materialization_id": "e3db603d13fd8699a15af3a5d59c69d5301a97c22b0f8830d5b9b71e04b21f37",
+        "expected_policy_id": "26180cd435f33ec24f212ceb58aea25390320efb311a460554100349ba6e5acb",
+        "expected_program_sha256": "2a3e80aed7cdafa78333aa74395fd5e90b37169becde7ea5e53c010cd4ce4005",
+        "expected_request_id": "3adf59a5a2edbdb333187de2c9fa29a9931df9e85a873a3b3479e8e7fed99b39",
+        "expected_source_event_count": 8,
+        "expected_stratified_source_event_indices": [0, 1],
+        "global_ranks": [0, 1, 2, 3],
+        "iterations": 20,
+        "operation": "all_reduce",
+        "warmup": 5,
+        "world_size": 4
+      },
+      "producer_schema": "commcanary.rostam.physical.decision-gate-producer.v1",
+      "timeout_seconds": 1800,
+      "wrapper": "qualification"
     }
   ],
   "profiles": {
@@ -523,6 +590,25 @@
         "source-capture-stdout"
       ],
       "workload_ids": ["qualification-exact"]
+    },
+    "decision-gate": {
+      "configuration_ids": ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple"],
+      "required_input_ids": [
+        "commcanary-wheel",
+        "decision-fidelity-policy",
+        "decision-gate-canary",
+        "decision-gate-fidelity",
+        "decision-gate-materialization-manifest",
+        "decision-gate-qualification-policy",
+        "decision-gate-replay-program",
+        "decision-gate-request-manifest",
+        "decision-gate-source-trace",
+        "decision-gate-wheel",
+        "environment-lock",
+        "param-patch-contract",
+        "rostam-catalog"
+      ],
+      "workload_ids": ["decision-gate"]
     }
   }
 }
