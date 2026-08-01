@@ -1,6 +1,41 @@
 # CommCanary Engineering Plan
 
-## Active checkpoint — 2026-07-26 (engineering plan verified complete; the binding constraint is now product, not code)
+## Active checkpoint — 2026-08-01 (first decision-fidelity gate complete; product claim remains unproven)
+
+The predeclared eight-configuration exact-work gate completed on Rostam as
+campaign `decision-gate-20260801-r3`. All eight jobs ran on `toranj1`, every
+attempt terminated successfully, and the selected campaign has a persisted
+8/8 completeness verdict with zero issues. Its raw archive, generated
+publication, and policy verdict each verify and reproduce byte-for-byte.
+
+Exact-work replay agreed with the full source workload on 26/28 pairs
+(92.86%), with Kendall tau-b 0.857, one false negative, one false positive,
+1.55% median absolute relative error, and 4.05% p95 error. It exceeded the
+isolated baseline by seven agreeing pairs and stratified sampling by sixteen;
+all numeric acceptance criteria passed. The frozen policy nevertheless returned
+`inconclusive`: bootstrap intervals crossed decision boundaries and the
+`nccl-2.20.5-tree-ll` cells exceeded the predeclared 20% relative-IQR stability
+limit. The kill/reframe test is deliberately not evaluated on noisy evidence.
+
+This establishes a promising differentiated result, not a qualification
+product. CommCanary remains a research alpha. No favorable retry may replace
+this result, and no threshold may be changed after observing it. A follow-up
+requires a separately frozen noise/repetition plan. The exact evidence hashes,
+failed r1/r2 integration history, and reproduction commands are recorded in
+[`experiments/rostam/results/README.md`](experiments/rostam/results/README.md)
+and [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md).
+
+The implementation/evaluator baseline for this checkpoint is `1300d12`. Its
+pre-publication canonical fast verifier passed 908 tests, strict mypy over 129
+files, Ruff, coverage policy, 30 schemas, and the shell/workflow/documentation
+checks. A final post-publication verifier result belongs in the evidence commit
+history and live handoff, not as a silently edited historical count here.
+
+The engineering roadmap is still substantively complete. The binding
+constraint is stable physical decision evidence and an independently usable
+workflow, as owned by [`ROADMAP.md`](ROADMAP.md).
+
+## Previous checkpoint — 2026-07-26 (engineering plan verified complete; the binding constraint is now product, not code)
 
 Independently re-verified at `118ad77` on macOS 15.7.7 / arm64 / Python 3.14.6.
 Every command below was run, not inferred:

@@ -39,18 +39,34 @@ Overlap-bearing replay reached 71.4%. A portable artifact must therefore carry
 causal compute/communication structure; a faithful list of collectives is not
 enough.
 
+The predeclared exact-work decision gate has now run over eight configurations
+on the same four-A100 node. All eight selected attempts passed correctness and
+the persisted completeness verdict has zero issues. Exact-work replay observed
+26/28 pair agreement (92.86%), Kendall tau-b 0.857, one false negative, one
+false positive, 1.55% median absolute relative error, and 4.05% p95 error. The
+isolated baseline observed 19/28 agreement (67.86%); stratified sampling
+observed 10/28 (35.71%). Every numeric point-estimate criterion passed.
+
+The policy outcome is still **`inconclusive`**. Bootstrap intervals crossed
+required pair boundaries, and `nccl-2.20.5-tree-ll` exceeded the 20% relative
+IQR stability limit for source, exact-work, and stratified measurements. The
+kill/reframe condition is deliberately not evaluated on noisy evidence. These
+results are promising evidence, not permission to relabel CommCanary a
+validated qualification tool.
+
 See [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md) for the exact
 campaign identities, hashes, and reproduction contract.
 
 ## Product gates
 
-1. **Multi-configuration decision fidelity.** Compare the exact-work artifact,
-   source workload, and isolated collective baseline over one predeclared
-   configuration matrix. The artifact must preserve the decisions that an
-   acceptance test would make, not merely approximate one latency.
-2. **Acceptance semantics.** Define the statistic, tolerance, repetition
-   policy, and inconclusive region before observing the gate campaign. Do not
-   tune a threshold to the existing +7.45% result.
+1. **Decision-fidelity follow-up.** The first complete predeclared matrix is
+   `inconclusive`, not failed and not passed. Any follow-up must freeze its
+   noise-control and repetition plan before execution; do not select a quieter
+   successful attempt or tune the policy to the observed answer.
+2. **Acceptance semantics — implemented for the first gate.** Statistic,
+   thresholds, repetition policy, stability limit, bootstrap rule, and four
+   outcomes were fixed and manifest-bound before execution. Preserve that
+   policy/result separation in every later campaign.
 3. **Independent exchange.** Have a party who did not create the source bundle
    verify, materialize, execute, and interpret it using only the repository and
    artifact.
@@ -62,10 +78,11 @@ campaign identities, hashes, and reproduction contract.
    PARAM-derived encoding remains a narrow research bridge, not claimed
    current PARAM compatibility.
 
-If decision fidelity fails, CommCanary remains useful as a deterministic
-replay and evidence framework, but it is not a hardware-qualification decision
-tool. That boundary is part of the contract rather than something a result may
-silently relax.
+Until a stable decision-fidelity gate passes, CommCanary remains a deterministic
+replay and evidence framework, not a hardware-qualification decision tool. A
+future fail or kill-condition trigger would reframe it accordingly; the current
+inconclusive result does neither. That boundary is part of the contract rather
+than something a result may silently relax.
 
 ## Deliberate non-goals
 

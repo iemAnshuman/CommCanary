@@ -22,8 +22,12 @@ reference-workload runs preserve all of that but need model code, data, and a
 cluster. CommCanary occupies the space between: a portable request distilled
 from *your* workload's trace, carrying no weights or prompts, whose source
 correspondence a receiving lab can recompute before target-specific replay.
-Cross-configuration decision fidelity on imported profiles remains the
-deciding open experiment, not an implied property of the file format.
+The first predeclared cross-configuration gate measured strong point estimates
+for exact-work replay—92.86% pair agreement and Kendall tau-b 0.857, versus
+67.86% and 0.764 for the isolated baseline—but its policy outcome was
+`inconclusive` because confidence intervals crossed decision boundaries and
+one configuration was unstable. Decision fidelity therefore remains unproven,
+not an implied property of the file format.
 
 ![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
 table, the threshold reasons that tripped, and per-phase and per-operation regression
@@ -112,10 +116,10 @@ source + canary + fidelity ──▶ qualification request
                           self-reported diagnostic
                                       │ bound raw observation
                                       ▼
-                           verifiable physical observation
-                                      │ decision matrix pending
+                          verifiable physical observation
+                                      │ predeclared matrix + policy
                                       ▼
-                         qualification verdict (not issued)
+                         pass / fail / inconclusive / incomparable
 ```
 
 The physical path is intentionally staged. A portable request contains the
@@ -127,12 +131,14 @@ upstream PARAM compatibility, or a qualification verdict.
 
 ### What this is not
 
-- **Not yet a validated hardware-qualification decision tool.** The
-  `execute-materialization` reference path has run exact source-derived work on
-  four A100s and passed 32/32 deterministic data checks. Its one-configuration
-  same-node timing difference was +7.4533578967%, but no tolerance was declared
-  before observation and no configuration ordering was measured. It therefore
-  issued no qualification verdict.
+- **Not yet a validated hardware-qualification decision tool.** The completed
+  eight-configuration, same-allocation gate met every numeric point-estimate
+  criterion: 26/28 pair agreement, tau-b 0.857, one false negative, one false
+  positive, 1.55% median error, and 4.05% p95 error. Its exact predeclared
+  outcome is nevertheless `inconclusive`, not `pass`: bootstrap intervals
+  crossed required pair boundaries and `nccl-2.20.5-tree-ll` exceeded the 20%
+  stability limit. The kill/reframe condition was not evaluated on noisy
+  evidence.
 - **Not a source of portable hardware numbers.** The physical observation is
   bound to one request, materialization, node, software stack, and pair of raw
   twenty-sample distributions. Other hardware still requires its own retained
@@ -696,9 +702,10 @@ double-counted. Missing, malformed, or non-unique linkage leaves that event at
 `compute_overlap_unknown: true`, and `compile` fails closed unless every event
 is known. The output records derived/unknown counts plus a reason on every
 event. This derivation is unit-tested against Kineto-shaped events and has been
-exercised by the single-configuration same-node diagnostic described in
-[`ROADMAP.md`](ROADMAP.md); that run does not establish cross-configuration
-decision fidelity. As a
+exercised by the same-node diagnostic and predeclared decision gate described
+in [`ROADMAP.md`](ROADMAP.md). The latter produced an `inconclusive` policy
+outcome, so it still does not establish cross-configuration decision fidelity.
+As a
 format reality check, both ranks in the public 2-GPU ResNet-50 profile attached
 to [PyTorch issue #131462](https://github.com/pytorch/pytorch/issues/131462)
 merge from 14 rank-local records into 7 logical events with 7/7 known overlap
