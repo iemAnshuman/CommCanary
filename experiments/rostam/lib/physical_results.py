@@ -19,6 +19,7 @@ PARAM_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.param-measurement.v1"
 OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
 CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
 QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
+DECISION_GATE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v1"
 
 MICRO_PRODUCER_SCHEMA = "commcanary.rostam.physical.micro-producer.v1"
 FULL_PRODUCER_SCHEMA = "commcanary.rostam.physical.full-producer.v1"
@@ -26,13 +27,34 @@ PARAM_PRODUCER_SCHEMA = "commcanary.rostam.physical.param-producer.v1"
 OVERLAP_PRODUCER_SCHEMA = "commcanary.rostam.physical.overlap-producer.v1"
 CAPTURE_PRODUCER_SCHEMA = "commcanary.rostam.physical.capture-producer.v1"
 QUALIFICATION_PRODUCER_SCHEMA = "commcanary.rostam.physical.qualification-producer.v1"
+DECISION_GATE_PRODUCER_SCHEMA = "commcanary.rostam.physical.decision-gate-producer.v1"
 
 MICRO_STDOUT_SCHEMA = "commcanary.rostam.microbench_tp8.stdout.v1"
 FULL_STDOUT_SCHEMA = "commcanary.rostam.workload_tp8.stdout.v1"
 OVERLAP_STDOUT_SCHEMA = "commcanary.rostam.overlap_replay.stdout.v1"
 REFERENCE_EXECUTION_STDOUT_SCHEMA = "commcanary.reference-execution.stdout.v1"
 QUALIFICATION_STDOUT_SCHEMA = "commcanary.rostam.qualification-comparison.stdout.v1"
+DECISION_GATE_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v1"
 SOURCE_TIMING_SEMANTICS = "maximum-rank-unprofiled-whole-program-duration"
+DECISION_GATE_TIMING_SEMANTICS = "maximum-rank-cuda-event-whole-program-duration"
+DECISION_GATE_ORDER_METHOD = "iteration-rotated-latin-cycle.v1"
+DECISION_GATE_STRATIFIED_METHOD = "first-observed-per-collective-shape.v1"
+_DECISION_GATE_REPRESENTATIONS = (
+    "source",
+    "exact_work",
+    "stratified",
+    "isolated",
+    "no_overlap",
+    "no_rank_skew",
+)
+_DECISION_GATE_REPRESENTATION_CONTRACTS = {
+    "source": ("ground_truth", "direct-source-issue-rank-work-wait"),
+    "exact_work": ("product_candidate", "verified-materialization-issue-rank-work-wait"),
+    "stratified": ("kill_condition_baseline", DECISION_GATE_STRATIFIED_METHOD),
+    "isolated": ("incumbent_baseline", "full-message-sequence-blocking-all-reduce-no-compute"),
+    "no_overlap": ("causal_ablation", "blocking-all-reduce-then-exact-rank-work"),
+    "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
+}
 
 
 @dataclass(frozen=True)
@@ -69,6 +91,7 @@ PHYSICAL_SCHEMA_PAIRS = {
     OVERLAP_MEASUREMENT_SCHEMA: OVERLAP_PRODUCER_SCHEMA,
     CAPTURE_MEASUREMENT_SCHEMA: CAPTURE_PRODUCER_SCHEMA,
     QUALIFICATION_MEASUREMENT_SCHEMA: QUALIFICATION_PRODUCER_SCHEMA,
+    DECISION_GATE_MEASUREMENT_SCHEMA: DECISION_GATE_PRODUCER_SCHEMA,
 }
 
 _RAW_LATENCY_FIELDS = {
@@ -977,6 +1000,269 @@ def _qualification_payload(
     return payload, samples, source, source_samples
 
 
+def _decision_gate_reference(raw: Any, field: str, expected: Mapping[str, str]) -> Dict[str, str]:
+    reference = _object(raw, field)
+    _strict(reference, field, expected)
+    result: Dict[str, str] = {}
+    for name, expected_value in expected.items():
+        value = reference[name]
+        if name.endswith("_id") or name.endswith("sha256"):
+            result[name] = _sha256(value, f"{field}.{name}")
+        else:
+            result[name] = _text(value, f"{field}.{name}") or ""
+        if expected_value and result[name] != expected_value:
+            raise PhysicalResultError(f"{field}.{name} disagrees with the frozen workload")
+    return result
+
+
+def _decision_gate_representation(
+    raw: Any,
+    *,
+    representation: str,
+    world_size: int,
+    iterations: int,
+    expected_event_count: int,
+    expected_template_count: int,
+) -> Tuple[Dict[str, Any], Tuple[float, ...]]:
+    field = f"decision-gate producer stdout.representations.{representation}"
+    value = _object(raw, field)
+    _strict(
+        value,
+        field,
+        (
+            "category",
+            "semantics",
+            "executed_event_count",
+            "template_count",
+            "rank_timings_us",
+            "timings_us",
+            "metrics",
+        ),
+    )
+    expected_category, expected_semantics = _DECISION_GATE_REPRESENTATION_CONTRACTS[representation]
+    if value["category"] != expected_category or value["semantics"] != expected_semantics:
+        raise PhysicalResultError(f"{field} semantics disagree with the declared representation")
+    if _integer(value["executed_event_count"], f"{field}.executed_event_count", minimum=1) != expected_event_count:
+        raise PhysicalResultError(f"{field}.executed_event_count disagrees with the frozen program")
+    if _integer(value["template_count"], f"{field}.template_count", minimum=1) != expected_template_count:
+        raise PhysicalResultError(f"{field}.template_count disagrees with the frozen program")
+    raw_rank_timings = value["rank_timings_us"]
+    if not isinstance(raw_rank_timings, list) or len(raw_rank_timings) != world_size:
+        raise PhysicalResultError(f"{field}.rank_timings_us must cover the launched world")
+    rank_timings = [
+        _samples(raw_values, f"{field}.rank_timings_us[{rank}]") for rank, raw_values in enumerate(raw_rank_timings)
+    ]
+    if any(len(values) != iterations for values in rank_timings):
+        raise PhysicalResultError(f"{field}.rank_timings_us sample count disagrees with iterations")
+    samples = _samples(value["timings_us"], f"{field}.timings_us")
+    if len(samples) != iterations:
+        raise PhysicalResultError(f"{field}.timings_us sample count disagrees with iterations")
+    maxima = tuple(max(rank_timings[rank][iteration] for rank in range(world_size)) for iteration in range(iterations))
+    if samples != maxima:
+        raise PhysicalResultError(f"{field}.timings_us disagree with max-rank timings")
+    metrics = _object(value["metrics"], f"{field}.metrics")
+    _strict(metrics, f"{field}.metrics", ("count", "median_us", "iqr_us", "min_us", "max_us"))
+    expected_metrics = {
+        "count": len(samples),
+        "median_us": _median(samples),
+        "iqr_us": _iqr(samples),
+        "min_us": min(samples),
+        "max_us": max(samples),
+    }
+    if _integer(metrics["count"], f"{field}.metrics.count", minimum=1) != expected_metrics["count"]:
+        raise PhysicalResultError(f"{field}.metrics.count disagrees with retained timings")
+    for name in ("median_us", "iqr_us", "min_us", "max_us"):
+        if abs(_finite(metrics[name], f"{field}.metrics.{name}") - expected_metrics[name]) > 0.001:
+            raise PhysicalResultError(f"{field}.metrics.{name} disagrees with retained timings")
+    return dict(value), samples
+
+
+def _decision_gate_payload(
+    stdout: str,
+    *,
+    world_size: int,
+    parameters: Mapping[str, Any],
+) -> Tuple[Mapping[str, Any], Tuple[float, ...]]:
+    payload = _last_json_object(stdout)
+    _strict(
+        payload,
+        "decision-gate producer stdout",
+        (
+            "schema",
+            "request",
+            "materialization",
+            "policy",
+            "execution",
+            "runtime",
+            "correctness",
+            "representations",
+            "claims",
+        ),
+    )
+    if payload["schema"] != DECISION_GATE_STDOUT_SCHEMA:
+        raise PhysicalResultError(f"decision-gate producer stdout requires schema {DECISION_GATE_STDOUT_SCHEMA!r}")
+    request = _decision_gate_reference(
+        payload["request"],
+        "decision-gate producer stdout.request",
+        {
+            "format": "commcanary.qualification_request.v2",
+            "request_id": _text(parameters.get("expected_request_id"), "workload.parameters.expected_request_id") or "",
+        },
+    )
+    materialization = _decision_gate_reference(
+        payload["materialization"],
+        "decision-gate producer stdout.materialization",
+        {
+            "materialization_id": _text(
+                parameters.get("expected_materialization_id"),
+                "workload.parameters.expected_materialization_id",
+            )
+            or "",
+            "program_sha256": _text(
+                parameters.get("expected_program_sha256"),
+                "workload.parameters.expected_program_sha256",
+            )
+            or "",
+        },
+    )
+    policy = _decision_gate_reference(
+        payload["policy"],
+        "decision-gate producer stdout.policy",
+        {
+            "format": "commcanary.qualification_policy.v1",
+            "policy_id": _text(parameters.get("expected_policy_id"), "workload.parameters.expected_policy_id") or "",
+        },
+    )
+    execution = _object(payload["execution"], "decision-gate producer stdout.execution")
+    _strict(
+        execution,
+        "decision-gate producer stdout.execution",
+        (
+            "world_size",
+            "iterations",
+            "warmup",
+            "timing_semantics",
+            "order_method",
+            "representation_order_by_iteration",
+            "source_event_count",
+            "stratified_method",
+            "stratified_source_event_indices",
+        ),
+    )
+    iterations = _integer(parameters.get("iterations"), "workload.parameters.iterations", minimum=1, maximum=1000)
+    warmup = _integer(parameters.get("warmup"), "workload.parameters.warmup", maximum=100)
+    source_event_count = _integer(
+        parameters.get("expected_source_event_count"),
+        "workload.parameters.expected_source_event_count",
+        minimum=1,
+    )
+    if (
+        execution["world_size"] != world_size
+        or execution["iterations"] != iterations
+        or execution["warmup"] != warmup
+        or execution["timing_semantics"] != DECISION_GATE_TIMING_SEMANTICS
+        or execution["order_method"] != DECISION_GATE_ORDER_METHOD
+        or execution["source_event_count"] != source_event_count
+        or execution["stratified_method"] != DECISION_GATE_STRATIFIED_METHOD
+    ):
+        raise PhysicalResultError("decision-gate execution contract disagrees with the frozen workload")
+    selected = execution["stratified_source_event_indices"]
+    expected_selected = parameters.get("expected_stratified_source_event_indices")
+    if not isinstance(selected, list) or selected != expected_selected or not selected:
+        raise PhysicalResultError("decision-gate stratified selection disagrees with the frozen workload")
+    if any(
+        isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < source_event_count
+        for index in selected
+    ):
+        raise PhysicalResultError("decision-gate stratified selection contains an invalid source index")
+    raw_orders = execution["representation_order_by_iteration"]
+    if not isinstance(raw_orders, list) or len(raw_orders) != iterations:
+        raise PhysicalResultError("decision-gate representation order inventory is incomplete")
+    for iteration, order in enumerate(raw_orders):
+        offset = iteration % len(_DECISION_GATE_REPRESENTATIONS)
+        expected_order = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
+        if order != expected_order:
+            raise PhysicalResultError(f"decision-gate representation order disagrees at iteration {iteration}")
+
+    runtime = _object(payload["runtime"], "decision-gate producer stdout.runtime")
+    _strict(
+        runtime,
+        "decision-gate producer stdout.runtime",
+        ("torch_version", "torch_cuda_version", "runtime_nccl_version_code", "distributed_backend"),
+    )
+    _text(runtime["torch_version"], "decision-gate producer stdout.runtime.torch_version", maximum=128)
+    _text(runtime["torch_cuda_version"], "decision-gate producer stdout.runtime.torch_cuda_version", maximum=128)
+    _integer(
+        runtime["runtime_nccl_version_code"],
+        "decision-gate producer stdout.runtime.runtime_nccl_version_code",
+        minimum=1,
+        maximum=99999,
+    )
+    if runtime["distributed_backend"] != "nccl":
+        raise PhysicalResultError("decision-gate producer must use NCCL")
+
+    correctness = _object(payload["correctness"], "decision-gate producer stdout.correctness")
+    _strict(
+        correctness,
+        "decision-gate producer stdout.correctness",
+        ("status", "semantics", "checks_per_rank", "total_check_count"),
+    )
+    expected_checks = parameters.get("expected_correctness_checks_per_rank")
+    if (
+        correctness["status"] != "passed"
+        or correctness["semantics"] != "one-source-value-sum-check-per-collective-shape"
+        or correctness["checks_per_rank"] != expected_checks
+        or not isinstance(expected_checks, list)
+        or len(expected_checks) != world_size
+    ):
+        raise PhysicalResultError("decision-gate correctness inventory disagrees with the frozen workload")
+    parsed_checks = [
+        _integer(value, f"decision-gate correctness checks_per_rank[{rank}]", minimum=1)
+        for rank, value in enumerate(expected_checks)
+    ]
+    if correctness["total_check_count"] != sum(parsed_checks):
+        raise PhysicalResultError("decision-gate correctness total is inconsistent")
+
+    raw_representations = _object(payload["representations"], "decision-gate producer stdout.representations")
+    if set(raw_representations) != set(_DECISION_GATE_REPRESENTATIONS):
+        raise PhysicalResultError("decision-gate representation inventory is not closed")
+    normalized: Dict[str, Any] = {}
+    source_samples: Optional[Tuple[float, ...]] = None
+    for representation in _DECISION_GATE_REPRESENTATIONS:
+        if representation == "stratified":
+            event_count = len(selected)
+            template_count = len(selected)
+        else:
+            event_count = source_event_count
+            template_count = len(selected) if representation == "isolated" else source_event_count
+        normalized[representation], samples = _decision_gate_representation(
+            raw_representations[representation],
+            representation=representation,
+            world_size=world_size,
+            iterations=iterations,
+            expected_event_count=event_count,
+            expected_template_count=template_count,
+        )
+        if representation == "source":
+            source_samples = samples
+    claims = _object(payload["claims"], "decision-gate producer stdout.claims")
+    if dict(claims) != {
+        "physical_execution": "same_allocation_self_reported",
+        "physical_decision_fidelity": "not_analyzed",
+        "qualification_verdict": "policy_bound_not_issued",
+    }:
+        raise PhysicalResultError("decision-gate claims exceed the pre-analysis boundary")
+    if source_samples is None:  # pragma: no cover - closed inventory above
+        raise PhysicalResultError("decision-gate source timings are missing")
+    return {
+        **dict(payload),
+        "request": request,
+        "materialization": materialization,
+        "policy": policy,
+        "representations": normalized,
+    }, source_samples
+
+
 def _param_samples(stdout: str, stderr: str) -> Tuple[float, ...]:
     samples: List[float] = []
     for line in (stdout + "\n" + stderr).splitlines():
@@ -1095,6 +1381,15 @@ def adapt_physical_measurement(
             world_size=world_size,
             parameters=parameter_object,
         )
+    elif measurement_schema == DECISION_GATE_MEASUREMENT_SCHEMA:
+        world_size, _ = validate_physical_layout(parameter_object)
+        payload, samples = _decision_gate_payload(
+            stdout,
+            world_size=world_size,
+            parameters=parameter_object,
+        )
+        source_capture = None
+        source_samples = None
     else:
         world_size, _ = validate_physical_layout(parameter_object)
         payload, samples = _torch_payload(stdout, world_size, producer_schema)
@@ -1191,6 +1486,28 @@ def adapt_physical_measurement(
                     "multi_configuration_ranking": "not_measured",
                     "qualification_verdict": "not_issued",
                 },
+            }
+        )
+    elif measurement_schema == DECISION_GATE_MEASUREMENT_SCHEMA:
+        assert payload is not None
+        payload_runtime = _object(payload["runtime"], "decision-gate producer runtime")
+        for field in ("torch_version", "torch_cuda_version", "runtime_nccl_version_code"):
+            if payload_runtime[field] != runtime_object[field]:
+                raise PhysicalResultError(f"decision-gate producer runtime.{field} disagrees with the cell runtime")
+        correctness = _object(payload["correctness"], "decision-gate producer correctness")
+        measurement.update(
+            {
+                "request": dict(_object(payload["request"], "decision-gate producer request")),
+                "materialization": dict(_object(payload["materialization"], "decision-gate producer materialization")),
+                "policy": dict(_object(payload["policy"], "decision-gate producer policy")),
+                "execution": dict(_object(payload["execution"], "decision-gate producer execution")),
+                "correctness_check_count": _integer(
+                    correctness["total_check_count"],
+                    "decision-gate correctness total_check_count",
+                    minimum=1,
+                ),
+                "representations": dict(_object(payload["representations"], "decision-gate producer representations")),
+                "decision_claims": dict(_object(payload["claims"], "decision-gate producer claims")),
             }
         )
     return measurement
