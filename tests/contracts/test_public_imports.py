@@ -83,7 +83,10 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
         "FORMAT_CAPABILITIES",
         "FormatCapability",
         "QUALIFICATION_MATERIALIZATION_FORMAT",
+        "QUALIFICATION_OBSERVATION_FORMAT",
+        "QUALIFICATION_POLICY_FORMAT",
         "QUALIFICATION_REQUEST_FORMAT",
+        "QUALIFICATION_VERDICT_FORMAT",
         "REPORT_FORMAT",
         "REPORT_VERIFICATION_FORMAT",
         "TRACE_FORMAT",
@@ -94,9 +97,9 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
 def test_capability_query_matches_published_schema_files_and_is_immutable() -> None:
     capabilities = format_capabilities()
     assert capabilities is format_capabilities()
-    assert len(capabilities) == 9
-    assert len({capability.artifact for capability in capabilities}) == 9
-    assert len({capability.format_id for capability in capabilities}) == 9
+    assert len(capabilities) == 12
+    assert len({capability.artifact for capability in capabilities}) == 12
+    assert len({capability.format_id for capability in capabilities}) == 12
     for capability in capabilities:
         schema_path = ROOT / capability.schema
         assert schema_path.is_file()

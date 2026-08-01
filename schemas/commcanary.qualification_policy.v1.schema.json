@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.qualification_policy.v1.schema.json",
+  "title": "CommCanary qualification policy v1",
+  "type": "object",
+  "required": ["format", "policy_id", "primary_metric", "repetitions", "regression", "uncertainty", "noise", "environment", "outcome_policy"],
+  "properties": {
+    "format": {"const": "commcanary.qualification_policy.v1"},
+    "policy_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "primary_metric": {"const": "program_median_us"},
+    "repetitions": {
+      "type": "object",
+      "required": ["warmup", "minimum_measured"],
+      "properties": {
+        "warmup": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "minimum_measured": {"type": "integer", "minimum": 2, "maximum": 1000000}
+      },
+      "additionalProperties": false
+    },
+    "regression": {
+      "type": "object",
+      "required": ["relative_threshold_pct", "absolute_threshold_us", "threshold_combination"],
+      "properties": {
+        "relative_threshold_pct": {"type": "number", "minimum": 0},
+        "absolute_threshold_us": {"type": "number", "minimum": 0},
+        "threshold_combination": {"const": "larger_of_absolute_or_relative"}
+      },
+      "additionalProperties": false
+    },
+    "uncertainty": {
+      "type": "object",
+      "required": ["method", "confidence", "bootstrap_resamples", "seed"],
+      "properties": {
+        "method": {"const": "percentile_bootstrap_median_difference"},
+        "confidence": {"type": "number", "exclusiveMinimum": 0.5, "exclusiveMaximum": 1.0},
+        "bootstrap_resamples": {"type": "integer", "minimum": 100, "maximum": 100000},
+        "seed": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+      },
+      "additionalProperties": false
+    },
+    "noise": {
+      "type": "object",
+      "required": ["max_relative_iqr_pct"],
+      "properties": {"max_relative_iqr_pct": {"type": "number", "minimum": 0}},
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "required": ["max_clock_variation_pct", "require_same_gpu_count", "require_same_topology_class"],
+      "properties": {
+        "max_clock_variation_pct": {"type": "number", "minimum": 0},
+        "require_same_gpu_count": {"type": "boolean"},
+        "require_same_topology_class": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "outcome_policy": {
+      "type": "object",
+      "required": ["incomplete_measurement", "unstable_measurement", "environment_mismatch", "baseline_correctness_failure", "candidate_correctness_failure", "confidence_interval_crosses_threshold"],
+      "properties": {
+        "incomplete_measurement": {"const": "inconclusive"},
+        "unstable_measurement": {"const": "inconclusive"},
+        "environment_mismatch": {"const": "incomparable"},
+        "baseline_correctness_failure": {"const": "incomparable"},
+        "candidate_correctness_failure": {"const": "fail"},
+        "confidence_interval_crosses_threshold": {"const": "inconclusive"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

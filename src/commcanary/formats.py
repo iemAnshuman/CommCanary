@@ -20,6 +20,9 @@ DOCTOR_REPORT_FORMAT = "commcanary.doctor_report.experimental.v1"
 REPORT_VERIFICATION_FORMAT = "commcanary.report_verification.v1"
 QUALIFICATION_REQUEST_FORMAT = "commcanary.qualification_request.v1"
 QUALIFICATION_MATERIALIZATION_FORMAT = "commcanary.qualification_materialization.v1"
+QUALIFICATION_POLICY_FORMAT = "commcanary.qualification_policy.v1"
+QUALIFICATION_OBSERVATION_FORMAT = "commcanary.qualification_observation.v1"
+QUALIFICATION_VERDICT_FORMAT = "commcanary.qualification_verdict.v1"
 
 CANONICAL_JSON_VERSION = "commcanary.canonical-json.v1"
 CANARY_INTEGRITY_PROFILE = "commcanary.canary-integrity.v1"
@@ -121,6 +124,33 @@ FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
         migrate=False,
         semantic_validator=True,
     ),
+    FormatCapability(
+        artifact="qualification_policy",
+        format_id=QUALIFICATION_POLICY_FORMAT,
+        schema="schemas/commcanary.qualification_policy.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="qualification_observation",
+        format_id=QUALIFICATION_OBSERVATION_FORMAT,
+        schema="schemas/commcanary.qualification_observation.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="qualification_verdict",
+        format_id=QUALIFICATION_VERDICT_FORMAT,
+        schema="schemas/commcanary.qualification_verdict.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
 )
 
 
@@ -143,7 +173,10 @@ __all__ = [
     "FORMAT_CAPABILITIES",
     "FormatCapability",
     "QUALIFICATION_MATERIALIZATION_FORMAT",
+    "QUALIFICATION_OBSERVATION_FORMAT",
+    "QUALIFICATION_POLICY_FORMAT",
     "QUALIFICATION_REQUEST_FORMAT",
+    "QUALIFICATION_VERDICT_FORMAT",
     "REPORT_FORMAT",
     "REPORT_VERIFICATION_FORMAT",
     "TRACE_FORMAT",

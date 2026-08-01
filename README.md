@@ -796,6 +796,9 @@ global thresholds.
 - `commcanary.report_verification.v1`
 - `commcanary.qualification_request.v1`
 - `commcanary.qualification_materialization.v1`
+- `commcanary.qualification_policy.v1`
+- `commcanary.qualification_observation.v1`
+- `commcanary.qualification_verdict.v1`
 
 Behavior-search candidate ledgers use the explicitly experimental
 `commcanary.behavior_search_evidence.experimental.v1` sidecar and are not part

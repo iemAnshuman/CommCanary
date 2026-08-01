@@ -119,6 +119,55 @@
       "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
     }
   },
+  "qualification_observation": {
+    "invalid": {
+      "path": [
+        "measurement",
+        "samples_us",
+        0
+      ],
+      "value": 0
+    },
+    "tampered": {
+      "path": [
+        "measurement",
+        "samples_us",
+        0
+      ],
+      "value": 101.0
+    }
+  },
+  "qualification_policy": {
+    "invalid": {
+      "path": [
+        "regression",
+        "relative_threshold_pct"
+      ],
+      "value": -1.0
+    },
+    "tampered": {
+      "path": [
+        "regression",
+        "relative_threshold_pct"
+      ],
+      "value": 8.0
+    }
+  },
+  "qualification_verdict": {
+    "invalid": {
+      "path": [
+        "verdict"
+      ],
+      "value": "maybe"
+    },
+    "tampered": {
+      "path": [
+        "statistics",
+        "candidate_median_us"
+      ],
+      "value": 104.0
+    }
+  },
   "trace": {
     "invalid": {
       "path": [

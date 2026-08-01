@@ -11,7 +11,10 @@ from referencing import Registry, Resource
 
 from commcanary.artifacts import (
     validate_qualification_materialization,
+    validate_qualification_observation,
+    validate_qualification_policy,
     validate_qualification_request,
+    validate_qualification_verdict,
 )
 from commcanary.compare import compare_reports
 from commcanary.compiler import (
@@ -47,6 +50,9 @@ SCHEMA_FILES = {
     "report_verification": "commcanary.report_verification.v1.schema.json",
     "qualification_request": "commcanary.qualification_request.v1.schema.json",
     "qualification_materialization": "commcanary.qualification_materialization.v1.schema.json",
+    "qualification_policy": "commcanary.qualification_policy.v1.schema.json",
+    "qualification_observation": "commcanary.qualification_observation.v1.schema.json",
+    "qualification_verdict": "commcanary.qualification_verdict.v1.schema.json",
 }
 
 RUNTIME_VALIDATORS: Dict[str, Callable[[Mapping[str, Any]], None]] = {
@@ -56,6 +62,9 @@ RUNTIME_VALIDATORS: Dict[str, Callable[[Mapping[str, Any]], None]] = {
     "comparison": validate_comparison,
     "qualification_request": validate_qualification_request,
     "qualification_materialization": validate_qualification_materialization,
+    "qualification_policy": validate_qualification_policy,
+    "qualification_observation": validate_qualification_observation,
+    "qualification_verdict": validate_qualification_verdict,
 }
 
 
@@ -193,6 +202,9 @@ def test_current_producers_match_published_schemas(
         "report_verification": verify_report_against_canary(report, canary),
         "qualification_request": qualification_request,
         "qualification_materialization": qualification_materialization,
+        "qualification_policy": _load_json(FIXTURE_DIR / "qualification_policy.valid.json"),
+        "qualification_observation": _load_json(FIXTURE_DIR / "qualification_observation.valid.json"),
+        "qualification_verdict": _load_json(FIXTURE_DIR / "qualification_verdict.valid.json"),
     }
 
     failures = {

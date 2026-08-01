@@ -22,6 +22,9 @@ matrix together with `commcanary.canonical-json.v1` and the replay model.
 | Report verification | `commcanary.report_verification.v1` | `commcanary.report_verification.v1.schema.json` | Yes | No general artifact reader | None | None |
 | Qualification request | `commcanary.qualification_request.v1` | `commcanary.qualification_request.v1.schema.json` | Yes | Yes | `validate_qualification_request` plus directory-level `verify_qualification_request` | None |
 | Qualification materialization | `commcanary.qualification_materialization.v1` | `commcanary.qualification_materialization.v1.schema.json` | Yes | Yes | `validate_qualification_materialization` plus request-assisted `verify_qualification_materialization` | None |
+| Qualification policy | `commcanary.qualification_policy.v1` | `commcanary.qualification_policy.v1.schema.json` | Yes | Yes | `validate_qualification_policy` | None |
+| Qualification observation | `commcanary.qualification_observation.v1` | `commcanary.qualification_observation.v1.schema.json` | Yes | Yes | `validate_qualification_observation` | None |
+| Qualification verdict | `commcanary.qualification_verdict.v1` | `commcanary.qualification_verdict.v1.schema.json` | Yes | Yes | `validate_qualification_verdict` plus `evaluate_qualification_observations` | None |
 
 Behavior search additionally emits the explicitly experimental
 `commcanary.behavior_search_evidence.experimental.v1` sidecar. It is omitted
@@ -58,6 +61,9 @@ declared format. The runtime layer remains authoritative for semantic checks.
 | Experimental behavior-search evidence | exact canonical-byte digest bound by the canary, selected executable identity, and separation from executable canary bytes |
 | Qualification request | canonical request ID, closed inventory references, byte identities, canary commitment bindings, exact fidelity recomputation, request-only claim boundary, supported execution materializability, communication dtype/reduction-operator agreement, exact Kineto input/output message-shape evidence, equal-split-only `all_to_all`, canonical exact rank-local GEMM-recipe projection, disabled timestamp pacing, and explicit shape/dtype privacy disclosure |
 | Qualification materialization | canonical materialization ID, exact request-manifest binding, exact source-work projection and per-rank operation counts, source kernel observations, mathematical FLOPs, closed two-file inventory, exact program bytes/count, deterministic request-assisted regeneration, source-bound rank-aware issue/work/wait semantics, and no-execution/no-verdict claim boundary |
+| Qualification policy | canonical policy ID, mandatory sample and warmup counts, absolute/relative acceptance boundary, deterministic bootstrap method/seed/count/confidence, explicit noise and environment comparability limits, and fixed four-state handling for incomplete, unstable, incompatible, and incorrect observations |
+| Qualification observation | canonical observation ID, request/materialization/policy bindings, role and metric semantics, environment identity, raw positive samples, warmup/discard/correctness counts, and an unsigned raw-observation claim boundary |
+| Qualification verdict | canonical verdict ID, exact policy and observation bindings, closed reason-code vocabulary, recomputable medians/difference/threshold/noise/confidence interval, and exactly one of pass/fail/inconclusive/incomparable |
 
 This boundary is executable in `tests/contracts/test_json_schemas.py`:
 
@@ -74,6 +80,10 @@ Qualification requests and materializations are different: each manifest has a
 semantic validator, while directory verification additionally reads the fixed
 inventory. Materialization verification also revalidates its request and
 regenerates the program bytes rather than trusting the nearby program digest.
+Policies, observations, and verdicts are independent artifacts so a policy can
+reinterpret retained measurements without pretending that execution happened
+again. Their SHA-256 identities establish content integrity, not signer
+identity.
 
 ## Type and extension policy
 
