@@ -110,3 +110,43 @@ def test_result_payload_recomputes_max_rank_metrics_and_retains_raw_samples(tmp_
     assert payload["representations"]["isolated"]["template_count"] == 2
     assert payload["correctness"]["total_check_count"] == 8
     assert payload["claims"]["physical_decision_fidelity"] == "not_analyzed"
+
+
+def test_main_accepts_forwarded_bootstrap_arguments(monkeypatch) -> None:
+    observed = {}
+
+    def fake_run(args):
+        observed["request"] = args.request_manifest
+        observed["iterations"] = args.iterations
+        return 7
+
+    monkeypatch.setattr(decision_gate_physical, "run", fake_run)
+    arguments = [
+        "--request-manifest",
+        "request.json",
+        "--source-trace",
+        "source.json",
+        "--canary",
+        "canary.json",
+        "--fidelity",
+        "fidelity.json",
+        "--qualification-policy",
+        "policy.json",
+        "--materialization-manifest",
+        "materialization.json",
+        "--replay-program",
+        "program.json",
+        "--expected-request-id",
+        "1" * 64,
+        "--expected-materialization-id",
+        "2" * 64,
+        "--expected-program-sha256",
+        "3" * 64,
+        "--expected-policy-id",
+        "4" * 64,
+        "--iterations",
+        "23",
+    ]
+
+    assert decision_gate_physical.main(arguments) == 7
+    assert observed == {"request": Path("request.json"), "iterations": 23}

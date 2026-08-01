@@ -23,7 +23,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from commcanary.artifacts import load_json, validate_qualification_policy
 from commcanary.artifacts.dtypes import dtype_size_bytes
@@ -651,8 +651,8 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
-def main() -> int:
-    return run(build_parser().parse_args())
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    return run(build_parser().parse_args(argv))
 
 
 if __name__ == "__main__":
