@@ -64,6 +64,14 @@ def test_representation_order_rotates_every_measured_iteration() -> None:
     assert [order[0] for order in orders] == list(decision_gate_physical.REPRESENTATION_IDS)
 
 
+def test_warmup_order_indices_rotate_before_measured_indices_restart() -> None:
+    warmup = 5
+    pass_indices = range(-warmup, 2)
+    order_indices = [index if index >= 0 else index + warmup for index in pass_indices]
+
+    assert order_indices == [0, 1, 2, 3, 4, 0, 1]
+
+
 def test_result_payload_recomputes_max_rank_metrics_and_retains_raw_samples(tmp_path: Path) -> None:
     _trace, policy, request, materialization, plan = _gate_inputs(tmp_path)
     gathered = []

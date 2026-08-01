@@ -533,7 +533,8 @@ def _execute(
 
         timings: Dict[str, List[float]] = {name: [] for name in REPRESENTATION_IDS}
         for pass_index in range(-warmup, iterations):
-            order = representation_order(max(0, pass_index))
+            order_index = pass_index if pass_index >= 0 else pass_index + warmup
+            order = representation_order(order_index)
             for representation in order:
                 for tensor in communication.values():
                     tensor.zero_()
