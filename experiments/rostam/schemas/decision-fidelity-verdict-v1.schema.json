@@ -1,0 +1,163 @@
+{
+  "$id": "commcanary.rostam.decision-fidelity-verdict.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "commcanary.rostam.decision-fidelity-verdict.v1"},
+    "verdict_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "outcome": {"enum": ["fail", "incomparable", "inconclusive", "pass"]},
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "commcanary.rostam.decision-fidelity-policy.v1"},
+        "policy_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "size_bytes": {"minimum": 1, "type": "integer"}
+      },
+      "required": ["schema", "policy_id", "sha256", "size_bytes"],
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "run_id": {"minLength": 1, "type": "string"},
+        "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "completeness_verdict_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "configuration_count": {"minimum": 0, "type": "integer"},
+        "configuration_pair_count": {"minimum": 0, "type": "integer"},
+        "same_node": {"type": ["string", "null"]}
+      },
+      "required": ["aggregate_sha256", "run_id", "manifest_sha256", "selection_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "same_node"],
+      "type": "object"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {"minLength": 1, "type": "string"},
+          "detail": {"minLength": 1, "type": "string"}
+        },
+        "required": ["code", "detail"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "uncertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["decisive", "inconclusive"]},
+        "inconclusive_pairs": {"items": {"minLength": 1, "type": "string"}, "type": "array"},
+        "unstable_cells": {"items": {"minLength": 1, "type": "string"}, "type": "array"}
+      },
+      "required": ["status", "inconclusive_pairs", "unstable_cells"],
+      "type": "object"
+    },
+    "pairwise_comparisons": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "first_configuration_id": {"minLength": 1, "type": "string"},
+          "second_configuration_id": {"minLength": 1, "type": "string"},
+          "representations": {
+            "additionalProperties": false,
+            "properties": {
+              "source": {"$ref": "#/$defs/pair-result"},
+              "exact_work": {"$ref": "#/$defs/pair-result"},
+              "stratified": {"$ref": "#/$defs/pair-result"},
+              "isolated": {"$ref": "#/$defs/pair-result"},
+              "no_overlap": {"$ref": "#/$defs/pair-result"},
+              "no_rank_skew": {"$ref": "#/$defs/pair-result"}
+            },
+            "required": ["source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew"],
+            "type": "object"
+          }
+        },
+        "required": ["first_configuration_id", "second_configuration_id", "representations"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "representation_metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_work": {"$ref": "#/$defs/representation-metrics"},
+        "stratified": {"$ref": "#/$defs/representation-metrics"},
+        "isolated": {"$ref": "#/$defs/representation-metrics"},
+        "no_overlap": {"$ref": "#/$defs/representation-metrics"},
+        "no_rank_skew": {"$ref": "#/$defs/representation-metrics"}
+      },
+      "type": "object"
+    },
+    "criteria": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "criterion_id": {"minLength": 1, "type": "string"},
+          "observed": {"type": "number"},
+          "operator": {"enum": ["<=", ">="]},
+          "required": {"type": "number"},
+          "passed": {"type": "boolean"}
+        },
+        "required": ["criterion_id", "observed", "operator", "required", "passed"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "product_interpretation": {
+      "additionalProperties": false,
+      "properties": {
+        "kill_or_reframe_evaluated": {"type": "boolean"},
+        "kill_or_reframe_triggered": {"type": "boolean"},
+        "positioning": {"enum": ["evidence_and_research_framework", "narrow_physical_fidelity_supported_research_alpha", "research_alpha_unvalidated"]},
+        "cost_claim": {"const": "not_evaluated_by_this_reduced-source-campaign"},
+        "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
+        "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"}
+      },
+      "required": ["kill_or_reframe_evaluated", "kill_or_reframe_triggered", "positioning", "cost_claim", "generality_claim", "independent_operator_claim"],
+      "type": "object"
+    }
+  },
+  "required": ["schema", "verdict_id", "outcome", "policy", "evidence", "issues", "uncertainty", "pairwise_comparisons", "representation_metrics", "criteria", "product_interpretation"],
+  "type": "object",
+  "$defs": {
+    "pair-result": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_label": {"enum": ["first_faster", "second_faster", "tie"]},
+        "uncertainty_label": {"enum": ["first_faster", "inconclusive", "second_faster", "tie"]},
+        "difference_us": {"type": "number"},
+        "tie_threshold_us": {"minimum": 0, "type": "number"},
+        "confidence_interval_us": {
+          "items": {"type": "number"},
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": ["observed_label", "uncertainty_label", "difference_us", "tie_threshold_us", "confidence_interval_us"],
+      "type": "object"
+    },
+    "representation-metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "pairwise_agreement_count": {"minimum": 0, "type": "integer"},
+        "pairwise_pair_count": {"minimum": 1, "type": "integer"},
+        "pairwise_ranking_agreement": {"maximum": 1, "minimum": 0, "type": "number"},
+        "kendall_tau_b": {"maximum": 1, "minimum": -1, "type": "number"},
+        "false_negative_count": {"minimum": 0, "type": "integer"},
+        "false_positive_count": {"minimum": 0, "type": "integer"},
+        "median_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "p95_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "median_execution_time_ratio_to_source": {"minimum": 0, "type": "number"},
+        "configuration_medians_us": {
+          "additionalProperties": {"minimum": 0, "type": "number"},
+          "type": "object"
+        }
+      },
+      "required": ["pairwise_agreement_count", "pairwise_pair_count", "pairwise_ranking_agreement", "kendall_tau_b", "false_negative_count", "false_positive_count", "median_absolute_relative_error_pct", "p95_absolute_relative_error_pct", "median_execution_time_ratio_to_source", "configuration_medians_us"],
+      "type": "object"
+    }
+  }
+}
