@@ -1,0 +1,664 @@
+[
+ {
+  "comms": "init",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:pg-init:0"
+  ],
+  "pg_id": 0,
+  "world_size": 4
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 32768,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 32768,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 0,
+  "source_event_index": 0,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 0,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 0
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 0,
+  "source_event_index": 0
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 65536,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 65536,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 1,
+  "source_event_index": 1,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 1,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 1
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 1,
+  "source_event_index": 1
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 32768,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 32768,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 2,
+  "source_event_index": 2,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 2,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 2
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 2,
+  "source_event_index": 2
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 65536,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 65536,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 3,
+  "source_event_index": 3,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 3,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 3
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 3,
+  "source_event_index": 3
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 32768,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 32768,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 4,
+  "source_event_index": 4,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 4,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 4
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 4,
+  "source_event_index": 4
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 65536,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 65536,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 5,
+  "source_event_index": 5,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 5,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 5
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 5,
+  "source_event_index": 5
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 32768,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 32768,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 6,
+  "source_event_index": 6,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 6,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 6
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 6,
+  "source_event_index": 6
+ },
+ {
+  "comms": "all_reduce",
+  "dtype": "bfloat16",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "in_msg_size": 65536,
+  "markers": [
+   "commcanary:qualification:issue:0:all_reduce"
+  ],
+  "out_msg_size": 65536,
+  "pg_id": 0,
+  "reduction_op": "sum",
+  "req": 7,
+  "source_event_index": 7,
+  "world_size": 4
+ },
+ {
+  "compute": "gemm_recipe",
+  "compute_phase": "source-bound-overlap",
+  "global_ranks": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "markers": [
+   "commcanary:qualification:source-work:0:all_reduce"
+  ],
+  "overlap_request": 7,
+  "recipe_by_rank": {
+   "0": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 12,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "1": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 15,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "2": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 17,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ],
+   "3": [
+    {
+     "dtype": "bfloat16",
+     "k": 8192,
+     "m": 20,
+     "n": 8192,
+     "op": "gemm"
+    }
+   ]
+  },
+  "source_event_index": 7
+ },
+ {
+  "comms": "wait",
+  "markers": [
+   "commcanary:qualification:complete:0:all_reduce"
+  ],
+  "req": 7,
+  "source_event_index": 7
+ }
+]

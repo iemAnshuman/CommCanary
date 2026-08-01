@@ -1,0 +1,48 @@
+{
+  "claims": {
+    "compute_work_provenance": "source_trace_verified",
+    "materialization": "request_bound",
+    "physical_execution": "not_included",
+    "physical_measurement": "not_included",
+    "qualification_verdict": "not_issued"
+  },
+  "compute_work": {
+    "event_count": 8,
+    "matmul_flop_count": 68719476736,
+    "method": "explicit-wait-linked-contiguous-gemm.v1",
+    "operation_count": 32,
+    "projection_sha256": "89d4aa2366248b8cbc09dd9432b517f1c116da027f1634c65fd3274a5293b8d4",
+    "provenance": "source_trace_exact_rank_local_work",
+    "rank_operation_counts": {
+      "0": 8,
+      "1": 8,
+      "2": 8,
+      "3": 8
+    },
+    "rank_recipe_count": 32,
+    "source_kernel_count": 32,
+    "source_kernel_duration_us": 3954.219238282
+  },
+  "executor": {
+    "adapter": "conforming-adapter-required",
+    "contract": "async-issue-rank-gemm-recipe-explicit-wait.v2",
+    "timestamp_pacing": "disabled",
+    "upstream_param_compatibility": "not_claimed"
+  },
+  "format": "commcanary.qualification_materialization.v1",
+  "materialization_id": "e3db603d13fd8699a15af3a5d59c69d5301a97c22b0f8830d5b9b71e04b21f37",
+  "program": {
+    "compute_operation_count": 32,
+    "encoding": "commcanary.source-bound-compute-recipe.v2",
+    "entry_count": 25,
+    "path": "replay-program.json",
+    "sha256": "2a3e80aed7cdafa78333aa74395fd5e90b37169becde7ea5e53c010cd4ce4005",
+    "size_bytes": 9785
+  },
+  "request": {
+    "format": "commcanary.qualification_request.v2",
+    "manifest_sha256": "c3dd538e23b78341572a35d44e7ced8633dc055ff989b620279e81e91405626f",
+    "manifest_size_bytes": 3805,
+    "request_id": "3adf59a5a2edbdb333187de2c9fa29a9931df9e85a873a3b3479e8e7fed99b39"
+  }
+}
