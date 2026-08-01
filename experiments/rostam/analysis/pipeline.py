@@ -633,6 +633,7 @@ def _physical_binding(
     }
     if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
         binding["decision_gate"] = dict(attributes)
+        binding["decision_gate_runtime"] = physical.runtime.to_dict()
     return binding
 
 
