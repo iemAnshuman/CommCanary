@@ -1,0 +1,134 @@
+{
+  "$id": "commcanary.rostam.decision-fidelity-policy.v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "commcanary.rostam.decision-fidelity-policy.v1"},
+    "policy_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "workload_id": {"const": "decision-gate"},
+        "supported_domain": {"minLength": 1, "type": "string"},
+        "configuration_ids": {
+          "items": {"minLength": 1, "type": "string"},
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "representations": {
+          "additionalProperties": false,
+          "properties": {
+            "source": {"const": "ground_truth"},
+            "exact_work": {"const": "product_candidate"},
+            "stratified": {"const": "kill_condition_baseline"},
+            "isolated": {"const": "incumbent_baseline"},
+            "no_overlap": {"const": "causal_ablation"},
+            "no_rank_skew": {"const": "causal_ablation"}
+          },
+          "required": ["source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew"],
+          "type": "object"
+        }
+      },
+      "required": ["workload_id", "supported_domain", "configuration_ids", "representations"],
+      "type": "object"
+    },
+    "measurement": {
+      "additionalProperties": false,
+      "properties": {
+        "allocation_policy": {"const": "all-representations-in-one-cell-and-process-group-per-configuration"},
+        "order_method": {"const": "iteration-rotated-latin-cycle.v1"},
+        "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
+        "warmup": {"maximum": 100, "minimum": 0, "type": "integer"},
+        "measured_repetitions": {"maximum": 1000, "minimum": 1, "type": "integer"},
+        "required_correctness": {"const": "passed"},
+        "max_relative_iqr_pct": {"maximum": 1000, "minimum": 0, "type": "number"}
+      },
+      "required": ["allocation_policy", "order_method", "timing_semantics", "warmup", "measured_repetitions", "required_correctness", "max_relative_iqr_pct"],
+      "type": "object"
+    },
+    "comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "primary_metric": {"const": "program_median_us"},
+        "configuration_pair_order": {"const": "lexicographic-unordered-pairs"},
+        "pair_label_method": {"const": "larger-of-absolute-or-relative-tie-band.v1"},
+        "absolute_tie_threshold_us": {"minimum": 0, "type": "number"},
+        "relative_tie_threshold_pct": {"minimum": 0, "type": "number"},
+        "relative_threshold_reference": {"const": "smaller_pair_median"},
+        "classification_error_counting": {
+          "additionalProperties": false,
+          "properties": {
+            "source_direction_candidate_tie": {"const": "false_negative"},
+            "source_tie_candidate_direction": {"const": "false_positive"},
+            "opposite_direction": {"const": "one_false_negative_and_one_false_positive"}
+          },
+          "required": ["source_direction_candidate_tie", "source_tie_candidate_direction", "opposite_direction"],
+          "type": "object"
+        },
+        "uncertainty": {
+          "additionalProperties": false,
+          "properties": {
+            "method": {"const": "independent-percentile-bootstrap-median-difference"},
+            "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
+            "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
+            "seed": {"minimum": 0, "type": "integer"},
+            "boundary_crossing_outcome": {"const": "inconclusive"}
+          },
+          "required": ["method", "confidence", "resamples", "seed", "boundary_crossing_outcome"],
+          "type": "object"
+        },
+        "reported_metrics": {
+          "items": {
+            "enum": ["pairwise_ranking_agreement", "kendall_tau_b", "false_negative_count", "false_positive_count", "median_absolute_relative_error_pct", "p95_absolute_relative_error_pct", "execution_time_ratio_to_source"]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": ["primary_metric", "configuration_pair_order", "pair_label_method", "absolute_tie_threshold_us", "relative_tie_threshold_pct", "relative_threshold_reference", "classification_error_counting", "uncertainty", "reported_metrics"],
+      "type": "object"
+    },
+    "pass_criteria": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_work_min_pairwise_agreement": {"maximum": 1, "minimum": 0, "type": "number"},
+        "exact_work_min_kendall_tau_b": {"maximum": 1, "minimum": -1, "type": "number"},
+        "exact_work_max_false_negative_count": {"minimum": 0, "type": "integer"},
+        "exact_work_max_false_positive_count": {"minimum": 0, "type": "integer"},
+        "exact_work_max_median_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "exact_work_max_p95_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "exact_work_min_agreement_advantage_pairs_over_isolated": {"minimum": 0, "type": "integer"},
+        "exact_work_min_agreement_advantage_pairs_over_stratified": {"minimum": 0, "type": "integer"}
+      },
+      "required": ["exact_work_min_pairwise_agreement", "exact_work_min_kendall_tau_b", "exact_work_max_false_negative_count", "exact_work_max_false_positive_count", "exact_work_max_median_absolute_relative_error_pct", "exact_work_max_p95_absolute_relative_error_pct", "exact_work_min_agreement_advantage_pairs_over_isolated", "exact_work_min_agreement_advantage_pairs_over_stratified"],
+      "type": "object"
+    },
+    "outcomes": {
+      "additionalProperties": false,
+      "properties": {
+        "pass": {"minLength": 1, "type": "string"},
+        "fail": {"minLength": 1, "type": "string"},
+        "inconclusive": {"minLength": 1, "type": "string"},
+        "incomparable": {"minLength": 1, "type": "string"}
+      },
+      "required": ["pass", "fail", "inconclusive", "incomparable"],
+      "type": "object"
+    },
+    "kill_or_reframe": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {"const": "exact_work_pairwise_agreement_not_greater_than_stratified"},
+        "outcome": {"const": "reframe_as_evidence_and_research_framework"},
+        "cost_claim": {"const": "not_evaluated_by_this_reduced-source-campaign"},
+        "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
+        "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"}
+      },
+      "required": ["condition", "outcome", "cost_claim", "generality_claim", "independent_operator_claim"],
+      "type": "object"
+    }
+  },
+  "required": ["schema", "policy_id", "scope", "measurement", "comparison", "pass_criteria", "outcomes", "kill_or_reframe"],
+  "type": "object"
+}

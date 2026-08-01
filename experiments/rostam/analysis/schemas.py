@@ -22,6 +22,7 @@ PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualific
 PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v1"
 RAW_ARCHIVE_DESCRIPTOR_SCHEMA = "commcanary.rostam.raw-archive-descriptor.v1"
 CROSS_COMMIT_COMPATIBILITY_SCHEMA = "commcanary.rostam.cross-commit-compatibility.v1"
+DECISION_FIDELITY_POLICY_SCHEMA = "commcanary.rostam.decision-fidelity-policy.v1"
 
 _SCHEMA_DIRECTORY = Path(__file__).resolve().parent.parent / "schemas"
 _SCHEMA_FILES = {
@@ -38,6 +39,7 @@ _SCHEMA_FILES = {
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: "physical-decision-gate-measurement-v1.schema.json",
     RAW_ARCHIVE_DESCRIPTOR_SCHEMA: "raw-archive-descriptor-v1.schema.json",
     CROSS_COMMIT_COMPATIBILITY_SCHEMA: "cross-commit-compatibility-v1.schema.json",
+    DECISION_FIDELITY_POLICY_SCHEMA: "decision-fidelity-policy-v1.schema.json",
 }
 _PHYSICAL_PRODUCER_CONTRACTS = {
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.micro-producer.v1",

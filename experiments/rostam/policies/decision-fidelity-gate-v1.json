@@ -1,0 +1,87 @@
+{
+  "schema": "commcanary.rostam.decision-fidelity-policy.v1",
+  "policy_id": "43f1daff9a07c3ef4732c67747f409fcdcbf012f7f7115b91b356484a26f4113",
+  "scope": {
+    "workload_id": "decision-gate",
+    "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
+    "configuration_ids": [
+      "nccl-2.19.3-default",
+      "nccl-2.20.5-default",
+      "nccl-2.20.5-ring-ll",
+      "nccl-2.20.5-ring-ll128",
+      "nccl-2.20.5-ring-simple",
+      "nccl-2.20.5-tree-ll",
+      "nccl-2.20.5-tree-ll128",
+      "nccl-2.20.5-tree-simple"
+    ],
+    "representations": {
+      "source": "ground_truth",
+      "exact_work": "product_candidate",
+      "stratified": "kill_condition_baseline",
+      "isolated": "incumbent_baseline",
+      "no_overlap": "causal_ablation",
+      "no_rank_skew": "causal_ablation"
+    }
+  },
+  "measurement": {
+    "allocation_policy": "all-representations-in-one-cell-and-process-group-per-configuration",
+    "order_method": "iteration-rotated-latin-cycle.v1",
+    "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
+    "warmup": 5,
+    "measured_repetitions": 20,
+    "required_correctness": "passed",
+    "max_relative_iqr_pct": 20.0
+  },
+  "comparison": {
+    "primary_metric": "program_median_us",
+    "configuration_pair_order": "lexicographic-unordered-pairs",
+    "pair_label_method": "larger-of-absolute-or-relative-tie-band.v1",
+    "absolute_tie_threshold_us": 10.0,
+    "relative_tie_threshold_pct": 5.0,
+    "relative_threshold_reference": "smaller_pair_median",
+    "classification_error_counting": {
+      "source_direction_candidate_tie": "false_negative",
+      "source_tie_candidate_direction": "false_positive",
+      "opposite_direction": "one_false_negative_and_one_false_positive"
+    },
+    "uncertainty": {
+      "method": "independent-percentile-bootstrap-median-difference",
+      "confidence": 0.95,
+      "resamples": 2000,
+      "seed": 7411,
+      "boundary_crossing_outcome": "inconclusive"
+    },
+    "reported_metrics": [
+      "pairwise_ranking_agreement",
+      "kendall_tau_b",
+      "false_negative_count",
+      "false_positive_count",
+      "median_absolute_relative_error_pct",
+      "p95_absolute_relative_error_pct",
+      "execution_time_ratio_to_source"
+    ]
+  },
+  "pass_criteria": {
+    "exact_work_min_pairwise_agreement": 0.8,
+    "exact_work_min_kendall_tau_b": 0.7,
+    "exact_work_max_false_negative_count": 1,
+    "exact_work_max_false_positive_count": 1,
+    "exact_work_max_median_absolute_relative_error_pct": 10.0,
+    "exact_work_max_p95_absolute_relative_error_pct": 15.0,
+    "exact_work_min_agreement_advantage_pairs_over_isolated": 2,
+    "exact_work_min_agreement_advantage_pairs_over_stratified": 2
+  },
+  "outcomes": {
+    "pass": "complete stable evidence satisfies every pass criterion",
+    "fail": "complete stable comparable evidence violates one or more pass criteria",
+    "inconclusive": "complete evidence is too noisy or uncertainty crosses a required decision boundary",
+    "incomparable": "inventory, environment, correctness, or same-allocation requirements are violated"
+  },
+  "kill_or_reframe": {
+    "condition": "exact_work_pairwise_agreement_not_greater_than_stratified",
+    "outcome": "reframe_as_evidence_and_research_framework",
+    "cost_claim": "not_evaluated_by_this_reduced-source-campaign",
+    "generality_claim": "not_evaluated_beyond_the_declared_supported_domain",
+    "independent_operator_claim": "not_evaluated_by_this_campaign"
+  }
+}
