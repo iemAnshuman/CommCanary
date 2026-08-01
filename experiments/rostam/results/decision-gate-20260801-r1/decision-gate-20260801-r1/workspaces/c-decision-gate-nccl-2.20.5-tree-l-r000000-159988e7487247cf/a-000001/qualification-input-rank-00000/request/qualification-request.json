@@ -1,0 +1,90 @@
+{
+  "artifacts": {
+    "canary": {
+      "format": "commcanary.canary.v2",
+      "path": "canary.json",
+      "sha256": "e47ea9b9c5a766bf55c340ff247d8bc8702b9ba70e87442b0a1b6fc41a4059ef",
+      "size_bytes": 19395
+    },
+    "fidelity_verification": {
+      "format": "commcanary.fidelity_verification.v1",
+      "path": "fidelity.json",
+      "sha256": "ba6d65062631641b2698764b7afb4a4cb1f214bb35b24b4741c64c742493a07f",
+      "size_bytes": 12536
+    },
+    "qualification_policy": {
+      "format": "commcanary.qualification_policy.v1",
+      "path": "qualification-policy.json",
+      "sha256": "62d6b2c6847e7720e96782a9c7f4f5202fc1d845182e84e198d43288f7e5a7e4",
+      "size_bytes": 1058
+    },
+    "source_trace": {
+      "format": "commcanary.trace.v1",
+      "path": "source.trace.json",
+      "sha256": "036780e0b287b3b454197b877af66b5f23e6371aced0a809bfcb7e1e1a4d5404",
+      "size_bytes": 35871
+    }
+  },
+  "bindings": {
+    "artifact_provenance_sha256": "a7af20d7b51b6c7b1be2481120206fd9f45b911e78906f84f04ad5a87b9edb1e",
+    "calibration_evaluation_sha256": "bda0238d99e0b7ea867df5c590a79052ec090fa7e2f9c9ecd5a38f4c2556de68",
+    "execution_semantic_sha256": "a1a66c929970dcafd5f332ce53b97716bc079187ae2374e756f190dbdf7c4573",
+    "scheduler_execution_sha256": "a1a66c929970dcafd5f332ce53b97716bc079187ae2374e756f190dbdf7c4573",
+    "source_normalized_sha256": "bd49e198969593a06ea9a628081d3c8fcd293e6c007b23f993d25128a929ff82",
+    "source_trace_sha256": "bd49e198969593a06ea9a628081d3c8fcd293e6c007b23f993d25128a929ff82"
+  },
+  "claims": {
+    "physical_fidelity": "unproven",
+    "physical_measurement": "not_included",
+    "qualification_verdict": "policy_bound_not_issued",
+    "source_correspondence": "source_verified"
+  },
+  "decision_policy": {
+    "application": "required_before_execution",
+    "outcomes": [
+      "fail",
+      "incomparable",
+      "inconclusive",
+      "pass"
+    ],
+    "policy_format": "commcanary.qualification_policy.v1",
+    "policy_id": "26180cd435f33ec24f212ceb58aea25390320efb311a460554100349ba6e5acb"
+  },
+  "format": "commcanary.qualification_request.v2",
+  "producer": {
+    "name": "commcanary",
+    "version": "0.3.0"
+  },
+  "purpose": "hardware-vendor-qualification",
+  "request_id": "3adf59a5a2edbdb333187de2c9fa29a9931df9e85a873a3b3479e8e7fed99b39",
+  "target_execution": {
+    "all_to_all_split_policy": "equal-split-only",
+    "communication_dtype_source": "source-bound-per-event",
+    "communication_dtypes": [
+      "bfloat16"
+    ],
+    "communication_message_shape_source": "source-validated-per-event",
+    "communication_reduction_ops": [
+      "sum"
+    ],
+    "communication_reduction_source": "source-bound-per-event",
+    "compute_recipe_event_count": 8,
+    "compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+    "compute_recipe_operation_count": 32,
+    "compute_recipe_projection_sha256": "89d4aa2366248b8cbc09dd9432b517f1c116da027f1634c65fd3274a5293b8d4",
+    "compute_work_source": "source-bound-per-rank-exact-recipe",
+    "execution_adapter": "conforming-adapter-required",
+    "executor_contract": "async-issue-rank-gemm-recipe-explicit-wait.v2",
+    "inflight_communication_policy": "single-collective",
+    "materialization": "deterministic_from_verified_request",
+    "overlap_structure": "async-issue-exact-rank-work-explicit-wait",
+    "physical_observation": "required_before_qualification_verdict",
+    "privacy_disclosure": "gemm-shapes-and-dtypes-revealed",
+    "program_encoding": "commcanary.source-bound-compute-recipe.v2",
+    "rank_arrival_timing": "emerges-from-source-bound-rank-local-work",
+    "source_overlap_observation": "bound-not-duration-paced",
+    "target_compute_calibration": "not_used",
+    "timestamp_pacing": "disabled",
+    "upstream_param_compatibility": "not_claimed"
+  }
+}

@@ -1,0 +1,1194 @@
+{
+  "events": [
+    {
+      "bytes": 65536,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-776cfff441ecd48f55ca67e93edc1a7ec82dc9ead991c8708e157986ad77fa3f",
+      "collective_seq": 0,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 0.0,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 0.0,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 0.0,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 0.0,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_overlap_us": 0.0,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 101.728027344
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 102.047851562
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.527832031
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.305175781
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-776cfff441ecd48f55ca67e93edc1a7ec82dc9ead991c8708e157986ad77fa3f",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 52.512207031,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 0,
+        "kineto_compute_recipe_duration_us": 101.728027344,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 117.067,
+        "kineto_in_msg_nelems": 32768,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 32768,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 1.119628906,
+        "2": 0.078613281,
+        "3": 3.229980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 0.0
+    },
+    {
+      "bytes": 131072,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-4aa67766a90b8bc26d15ddfa7d47c70960ad129c2cf9bf3b533de70623a73345",
+      "collective_seq": 1,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 106.624023438,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 105.728027344,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 119.681152344,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 113.440917969,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 105.728027344,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 106.624023438
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 105.728027344
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.849121094
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 139.937011719
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-4aa67766a90b8bc26d15ddfa7d47c70960ad129c2cf9bf3b533de70623a73345",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 175.648925781,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 106.624023438,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 60.474,
+        "kineto_in_msg_nelems": 65536,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 65536,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 5.978628906,
+        "2": 1.545613281,
+        "3": 3.718980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 695.742
+    },
+    {
+      "bytes": 65536,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-87e2747a5e42d07ba7b84e728f1a1297e504be1df33cde569553720f33b3592d",
+      "collective_seq": 2,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 107.456054688,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 108.480957031,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 55.359863281,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 55.0078125,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 55.0078125,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 107.456054688
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 108.480957031
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 141.855957031
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 139.040039062
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-87e2747a5e42d07ba7b84e728f1a1297e504be1df33cde569553720f33b3592d",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 55.359863281,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 141.855957031,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 49.538,
+        "kineto_in_msg_nelems": 32768,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 32768,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 1.800386719,
+        "1": 9.418015625,
+        "2": 0.0,
+        "3": 5.672367188
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 840.125613281
+    },
+    {
+      "bytes": 131072,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-557d78f561b13a7d41976f5bda0fbde0b83230d89effad2f22cc6ce6b6275a5b",
+      "collective_seq": 3,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 108.448242188,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 108.479980469,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 138.464355469,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 137.663574219,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 108.448242188,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 108.448242188
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 108.479980469
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 139.712890625
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 140.191894531
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-557d78f561b13a7d41976f5bda0fbde0b83230d89effad2f22cc6ce6b6275a5b",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 143.488769531,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 108.448242188,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 50.217,
+        "kineto_in_msg_nelems": 65536,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 65536,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 12.042628906,
+        "2": 0.277613281,
+        "3": 4.067980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 967.727
+    },
+    {
+      "bytes": 65536,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-a7fc318ec3cdda0be341db13ec32389c8fdb0120f97c9114f16a63de2c488002",
+      "collective_seq": 4,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 73.12109375,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 70.271972656,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 72.959960938,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 71.295898438,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 70.271972656,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 101.729003906
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 102.527832031
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.399902344
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 141.761230469
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-a7fc318ec3cdda0be341db13ec32389c8fdb0120f97c9114f16a63de2c488002",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 73.537109375,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 101.729003906,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 48.002,
+        "kineto_in_msg_nelems": 32768,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 32768,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 19.273628906,
+        "2": 5.987613281,
+        "3": 11.122980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 1091.127
+    },
+    {
+      "bytes": 131072,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-0cd0390f9843fb7e305ec8e0fb44cc448eb44cd071076325fb27c1f19f733d07",
+      "collective_seq": 5,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 106.527832031,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 107.104980469,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 141.568847656,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 139.775878906,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 106.527832031,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 106.527832031
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 108.161132812
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.272949219
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 140.448242188
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-0cd0390f9843fb7e305ec8e0fb44cc448eb44cd071076325fb27c1f19f733d07",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 183.967773438,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 106.527832031,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 46.759,
+        "kineto_in_msg_nelems": 65536,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 65536,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 27.101628906,
+        "2": 9.346613281,
+        "3": 14.841980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 1210.114
+    },
+    {
+      "bytes": 65536,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-fb46dbc6390b3fbef7b60dbaea6b853208e7e9bd4f506643cb416a3362920b32",
+      "collective_seq": 6,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 74.271972656,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 70.751953125,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 70.303710938,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 72.705078125,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 70.303710938,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 101.728027344
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 103.231933594
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 142.111816406
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 140.44921875
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-fb46dbc6390b3fbef7b60dbaea6b853208e7e9bd4f506643cb416a3362920b32",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 74.848144531,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 101.728027344,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 52.199,
+        "kineto_in_msg_nelems": 32768,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 32768,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 27.169628906,
+        "2": 7.555613281,
+        "3": 15.812980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 1333.005
+    },
+    {
+      "bytes": 131072,
+      "capture_session_id": "kineto-multi-rank-v1",
+      "collective_id": "kineto-552434d8238875353e26c908c8248dd02faebdb604bc69dc95daed85a6db547e",
+      "collective_seq": 7,
+      "compute_before_us": 0.0,
+      "compute_by_rank": {
+        "0": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 106.527832031,
+          "compute_pressure": 0.5
+        },
+        "1": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 107.040039062,
+          "compute_pressure": 0.5
+        },
+        "2": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 61.50390625,
+          "compute_pressure": 0.5
+        },
+        "3": {
+          "compute_before_us": 0.0,
+          "compute_overlap_us": 57.920898438,
+          "compute_pressure": 0.5
+        }
+      },
+      "compute_fields_uncertain": true,
+      "compute_overlap_us": 57.920898438,
+      "compute_pressure": 0.5,
+      "compute_recipe_by_rank": {
+        "0": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 12,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 106.976074219
+          }
+        ],
+        "1": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 15,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 107.040039062
+          }
+        ],
+        "2": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 17,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 148.416015625
+          }
+        ],
+        "3": [
+          {
+            "dtype": "bfloat16",
+            "k": 8192,
+            "m": 20,
+            "n": 8192,
+            "op": "gemm",
+            "source_kernel_count": 1,
+            "source_kernel_duration_us": 141.024902344
+          }
+        ]
+      },
+      "dtype": "bfloat16",
+      "group": "0",
+      "id": "collective-kineto-552434d8238875353e26c908c8248dd02faebdb604bc69dc95daed85a6db547e",
+      "merged_shards": [
+        "kineto-rank-0.trace.json",
+        "kineto-rank-1.trace.json",
+        "kineto-rank-2.trace.json",
+        "kineto-rank-3.trace.json"
+      ],
+      "metadata": {
+        "kineto_collective_name": "allreduce",
+        "kineto_communication_duration_us": 242.976074219,
+        "kineto_communication_kernel_count": 1,
+        "kineto_compute_kernel_count": 1,
+        "kineto_compute_recipe_duration_us": 106.976074219,
+        "kineto_compute_recipe_kernel_count": 1,
+        "kineto_compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+        "kineto_compute_recipe_operation_count": 1,
+        "kineto_compute_recipe_status": "derived",
+        "kineto_dtype": "BFloat16",
+        "kineto_dur_us": 64.109,
+        "kineto_in_msg_nelems": 65536,
+        "kineto_in_split_sizes": [],
+        "kineto_message_shape_method": "record-param-comms-in-out-nelems.v1",
+        "kineto_message_shape_status": "derived",
+        "kineto_out_msg_nelems": 65536,
+        "kineto_out_split_sizes": [],
+        "kineto_overlap_method": "linked-kernel-interval-union.v1",
+        "kineto_overlap_status": "derived",
+        "kineto_reduction_kernel_count": 1,
+        "kineto_reduction_method": "linked-nccl-kernel-name.v1",
+        "kineto_reduction_op": "sum",
+        "kineto_reduction_status": "derived"
+      },
+      "op": "all_reduce",
+      "partial_rank_arrival": true,
+      "rank_arrival_us": {
+        "0": 0.0,
+        "1": 24.382628906,
+        "2": 5.525613281,
+        "3": 12.914980469
+      },
+      "ranks": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "recorder_ranks": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "reduction_op": "sum",
+      "start_us": 1457.635
+    }
+  ],
+  "format": "commcanary.trace.v1",
+  "system": {
+    "capture_mode": "kineto-multi-rank",
+    "capture_session_id": "kineto-multi-rank-v1",
+    "clock_alignment": "assumed_shared_clock",
+    "kineto_backend": "nccl",
+    "kineto_clock_offsets_us": {
+      "0": 0.0,
+      "1": 0.0,
+      "2": 0.0,
+      "3": 0.0
+    },
+    "kineto_imported_ranks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "kineto_nccl_version": "2.20.5",
+    "kineto_source_profiles": [
+      {
+        "rank": 0,
+        "sha256": "9184f92d01da8fe35d90af3c9d3bcae5a97355cbc8d598e0da85a743c791621a",
+        "size_bytes": 90501
+      },
+      {
+        "rank": 1,
+        "sha256": "71982f9e50cce8cdbe1ea78e6d847e5339cb8f955afe0a80c343c16f4b087152",
+        "size_bytes": 90502
+      },
+      {
+        "rank": 2,
+        "sha256": "4dcbcdaf41f990ba45fdb37190ea94795f3fab54c0bb2ec68f0030e7ad512ff8",
+        "size_bytes": 91265
+      },
+      {
+        "rank": 3,
+        "sha256": "18a5f5ef6158c8e0f332deface5dbdd4dd7e828ef04eeae151f724164d8524e1",
+        "size_bytes": 93905
+      }
+    ],
+    "kineto_world_size": 4,
+    "shard_systems": [
+      {
+        "capture_session_id": "kineto-multi-rank-v1",
+        "clock_alignment": "explicit_offset_us",
+        "clock_offset_us": 0.0,
+        "kineto_backend": "nccl",
+        "kineto_nccl_version": "2.20.5",
+        "kineto_rank": 0,
+        "kineto_world_size": 4,
+        "rank": 0,
+        "source_format": "pytorch-kineto"
+      },
+      {
+        "capture_session_id": "kineto-multi-rank-v1",
+        "clock_alignment": "explicit_offset_us",
+        "clock_offset_us": 1.119628906,
+        "kineto_backend": "nccl",
+        "kineto_nccl_version": "2.20.5",
+        "kineto_rank": 1,
+        "kineto_world_size": 4,
+        "rank": 1,
+        "source_format": "pytorch-kineto"
+      },
+      {
+        "capture_session_id": "kineto-multi-rank-v1",
+        "clock_alignment": "explicit_offset_us",
+        "clock_offset_us": 0.078613281,
+        "kineto_backend": "nccl",
+        "kineto_nccl_version": "2.20.5",
+        "kineto_rank": 2,
+        "kineto_world_size": 4,
+        "rank": 2,
+        "source_format": "pytorch-kineto"
+      },
+      {
+        "capture_session_id": "kineto-multi-rank-v1",
+        "clock_alignment": "explicit_offset_us",
+        "clock_offset_us": 3.229980469,
+        "kineto_backend": "nccl",
+        "kineto_nccl_version": "2.20.5",
+        "kineto_rank": 3,
+        "kineto_world_size": 4,
+        "rank": 3,
+        "source_format": "pytorch-kineto"
+      }
+    ],
+    "shards": 4,
+    "source_format": "pytorch-kineto"
+  },
+  "workload": {
+    "broadcast_roots_derived_events": 0,
+    "broadcast_roots_unknown_events": 0,
+    "compute_recipes_derived_events": 8,
+    "compute_recipes_unknown_events": 0,
+    "import_mode": "multi-rank",
+    "import_source": "pytorch-kineto",
+    "imported_events": 8,
+    "imported_rank_profiles": 4,
+    "imported_ranks": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "message_shapes_derived_events": 8,
+    "message_shapes_unknown_events": 0,
+    "name": "kineto-import",
+    "notes": "Merged 4 rank-local PyTorch Kineto profiles into 8 logical event(s). Rank contributions are matched by invocation ordinal within an exact process-group rank domain and must agree on operation identity. Explicit additive clock offsets were applied before deriving cross-rank arrival offsets. Compute overlap is known for 8 event(s) and explicitly unknown for 0 event(s). Exact rank-local GEMM compute recipes are known for 8 event(s) and unavailable for 0 event(s). Broadcast root rank is known for 0 event(s) and explicitly unknown for 0 event(s). Reduction operator is known for 8 event(s) and explicitly unknown for 0 event(s). Input/output message shape is known for 8 event(s) and unavailable for 0 event(s).",
+    "overlap_derived_events": 8,
+    "overlap_unknown_events": 0,
+    "reduction_ops_derived_events": 8,
+    "reduction_ops_unknown_events": 0,
+    "skipped_control_events": 32,
+    "skipped_empty_events": 0,
+    "skipped_nested_events": 0,
+    "source_rank_events": 32
+  }
+}
