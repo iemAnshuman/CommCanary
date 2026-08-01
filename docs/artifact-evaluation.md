@@ -250,6 +250,59 @@ single-inflight all-reduce/GEMM/wait domain. This reduced-source campaign does
 not establish cost savings, importer generality, privacy acceptability, or
 independent-operator usability.
 
+### Decision-fidelity gate result (2026-08-01)
+
+The replacement `decision-gate-20260801-r3` campaign ran all eight frozen
+configurations on `toranj1` as jobs `178540`–`178547`. Every attempt is
+`success`; the explicit `primary` selection covers 8/8 cells and the persisted
+completeness verdict has zero issues:
+
+- repository commit:
+  `4585318ac244f218e438de06c0ccd38c0c88cbbf`
+- source archive SHA-256:
+  `79f18929ac34ffe2715cd5e62f4d4462a4938b5987f925abf55cfc53ddc20648`
+- manifest SHA-256:
+  `1b1909b3e8561b035c0ee4f9e9c39e497c82d737f8a61e348b1cf6792d06e842`
+- executable plan SHA-256:
+  `4869345a90d361fb29a833cf3fd5eceac5c3c87fdeb778f73ea00af05a49e373`
+- selection SHA-256:
+  `c675e42e34e44794a5dd8f12d3d4f4214e440c8b27643b9b4101edb1625391a0`
+- attempt-inventory SHA-256:
+  `1a2ff04af7758fe23be1eb34f8dca9ba1ec6d23dcb22a3560ce139952119e27c`
+- completeness-verdict SHA-256:
+  `6377a65bb05761427ae0f384f0ad07a14430285fc50e344155c44e4e3f11ce8d`
+- raw archive: 3,747,840 bytes, SHA-256
+  `285d1924e34b732467ed5918e407fe56dbde8e2e4226e1fb1279651d1fafb5f6`
+- raw-archive descriptor SHA-256:
+  `7cce03507826214d7b9cbe3cc122a3cb8939d52b60b853a13fe57367acb77ee2`
+
+The evaluator-ready aggregate and its reproduction are byte-identical. Their
+JSON/CSV/Markdown SHA-256 values are respectively
+`5e153de3976cb913ae3321e1329adce2ea591277429522b4c859db44d35d4998`,
+`08ec43c10b3573eec579443c7a1234a99c279f1520076fbaa88c0d9194d8ca26`,
+and `af603c009ac1a2c65e090186489cb48663c36a124197a36f725782ca3e7c067e`.
+The exact policy evaluation also reproduces byte-for-byte; its file SHA-256 is
+`3da7a5bf1af833276af84f448f9278f9e2bac1b0e7bdee5a1c365bb0a4dce29a`.
+
+Observed exact-work point estimates satisfy every numeric criterion: 26/28
+pair agreement (92.86%), Kendall tau-b 0.857, one false negative, one false
+positive, 1.55% median absolute relative error, 4.05% p95 error, seven more
+agreeing pairs than isolated replay, and sixteen more than stratified sampling.
+The policy outcome is still `inconclusive`, verdict ID
+`4084d4e4be96acfc5b68a4b259cc0a58be7a77bc85b8f722bcda2b5cb00dfaff`.
+Pairwise bootstrap intervals cross required boundaries, and
+`nccl-2.20.5-tree-ll` exceeds the frozen 20% relative-IQR limit for source,
+exact-work, and stratified measurements. The kill/reframe condition is not
+evaluated on noisy evidence and is not triggered.
+
+Two superseded campaigns are retained rather than repaired. r1 jobs
+`178523`–`178530` are all `parse-failed` after a local PyTorch version suffix
+was compared literally. r2 has seven successful 2.20.5 jobs and one
+`parse-failed` 2.19.3 job (`178531`) because PyTorch's compile-time NCCL report
+did not identify the selected mapped library. r3 fixes both producer contracts
+without weakening them and reports runtime NCCL `21903` for the selected
+2.19.3 library and `22005` for the other seven cells.
+
 ## Historical physical execution boundary
 
 Only after the local gate is green and the site values above have been reviewed

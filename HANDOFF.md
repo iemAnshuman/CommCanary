@@ -1,9 +1,37 @@
 # CommCanary live handoff
 
-**Checkpoint:** 2026-07-31, after the exact-work owner-to-lab path completed a
-same-node physical comparison on Rostam and its manifest, terminal attempt,
-selection, completeness verdict, raw archive, and publication were all
-independently verified. The source observation from job `177966` and the
+**Checkpoint:** 2026-08-01, after the predeclared decision-fidelity gate
+completed on Rostam. Replacement campaign `decision-gate-20260801-r3` froze
+eight configurations at clean remote commit
+`4585318ac244f218e438de06c0ccd38c0c88cbbf`. Jobs `178540`–`178547` all ran
+on `toranj1`, returned `0:0`, and produced eight immutable `success` attempts.
+The explicit `primary` selection covers every cell; completeness is 8 expected
+= attempted = selected = successful with zero issues.
+
+The exact predeclared outcome is **`inconclusive`**, verdict ID
+`4084d4e4be96acfc5b68a4b259cc0a58be7a77bc85b8f722bcda2b5cb00dfaff`.
+Exact-work replay observed 26/28 pair agreement (92.86%), Kendall tau-b 0.857,
+one false negative, one false positive, 1.55% median error, and 4.05% p95
+error. It beat isolated replay by seven agreeing pairs and stratified sampling
+by sixteen; all numeric criteria passed. A pass is nevertheless withheld
+because bootstrap intervals cross pair boundaries and
+`nccl-2.20.5-tree-ll` violates the frozen 20% relative-IQR stability limit.
+The kill/reframe condition is not evaluated on noisy evidence. CommCanary
+therefore remains a promising research alpha, not a validated qualification
+tool.
+
+The evaluator-ready publication and policy verdict each regenerate
+byte-for-byte. The local implementation/evaluator baseline is
+`1300d12157926305ab7c2e61623cf52db1589a07`; its canonical fast verifier passed
+908 tests, strict mypy over 129 files, Ruff, coverage policy, 30 schemas,
+workflow/shell checks, and README validation before evidence publication.
+The full r1/r2/r3 mirror contains the exact remote 877 files plus all three
+manifest-bound source archives and deterministic preserved/raw archives.
+
+**Previous checkpoint:** 2026-07-31, after the exact-work owner-to-lab path
+completed a same-node physical comparison on Rostam and its manifest, terminal
+attempt, selection, completeness verdict, raw archive, and publication were
+all independently verified. The source observation from job `177966` and the
 replacement replay from job `178515` both ran on `toranj1`. Across the exact
 twenty-sample distributions, the source median was 1,434.112 us (IQR
 9.216 us) and replay median was 1,541.0015 us (IQR 8.9725 us): +106.8895 us,
@@ -52,12 +80,27 @@ the current product claim.**
 | Exact target GEMM calibration | **Complete diagnostic** | Job `177967`; same method as preserved job `173393`, selected 18.97216 us on `toranj1` |
 | Physical-fidelity comparison | **Failed, diagnostic only** | Job `177968`; 1,434.112-us source vs 3,207.0-us replay, +123.622702%; no verdict |
 | Exact-work qualification v2 | **Complete, diagnostic only** | Job `178515` on `toranj1`: 1,434.112-us source vs 1,541.0015-us replay, +7.4533578967%; 32/32 checks passed; zero completeness issues; archive and publication verified; no verdict |
+| Decision gate r1 | **Complete failed integration evidence** | Jobs `178523`–`178530`; 8/8 `parse-failed` on literal local-version suffix; preserved, never retried in place |
+| Decision gate r2 | **Complete mixed integration evidence** | Job `178531` `parse-failed` on compile-time vs mapped NCCL identity; jobs `178532`–`178538` successful; preserved |
+| Decision gate r3 | **Complete, policy inconclusive** | Jobs `178540`–`178547`; 8/8 successful, zero completeness issues, archive/publication/verdict byte-reproduced; 92.86% agreement but uncertainty/stability gate withheld pass |
 | 0.3.0 release | Deliberately deferred | No tag or publication |
 
 ## Repository state
 
 ### GitHub/local workstation
 
+- The decision-gate publication series starts from implementation/evaluator
+  baseline `1300d12157926305ab7c2e61623cf52db1589a07`, which was 85 commits
+  ahead of `origin/main`. The reviewed follow-up commits preceding this
+  handoff are `e18417e` (r1 evidence), `1d82fc3` (r2 evidence), `ab85207` (r3
+  evidence), `378e2d9` (r3 archive/source), `62f17c9` (Rostam publications),
+  `c5b3342` (analyzer source), `57a0ce8` (evaluator-ready publication/verdict),
+  `f78715f` (paper evidence boundary), and `7df66ed` (product positioning).
+  The commit containing this handoff is the tenth publication commit, making
+  the branch 95 commits ahead of `origin/main`. All are authored
+  `iemAnshuman <asquare567@gmail.com>`. A push remains a separate publication
+  action and requires a fresh informed approval of the 95-commit code and
+  evidence scope.
 - The reviewed implementation baseline is
   `41526f1366b3fd88edfae8ba521c94462cb92f7f`. Before the 2026-07-31 evidence
   publication, `origin/main` was
@@ -406,13 +449,11 @@ fail-closed refusals from r1–r5), 120 cancelled. The user's `medusa` and
 
 ## Remaining work
 
-1. **Run the multi-configuration decision-fidelity gate.** The same-node
-   diagnostic is complete but deliberately issues no verdict. Freeze a
-   reviewed matrix that compares the exact-work artifact, its source workload,
-   and an `nccl-tests`-class baseline over the same NCCL configurations and
-   node/runtime contract. The decision question is whether exact-work preserves
-   ordering and beats the microbenchmark, not whether +7.45% should be relabelled
-   “close enough.”
+1. **Design any decision-fidelity follow-up before running it.** The first
+   complete predeclared gate is `inconclusive`: do not select a quieter retry,
+   pool post-hoc attempts, or tune thresholds to turn its strong point
+   estimates into a pass. A follow-up requires a new reviewed policy/campaign
+   with its noise-control and repetition plan frozen in advance.
 2. **Run an independent exchange plus a second workload or topology.** A party
    that did not prepare the source must verify and execute the portable
    artifact. Add one external workload-shaped trace or a materially different
