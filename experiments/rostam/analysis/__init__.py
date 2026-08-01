@@ -8,6 +8,14 @@ from .compatibility import (
     analysis_implementation_record,
     load_cross_commit_compatibility,
 )
+from .decision_fidelity import (
+    DecisionFidelityError,
+    decision_fidelity_policy_sha256,
+    evaluate_decision_fidelity,
+    load_decision_fidelity_policy,
+    validate_decision_fidelity_policy,
+    write_decision_fidelity_verdict,
+)
 from .pipeline import (
     AGGREGATE_CSV_FILENAME,
     AGGREGATE_JSON_FILENAME,
@@ -51,6 +59,7 @@ __all__ = [
     "CampaignEvidence",
     "CrossCommitCompatibility",
     "CrossCommitCompatibilityError",
+    "DecisionFidelityError",
     "GeneratedPublication",
     "MeasurementValidationError",
     "PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA",
@@ -59,11 +68,16 @@ __all__ = [
     "PublicationMismatchError",
     "ScalarMeasurement",
     "compare_publication_to_golden",
+    "decision_fidelity_policy_sha256",
+    "evaluate_decision_fidelity",
     "analysis_implementation_record",
     "load_cross_commit_compatibility",
+    "load_decision_fidelity_policy",
     "prepare_cross_commit_compatibility",
     "validate_scalar_measurement",
+    "validate_decision_fidelity_policy",
     "validate_schema_documents",
     "verify_regenerate_compare",
     "verify_regenerate_campaigns",
+    "write_decision_fidelity_verdict",
 ]
