@@ -14,6 +14,13 @@ class _TorchWithLocalVersion:
     __version__ = "2.4.1+cu121"
 
 
+class _SelectedNcclLibrary:
+    @staticmethod
+    def ncclGetVersion(pointer) -> int:
+        pointer._obj.value = 21903
+        return 0
+
+
 def _gate_inputs(tmp_path: Path):
     trace = qualification_trace()
     policy = qualification_policy()
@@ -78,6 +85,23 @@ def test_warmup_order_indices_rotate_before_measured_indices_restart() -> None:
 
 def test_runtime_torch_version_matches_the_normalized_cell_observation() -> None:
     assert decision_gate_physical._normalized_torch_version(_TorchWithLocalVersion()) == "2.4.1"
+
+
+def test_runtime_nccl_version_queries_the_explicit_selected_library(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    library = tmp_path / "libnccl.so.2"
+    library.write_bytes(b"test fixture")
+    maps = tmp_path / "maps"
+    maps.write_text(f"0000-1000 r-xp 0000 00:00 0 {library}\n", encoding="utf-8")
+    monkeypatch.setenv("LD_LIBRARY_PATH", str(tmp_path))
+    monkeypatch.setattr(decision_gate_physical.ctypes, "CDLL", lambda path: _SelectedNcclLibrary())
+
+    selected = decision_gate_physical._selected_nccl_library()
+
+    assert selected == library.resolve()
+    assert decision_gate_physical._runtime_nccl_version_code(selected, proc_maps_path=maps) == 21903
 
 
 def test_result_payload_recomputes_max_rank_metrics_and_retains_raw_samples(tmp_path: Path) -> None:

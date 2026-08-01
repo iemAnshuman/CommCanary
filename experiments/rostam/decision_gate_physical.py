@@ -16,6 +16,7 @@ until every frozen configuration has one selected terminal attempt.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import math
 import os
@@ -57,6 +58,7 @@ REPRESENTATION_METADATA = {
     "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
 }
 DEFAULT_DISTRIBUTED_TIMEOUT_SECONDS = 300
+_MAX_PROC_MAPS_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -389,19 +391,58 @@ def _torch_dtype_map(torch: Any) -> Mapping[str, Any]:
     }
 
 
-def _runtime_nccl_version_code(torch: Any) -> int:
-    raw = torch.cuda.nccl.version()
-    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
-        return raw
-    if (
-        isinstance(raw, (tuple, list))
-        and len(raw) == 3
-        and all(isinstance(item, int) and not isinstance(item, bool) for item in raw)
-    ):
-        major, minor, patch = (int(item) for item in raw)
-        if major > 0 and 0 <= minor < 100 and 0 <= patch < 100:
-            return major * 10_000 + minor * 100 + patch
-    raise SystemExit("decision-gate runtime reported an invalid NCCL version")
+def _selected_nccl_library() -> Path:
+    raw = os.environ.get("LD_LIBRARY_PATH")
+    if raw is None or not raw or os.pathsep in raw:
+        raise SystemExit("decision-gate runtime requires one explicit NCCL library directory")
+    directory = Path(raw)
+    if not directory.is_absolute() or not directory.is_dir():
+        raise SystemExit("decision-gate NCCL library directory is invalid")
+    for name in ("libnccl.so.2", "libnccl.so"):
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate.resolve()
+    raise SystemExit("decision-gate runtime cannot find the selected NCCL library")
+
+
+def _verify_exclusively_loaded_nccl(library_path: Path, proc_maps_path: Path) -> None:
+    try:
+        with proc_maps_path.open("rb") as handle:
+            data = handle.read(_MAX_PROC_MAPS_BYTES + 1)
+    except OSError as exc:
+        raise SystemExit("decision-gate runtime cannot inspect its loaded NCCL library") from exc
+    if len(data) > _MAX_PROC_MAPS_BYTES:
+        raise SystemExit("decision-gate runtime library map exceeds the supported limit")
+    mapped = set()
+    for line in data.decode("utf-8", errors="replace").splitlines():
+        fields = line.split(maxsplit=5)
+        if len(fields) != 6:
+            continue
+        candidate = Path(fields[5])
+        if candidate.name.startswith("libnccl.so"):
+            mapped.add(candidate.resolve())
+    if mapped != {library_path.resolve()}:
+        raise SystemExit("decision-gate runtime loaded an unexpected NCCL library")
+
+
+def _runtime_nccl_version_code(
+    library_path: Path,
+    *,
+    proc_maps_path: Path = Path("/proc/self/maps"),
+) -> int:
+    try:
+        library = ctypes.CDLL(str(library_path))
+    except OSError as exc:
+        raise SystemExit("decision-gate runtime cannot load the selected NCCL library") from exc
+    value = ctypes.c_int()
+    try:
+        status = library.ncclGetVersion(ctypes.byref(value))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise SystemExit("decision-gate runtime cannot query the selected NCCL library") from exc
+    if status != 0 or value.value <= 0:
+        raise SystemExit("decision-gate runtime reported an invalid NCCL version")
+    _verify_exclusively_loaded_nccl(library_path, proc_maps_path)
+    return int(value.value)
 
 
 def _normalized_torch_version(torch: Any) -> str:
@@ -575,7 +616,7 @@ def _execute(
         runtime = {
             "torch_version": _normalized_torch_version(torch),
             "torch_cuda_version": str(torch.version.cuda),
-            "runtime_nccl_version_code": _runtime_nccl_version_code(torch),
+            "runtime_nccl_version_code": _runtime_nccl_version_code(_selected_nccl_library()),
             "distributed_backend": str(dist.get_backend()),
         }
         return gathered, normalized_checks, runtime
