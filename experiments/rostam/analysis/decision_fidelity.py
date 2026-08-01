@@ -269,13 +269,10 @@ def validate_decision_fidelity_policy(raw: Any) -> Dict[str, Any]:
     return cast(Dict[str, Any], dict(policy))
 
 
-def load_decision_fidelity_policy(path: Path) -> Tuple[Dict[str, Any], str, int]:
+def load_decision_fidelity_policy(path: Path) -> bytes:
     data = read_bounded_bytes(path, max_bytes=_POLICY_LIMITS.max_document_bytes, field="decision fidelity policy")
-    return (
-        validate_decision_fidelity_policy(strict_json_loads(data, limits=_POLICY_LIMITS)),
-        sha256_hex(data),
-        len(data),
-    )
+    validate_decision_fidelity_policy(strict_json_loads(data, limits=_POLICY_LIMITS))
+    return data
 
 
 def _median(values: Sequence[float]) -> float:
@@ -441,15 +438,16 @@ def _policy_input_binding(
 
 def evaluate_decision_fidelity(
     aggregate: Mapping[str, Any],
-    policy: Mapping[str, Any],
-    *,
-    policy_sha256: str,
-    policy_size_bytes: int,
+    policy_bytes: bytes,
 ) -> Dict[str, Any]:
     """Evaluate complete trusted evidence under the predeclared policy."""
 
     aggregate = _object(aggregate, "aggregate")
-    validated_policy = validate_decision_fidelity_policy(policy)
+    if not isinstance(policy_bytes, bytes) or not 0 < len(policy_bytes) <= _POLICY_LIMITS.max_document_bytes:
+        raise DecisionFidelityError("decision fidelity policy bytes are outside the supported limit")
+    validated_policy = validate_decision_fidelity_policy(strict_json_loads(policy_bytes, limits=_POLICY_LIMITS))
+    policy_sha256 = sha256_hex(policy_bytes)
+    policy_size_bytes = len(policy_bytes)
     if aggregate.get("schema") != ANALYSIS_SCHEMA:
         raise DecisionFidelityError("decision gate requires a trusted validated aggregate")
     campaign = _policy_input_binding(
@@ -550,9 +548,13 @@ def evaluate_decision_fidelity(
                 representation_rows[representation] = comparison_row
                 if (
                     representation in {"source", "exact_work", "stratified", "isolated"}
-                    and comparison_row["uncertainty_label"] == "inconclusive"
+                    and comparison_row["uncertainty_label"] != comparison_row["observed_label"]
                 ):
-                    uncertainty_issues.append(f"{first}|{second}|{representation}")
+                    uncertainty_issues.append(
+                        f"{first}|{second}|{representation}|"
+                        f"observed={comparison_row['observed_label']}|"
+                        f"uncertainty={comparison_row['uncertainty_label']}"
+                    )
             pair_rows.append(
                 {
                     "first_configuration_id": first,

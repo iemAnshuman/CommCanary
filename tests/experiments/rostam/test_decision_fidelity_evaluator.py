@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -25,14 +26,14 @@ VERDICT_SCHEMA_PATH = ROOT / "experiments" / "rostam" / "schemas" / "decision-fi
 REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
 
 
-def _policy() -> Tuple[Dict[str, Any], str, int]:
+def _policy() -> Tuple[Dict[str, Any], bytes]:
     policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     policy["comparison"]["uncertainty"]["resamples"] = 100
     projection = dict(policy)
     projection.pop("policy_id")
     policy["policy_id"] = canonical_sha256(projection)
     data = canonical_json_bytes(policy)
-    return policy, hashlib.sha256(data).hexdigest(), len(data)
+    return policy, data
 
 
 def _aggregate(
@@ -112,18 +113,16 @@ def _aggregate(
 
 
 def _evaluate(*, stratified_matches_source: bool = False, complete: bool = True) -> Dict[str, Any]:
-    policy, policy_sha256, policy_size = _policy()
+    policy, policy_bytes = _policy()
     return evaluate_decision_fidelity(
         _aggregate(
             policy,
-            policy_sha256,
-            policy_size,
+            hashlib.sha256(policy_bytes).hexdigest(),
+            len(policy_bytes),
             stratified_matches_source=stratified_matches_source,
             complete=complete,
         ),
-        policy,
-        policy_sha256=policy_sha256,
-        policy_size_bytes=policy_size,
+        policy_bytes,
     )
 
 
@@ -169,16 +168,16 @@ def test_incomplete_inventory_is_incomparable_and_cannot_trigger_reframe() -> No
 
 
 def test_policy_and_trusted_join_bindings_fail_closed() -> None:
-    policy, policy_sha256, policy_size = _policy()
+    policy, policy_bytes = _policy()
+    policy_sha256 = hashlib.sha256(policy_bytes).hexdigest()
+    policy_size = len(policy_bytes)
     aggregate = _aggregate(policy, policy_sha256, policy_size)
     aggregate["provenance"]["trusted_join_sha256"] = "f" * 64
 
     with pytest.raises(DecisionFidelityError, match="trusted join"):
         evaluate_decision_fidelity(
             aggregate,
-            policy,
-            policy_sha256=policy_sha256,
-            policy_size_bytes=policy_size,
+            policy_bytes,
         )
 
     aggregate = _aggregate(policy, policy_sha256, policy_size)
@@ -187,14 +186,29 @@ def test_policy_and_trusted_join_bindings_fail_closed() -> None:
     with pytest.raises(DecisionFidelityError, match="not bound"):
         evaluate_decision_fidelity(
             aggregate,
-            policy,
-            policy_sha256=policy_sha256,
-            policy_size_bytes=policy_size,
+            policy_bytes,
         )
 
 
+def test_policy_document_cannot_be_substituted_behind_a_bound_digest() -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(
+        policy,
+        hashlib.sha256(policy_bytes).hexdigest(),
+        len(policy_bytes),
+    )
+    substituted = copy.deepcopy(policy)
+    substituted["pass_criteria"]["exact_work_min_pairwise_agreement"] = 0.0
+    projection = dict(substituted)
+    projection.pop("policy_id")
+    substituted["policy_id"] = canonical_sha256(projection)
+
+    with pytest.raises(DecisionFidelityError, match="not bound"):
+        evaluate_decision_fidelity(aggregate, canonical_json_bytes(substituted))
+
+
 def test_policy_validator_rejects_unimplemented_declared_semantics() -> None:
-    policy, _, _ = _policy()
+    policy, _ = _policy()
     policy["comparison"]["classification_error_counting"]["opposite_direction"] = "false_negative"
     projection = dict(policy)
     projection.pop("policy_id")

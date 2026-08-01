@@ -35,13 +35,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             field="trusted decision-gate aggregate",
         )
         aggregate = strict_json_loads(aggregate_bytes, limits=_AGGREGATE_LIMITS)
-        policy, policy_sha256, policy_size = load_decision_fidelity_policy(args.policy)
-        verdict = evaluate_decision_fidelity(
-            aggregate,
-            policy,
-            policy_sha256=policy_sha256,
-            policy_size_bytes=policy_size,
-        )
+        policy_bytes = load_decision_fidelity_policy(args.policy)
+        verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
         write_decision_fidelity_verdict(args.output, verdict)
     except (ContractError, OSError, UnicodeError) as exc:
         raise SystemExit(f"decision-gate evaluation error: {exc}") from exc
