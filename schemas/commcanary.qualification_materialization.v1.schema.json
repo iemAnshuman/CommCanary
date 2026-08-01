@@ -29,7 +29,10 @@
       ],
       "properties": {
         "format": {
-          "const": "commcanary.qualification_request.v1"
+          "enum": [
+            "commcanary.qualification_request.v1",
+            "commcanary.qualification_request.v2"
+          ]
         },
         "request_id": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"

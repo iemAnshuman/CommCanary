@@ -17,7 +17,7 @@ from commcanary.interop import (
     kineto_traces_to_commcanary_trace,
 )
 from commcanary.schema import SchemaError, load_json, validate_trace, write_json
-from tests.builders import small_trace
+from tests.builders import qualification_policy, small_trace
 
 
 class InteropTests(unittest.TestCase):
@@ -1028,6 +1028,8 @@ class InteropTests(unittest.TestCase):
                     json.dump(profile, handle)
                 profile_paths.append(profile_path)
             bundle = os.path.join(tmp, "qualification-request")
+            policy_path = os.path.join(tmp, "qualification-policy.json")
+            write_json(policy_path, qualification_policy())
 
             self.assertEqual(
                 cli_main(
@@ -1035,6 +1037,8 @@ class InteropTests(unittest.TestCase):
                         "prepare-qualification",
                         *reversed(profile_paths),
                         "--assume-shared-clock",
+                        "--policy",
+                        policy_path,
                         "--output-directory",
                         bundle,
                     ]
@@ -1058,6 +1062,8 @@ class InteropTests(unittest.TestCase):
                     [
                         "prepare-qualification",
                         *profile_paths,
+                        "--policy",
+                        policy_path,
                         "--output-directory",
                         uncalibrated_bundle,
                     ]

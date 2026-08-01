@@ -21,7 +21,7 @@ from commcanary.execution import (
 from commcanary.resources import ResourceLimits
 from commcanary.services import prepare_qualification_request
 from commcanary.workflows import materialize_qualification
-from tests.builders import qualification_trace
+from tests.builders import qualification_policy, qualification_trace
 
 
 def _prepared_materialization(tmp_path: Path) -> tuple[Path, Path]:
@@ -36,7 +36,7 @@ def _prepared_materialization(tmp_path: Path) -> tuple[Path, Path]:
     canary = compile_trace(trace)
     request = tmp_path / "request"
     materialization = tmp_path / "materialization"
-    prepare_qualification_request(str(request), trace, canary)
+    prepare_qualification_request(str(request), trace, canary, qualification_policy())
     materialize_qualification(str(request), str(materialization))
     return request, materialization
 
@@ -227,7 +227,7 @@ def test_preflight_supports_every_materialized_communication_operation(
     canary = compile_trace(trace)
     request = tmp_path / "request"
     materialization = tmp_path / "materialization"
-    prepare_qualification_request(str(request), trace, canary)
+    prepare_qualification_request(str(request), trace, canary, qualification_policy())
     materialize_qualification(str(request), str(materialization))
 
     plan = preflight_qualification_execution(

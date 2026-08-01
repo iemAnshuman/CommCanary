@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Mapping, Tuple, cast
 
 from commcanary.artifacts import (
     QUALIFICATION_ARTIFACT_PATHS,
+    QUALIFICATION_ARTIFACT_PATHS_V1,
     QUALIFICATION_MATERIALIZATION_FILENAME,
     QUALIFICATION_REPLAY_PROGRAM_FILENAME,
     QUALIFICATION_REQUEST_FILENAME,
@@ -47,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-trace", type=Path, required=True)
     parser.add_argument("--canary", type=Path, required=True)
     parser.add_argument("--fidelity", type=Path, required=True)
+    parser.add_argument("--qualification-policy", type=Path)
     parser.add_argument("--materialization-manifest", type=Path, required=True)
     parser.add_argument("--replay-program", type=Path, required=True)
     parser.add_argument("--source-capture-evidence", type=Path, required=True)
@@ -87,7 +89,7 @@ def stage_qualification_inputs(
     rank: int,
     workspace: Path,
 ) -> Tuple[Path, Path]:
-    expected = {
+    expected_v1 = {
         "request_manifest",
         "source_trace",
         "canary",
@@ -95,7 +97,9 @@ def stage_qualification_inputs(
         "materialization_manifest",
         "replay_program",
     }
-    if set(sources) != expected:
+    expected_v2 = expected_v1 | {"qualification_policy"}
+    observed = set(sources)
+    if observed != expected_v1 and observed != expected_v2:
         raise SystemExit("qualification staging input ownership is incomplete")
     root = workspace / f"qualification-input-rank-{rank:05d}"
     request_directory = root / "request"
@@ -108,10 +112,12 @@ def stage_qualification_inputs(
         raise SystemExit(f"cannot create rank-local qualification staging directories: {exc}") from exc
     request_names = {
         "request_manifest": QUALIFICATION_REQUEST_FILENAME,
-        "source_trace": QUALIFICATION_ARTIFACT_PATHS["source_trace"],
-        "canary": QUALIFICATION_ARTIFACT_PATHS["canary"],
-        "fidelity": QUALIFICATION_ARTIFACT_PATHS["fidelity_verification"],
+        "source_trace": QUALIFICATION_ARTIFACT_PATHS_V1["source_trace"],
+        "canary": QUALIFICATION_ARTIFACT_PATHS_V1["canary"],
+        "fidelity": QUALIFICATION_ARTIFACT_PATHS_V1["fidelity_verification"],
     }
+    if "qualification_policy" in sources:
+        request_names["qualification_policy"] = QUALIFICATION_ARTIFACT_PATHS["qualification_policy"]
     materialization_names = {
         "materialization_manifest": QUALIFICATION_MATERIALIZATION_FILENAME,
         "replay_program": QUALIFICATION_REPLAY_PROGRAM_FILENAME,
@@ -349,6 +355,8 @@ def run(args: argparse.Namespace) -> int:
         "materialization_manifest": args.materialization_manifest,
         "replay_program": args.replay_program,
     }
+    if args.qualification_policy is not None:
+        sources["qualification_policy"] = args.qualification_policy
     request_directory, materialization_directory = stage_qualification_inputs(
         sources,
         rank=rank,

@@ -34,7 +34,7 @@ from commcanary.schema import (
 )
 from commcanary.services import prepare_qualification_request
 from commcanary.workflows import materialize_qualification
-from tests.builders import qualification_trace, small_trace
+from tests.builders import qualification_policy, qualification_trace, small_trace
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "schemas"
@@ -48,7 +48,8 @@ SCHEMA_FILES = {
     "fidelity_verification": "commcanary.fidelity_verification.v1.schema.json",
     "behavior_verification": "commcanary.behavior_verification.v1.schema.json",
     "report_verification": "commcanary.report_verification.v1.schema.json",
-    "qualification_request": "commcanary.qualification_request.v1.schema.json",
+    "qualification_request_legacy": "commcanary.qualification_request.v1.schema.json",
+    "qualification_request": "commcanary.qualification_request.v2.schema.json",
     "qualification_materialization": "commcanary.qualification_materialization.v1.schema.json",
     "qualification_policy": "commcanary.qualification_policy.v1.schema.json",
     "qualification_observation": "commcanary.qualification_observation.v1.schema.json",
@@ -60,6 +61,7 @@ RUNTIME_VALIDATORS: Dict[str, Callable[[Mapping[str, Any]], None]] = {
     "canary": validate_canary,
     "report": validate_report,
     "comparison": validate_comparison,
+    "qualification_request_legacy": validate_qualification_request,
     "qualification_request": validate_qualification_request,
     "qualification_materialization": validate_qualification_materialization,
     "qualification_policy": validate_qualification_policy,
@@ -180,6 +182,7 @@ def test_current_producers_match_published_schemas(
         str(tmp_path / "qualification"),
         trace,
         canary,
+        qualification_policy(),
     )
     qualification_materialization = materialize_qualification(
         str(tmp_path / "qualification"),

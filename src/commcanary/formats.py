@@ -18,7 +18,8 @@ BEHAVIOR_VERIFICATION_FORMAT = "commcanary.behavior_verification.v1"
 BEHAVIOR_SEARCH_EVIDENCE_FORMAT = "commcanary.behavior_search_evidence.experimental.v1"
 DOCTOR_REPORT_FORMAT = "commcanary.doctor_report.experimental.v1"
 REPORT_VERIFICATION_FORMAT = "commcanary.report_verification.v1"
-QUALIFICATION_REQUEST_FORMAT = "commcanary.qualification_request.v1"
+QUALIFICATION_REQUEST_V1_FORMAT = "commcanary.qualification_request.v1"
+QUALIFICATION_REQUEST_FORMAT = "commcanary.qualification_request.v2"
 QUALIFICATION_MATERIALIZATION_FORMAT = "commcanary.qualification_materialization.v1"
 QUALIFICATION_POLICY_FORMAT = "commcanary.qualification_policy.v1"
 QUALIFICATION_OBSERVATION_FORMAT = "commcanary.qualification_observation.v1"
@@ -107,9 +108,18 @@ FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
         semantic_validator=False,
     ),
     FormatCapability(
+        artifact="qualification_request_legacy",
+        format_id=QUALIFICATION_REQUEST_V1_FORMAT,
+        schema="schemas/commcanary.qualification_request.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
         artifact="qualification_request",
         format_id=QUALIFICATION_REQUEST_FORMAT,
-        schema="schemas/commcanary.qualification_request.v1.schema.json",
+        schema="schemas/commcanary.qualification_request.v2.schema.json",
         read=True,
         write=True,
         migrate=False,
@@ -176,6 +186,7 @@ __all__ = [
     "QUALIFICATION_OBSERVATION_FORMAT",
     "QUALIFICATION_POLICY_FORMAT",
     "QUALIFICATION_REQUEST_FORMAT",
+    "QUALIFICATION_REQUEST_V1_FORMAT",
     "QUALIFICATION_VERDICT_FORMAT",
     "REPORT_FORMAT",
     "REPORT_VERIFICATION_FORMAT",

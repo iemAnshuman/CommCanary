@@ -86,7 +86,8 @@ What makes it different:
   through `import-kineto`. The PARAM-basic-derived rank-aware encoding requires
   a CommCanary adapter; current upstream PARAM compatibility is not claimed.
 - **Portable qualification requests.** `prepare-qualification` turns complete
-  rank-local profiles into one source-verified owner-to-lab directory;
+  rank-local profiles and a predeclared decision policy into one
+  source-verified owner-to-lab directory;
   `verify-qualification` independently rehashes every file and recomputes the
   trace-to-canary fidelity proof. The receiving lab can then run
   `materialize-qualification` and `verify-materialization` without fitting
@@ -215,9 +216,14 @@ commcanary doctor rank0.json rank1.json \
   --workload-name private-serving-decode \
   --output out/readiness.json
 
+# This checked-in policy is a tutorial example, not a product default. Review
+# and freeze workload-specific thresholds before physical execution.
+commcanary verify-policy examples/qualification-policy.json
+
 commcanary prepare-qualification rank0.json rank1.json \
   --assume-shared-clock \
   --workload-name private-serving-decode \
+  --policy examples/qualification-policy.json \
   --output-directory out/qualification-request
 
 # Run by the receiving party before trusting or materializing anything.
@@ -239,6 +245,25 @@ python -m torch.distributed.run --standalone --nproc_per_node=2 \
   --distributed-timeout-seconds 300 \
   --output out/reference-execution.json
 ```
+
+The current v2 request is a closed five-file directory: manifest, source
+trace, canary, fidelity proof, and exact policy bytes. Its request ID binds the
+policy before execution, and its claim remains
+`qualification_verdict: policy_bound_not_issued`. Historical four-file v1
+requests remain read/verify compatible but cannot issue a policy-bound
+decision.
+
+After independent baseline and candidate observations have been produced:
+
+```bash
+commcanary evaluate-qualification examples/qualification-policy.json \
+  baseline.observation.json candidate.observation.json \
+  --output verdict.json
+```
+
+The evaluator can return only `pass`, `fail`, `inconclusive`, or
+`incomparable`. It does not silently substitute library thresholds for the
+explicit policy.
 
 `doctor` exits 0 only for `qualification_ready`; an importable but incomplete
 profile exits 1. Its report distinguishes `observational`, `simulatable`, and
@@ -794,7 +819,8 @@ global thresholds.
 - `commcanary.fidelity_verification.v1`
 - `commcanary.behavior_verification.v1`
 - `commcanary.report_verification.v1`
-- `commcanary.qualification_request.v1`
+- `commcanary.qualification_request.v2` (current policy-bound writer)
+- `commcanary.qualification_request.v1` (legacy read/verify support)
 - `commcanary.qualification_materialization.v1`
 - `commcanary.qualification_policy.v1`
 - `commcanary.qualification_observation.v1`

@@ -33,7 +33,7 @@ from ..artifacts.qualification_materialization import (
 from ..artifacts.qualification_program import trace_to_qualification_program
 from ..artifacts.wire import JsonDict
 from ..errors import CommCanaryIOError, SchemaError
-from ..formats import QUALIFICATION_MATERIALIZATION_FORMAT, QUALIFICATION_REQUEST_FORMAT
+from ..formats import QUALIFICATION_MATERIALIZATION_FORMAT
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..services.qualification import verify_qualification_request
 
@@ -78,7 +78,7 @@ def materialize_qualification(
     materialization: JsonDict = {
         "format": QUALIFICATION_MATERIALIZATION_FORMAT,
         "request": {
-            "format": QUALIFICATION_REQUEST_FORMAT,
+            "format": request["format"],
             "request_id": request["request_id"],
             "manifest_sha256": request_identity[0],
             "manifest_size_bytes": request_identity[1],

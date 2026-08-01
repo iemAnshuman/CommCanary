@@ -164,6 +164,8 @@ def test_every_subcommand_has_help_and_usage_contract(command: str) -> None:
         (
             "prepare-qualification",
             "{missing}",
+            "--policy",
+            "{missing2}",
             "--output-directory",
             "{output}",
         ),

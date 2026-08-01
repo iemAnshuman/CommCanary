@@ -9,7 +9,9 @@ from ..errors import SchemaError
 from ..formats import (
     CANARY_FORMAT,
     FIDELITY_VERIFICATION_FORMAT,
+    QUALIFICATION_POLICY_FORMAT,
     QUALIFICATION_REQUEST_FORMAT,
+    QUALIFICATION_REQUEST_V1_FORMAT,
     TRACE_FORMAT,
 )
 from ..resources import (
@@ -35,15 +37,23 @@ QUALIFICATION_COMPUTE_RECIPE_METHOD = "explicit-wait-linked-contiguous-gemm.v1"
 QUALIFICATION_COMPUTE_RECIPE_PROJECTION = "commcanary.compute-recipe-projection.v1"
 QUALIFICATION_EXECUTION_ADAPTER = "conforming-adapter-required"
 QUALIFICATION_UPSTREAM_PARAM_COMPATIBILITY = "not_claimed"
-QUALIFICATION_ARTIFACT_PATHS = {
+QUALIFICATION_ARTIFACT_PATHS_V1 = {
     "source_trace": "source.trace.json",
     "canary": "canary.json",
     "fidelity_verification": "fidelity.json",
 }
-QUALIFICATION_ARTIFACT_FORMATS = {
+QUALIFICATION_ARTIFACT_FORMATS_V1 = {
     "source_trace": TRACE_FORMAT,
     "canary": CANARY_FORMAT,
     "fidelity_verification": FIDELITY_VERIFICATION_FORMAT,
+}
+QUALIFICATION_ARTIFACT_PATHS = {
+    **QUALIFICATION_ARTIFACT_PATHS_V1,
+    "qualification_policy": "qualification-policy.json",
+}
+QUALIFICATION_ARTIFACT_FORMATS = {
+    **QUALIFICATION_ARTIFACT_FORMATS_V1,
+    "qualification_policy": QUALIFICATION_POLICY_FORMAT,
 }
 
 _TOP_LEVEL_FIELDS = {
@@ -56,6 +66,7 @@ _TOP_LEVEL_FIELDS = {
     "bindings",
     "target_execution",
 }
+_V2_TOP_LEVEL_FIELDS = _TOP_LEVEL_FIELDS | {"decision_policy"}
 _BINDING_FIELDS = {
     "source_trace_sha256",
     "source_normalized_sha256",
@@ -84,8 +95,15 @@ def validate_qualification_request(
         validate_json_mapping(request, limits=limits)
     except JsonResourceError as exc:
         raise SchemaError(f"qualification request violates JSON resource constraints: {exc}") from exc
-    require_format(request, QUALIFICATION_REQUEST_FORMAT, "qualification request")
-    _require_exact_fields(request, _TOP_LEVEL_FIELDS, "qualification request")
+    request_format = request.get("format")
+    if request_format not in {QUALIFICATION_REQUEST_V1_FORMAT, QUALIFICATION_REQUEST_FORMAT}:
+        require_format(request, QUALIFICATION_REQUEST_FORMAT, "qualification request")
+    is_current = request_format == QUALIFICATION_REQUEST_FORMAT
+    _require_exact_fields(
+        request,
+        _V2_TOP_LEVEL_FIELDS if is_current else _TOP_LEVEL_FIELDS,
+        "qualification request",
+    )
     validate_sha256(request.get("request_id"), "qualification request request_id")
     if qualification_request_sha256(request) != request.get("request_id"):
         raise SchemaError("qualification request request_id does not match canonical request content")
@@ -103,18 +121,20 @@ def validate_qualification_request(
         "source_correspondence": "source_verified",
         "physical_measurement": "not_included",
         "physical_fidelity": "unproven",
-        "qualification_verdict": "not_issued",
+        "qualification_verdict": "policy_bound_not_issued" if is_current else "not_issued",
     }
     if dict(claims) != expected_claims:
         raise SchemaError("qualification request claims must preserve the request-only assurance boundary")
 
     artifacts = _mapping(request.get("artifacts"), "qualification request artifacts")
+    artifact_paths = QUALIFICATION_ARTIFACT_PATHS if is_current else QUALIFICATION_ARTIFACT_PATHS_V1
+    artifact_formats = QUALIFICATION_ARTIFACT_FORMATS if is_current else QUALIFICATION_ARTIFACT_FORMATS_V1
     _require_exact_fields(
         artifacts,
-        set(QUALIFICATION_ARTIFACT_PATHS),
+        set(artifact_paths),
         "qualification request artifacts",
     )
-    for artifact_id in sorted(QUALIFICATION_ARTIFACT_PATHS):
+    for artifact_id in sorted(artifact_paths):
         reference = _mapping(
             artifacts.get(artifact_id),
             f"qualification request artifacts.{artifact_id}",
@@ -124,9 +144,9 @@ def validate_qualification_request(
             {"path", "format", "sha256", "size_bytes"},
             f"qualification request artifacts.{artifact_id}",
         )
-        if reference.get("path") != QUALIFICATION_ARTIFACT_PATHS[artifact_id]:
+        if reference.get("path") != artifact_paths[artifact_id]:
             raise SchemaError(f"qualification request artifacts.{artifact_id}.path is not canonical")
-        if reference.get("format") != QUALIFICATION_ARTIFACT_FORMATS[artifact_id]:
+        if reference.get("format") != artifact_formats[artifact_id]:
             raise SchemaError(f"qualification request artifacts.{artifact_id}.format is unsupported")
         validate_sha256(
             reference.get("sha256"),
@@ -139,6 +159,21 @@ def validate_qualification_request(
     _require_exact_fields(bindings, _BINDING_FIELDS, "qualification request bindings")
     for field in sorted(_BINDING_FIELDS):
         validate_sha256(bindings.get(field), f"qualification request bindings.{field}")
+
+    if is_current:
+        decision_policy = _mapping(request.get("decision_policy"), "qualification request decision_policy")
+        _require_exact_fields(
+            decision_policy,
+            {"policy_id", "policy_format", "application", "outcomes"},
+            "qualification request decision_policy",
+        )
+        validate_sha256(decision_policy.get("policy_id"), "qualification request decision_policy.policy_id")
+        if decision_policy.get("policy_format") != QUALIFICATION_POLICY_FORMAT:
+            raise SchemaError("qualification request decision_policy.policy_format is unsupported")
+        if decision_policy.get("application") != "required_before_execution":
+            raise SchemaError("qualification request decision_policy.application is unsupported")
+        if decision_policy.get("outcomes") != ["fail", "incomparable", "inconclusive", "pass"]:
+            raise SchemaError("qualification request decision_policy.outcomes must name the canonical four states")
 
     target = _mapping(request.get("target_execution"), "qualification request target_execution")
     _require_exact_fields(
@@ -254,6 +289,8 @@ def _require_exact_fields(value: Mapping[str, Any], expected: set[str], label: s
 __all__ = [
     "QUALIFICATION_ARTIFACT_FORMATS",
     "QUALIFICATION_ARTIFACT_PATHS",
+    "QUALIFICATION_ARTIFACT_FORMATS_V1",
+    "QUALIFICATION_ARTIFACT_PATHS_V1",
     "QUALIFICATION_COMPUTE_RECIPE_METHOD",
     "QUALIFICATION_COMPUTE_RECIPE_PROJECTION",
     "QUALIFICATION_EXECUTION_ADAPTER",

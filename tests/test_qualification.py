@@ -23,14 +23,16 @@ from commcanary.workflows import (
     materialize_qualification,
     verify_qualification_materialization,
 )
-from tests.builders import qualification_trace, small_trace
+from tests.builders import qualification_policy, qualification_trace, small_trace
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _prepare(tmp_path: Path) -> tuple[Path, dict]:
     trace = qualification_trace()
     canary = compile_trace(trace)
     bundle = tmp_path / "qualification"
-    request = prepare_qualification_request(str(bundle), trace, canary)
+    request = prepare_qualification_request(str(bundle), trace, canary, qualification_policy())
     return bundle, request
 
 
@@ -58,12 +60,19 @@ def test_prepare_and_verify_binds_exact_rank_local_work_without_calibration(
         "source.trace.json",
         "canary.json",
         "fidelity.json",
+        "qualification-policy.json",
     }
     assert request["claims"] == {
         "source_correspondence": "source_verified",
         "physical_measurement": "not_included",
         "physical_fidelity": "unproven",
-        "qualification_verdict": "not_issued",
+        "qualification_verdict": "policy_bound_not_issued",
+    }
+    assert request["decision_policy"] == {
+        "policy_id": qualification_policy()["policy_id"],
+        "policy_format": "commcanary.qualification_policy.v1",
+        "application": "required_before_execution",
+        "outcomes": ["fail", "incomparable", "inconclusive", "pass"],
     }
     target = request["target_execution"]
     assert target["materialization"] == "deterministic_from_verified_request"
@@ -84,6 +93,15 @@ def test_prepare_and_verify_binds_exact_rank_local_work_without_calibration(
     assert verify_qualification_request(str(bundle)) == request
 
 
+def test_historical_v1_physical_request_remains_verifiable() -> None:
+    bundle = ROOT / "experiments" / "rostam" / "results" / "exact-work-artifacts" / "qualification-inputs" / "request"
+
+    request = verify_qualification_request(str(bundle))
+
+    assert request["format"] == "commcanary.qualification_request.v1"
+    assert request["claims"]["qualification_verdict"] == "not_issued"
+
+
 def test_elapsed_timing_mutations_cannot_change_executable_compute_work(
     tmp_path: Path,
 ) -> None:
@@ -100,11 +118,13 @@ def test_elapsed_timing_mutations_cannot_change_executable_compute_work(
         str(first_bundle),
         first,
         compile_trace(first),
+        qualification_policy(),
     )
     second_request = prepare_qualification_request(
         str(second_bundle),
         second,
         compile_trace(second),
+        qualification_policy(),
     )
     assert (
         first_request["target_execution"]["compute_recipe_projection_sha256"]
@@ -135,11 +155,13 @@ def test_recipe_shape_mutation_changes_projection_and_materialized_program(
         str(first_bundle),
         first,
         compile_trace(first),
+        qualification_policy(),
     )
     second_request = prepare_qualification_request(
         str(second_bundle),
         second,
         compile_trace(second),
+        qualification_policy(),
     )
     assert (
         first_request["target_execution"]["compute_recipe_projection_sha256"]
@@ -167,6 +189,7 @@ def test_complete_rank_with_no_intervening_compute_remains_explicit(
         str(bundle),
         trace,
         compile_trace(trace),
+        qualification_policy(),
     )
     assert request["target_execution"]["compute_recipe_operation_count"] == 18
     materialization = materialize_qualification(
@@ -193,6 +216,7 @@ def test_preparation_requires_derived_complete_per_rank_kineto_recipes(
             str(tmp_path / "not-kineto"),
             not_kineto,
             compile_trace(not_kineto),
+            qualification_policy(),
         )
 
     missing = qualification_trace()
@@ -202,6 +226,7 @@ def test_preparation_requires_derived_complete_per_rank_kineto_recipes(
             str(tmp_path / "missing"),
             missing,
             compile_trace(missing),
+            qualification_policy(),
         )
 
     incomplete = qualification_trace()
@@ -211,6 +236,7 @@ def test_preparation_requires_derived_complete_per_rank_kineto_recipes(
             str(tmp_path / "incomplete"),
             incomplete,
             compile_trace(incomplete),
+            qualification_policy(),
         )
 
     wrong_method = qualification_trace()
@@ -220,6 +246,7 @@ def test_preparation_requires_derived_complete_per_rank_kineto_recipes(
             str(tmp_path / "wrong-method"),
             wrong_method,
             compile_trace(wrong_method),
+            qualification_policy(),
         )
 
     unsupported = qualification_trace()
@@ -232,6 +259,7 @@ def test_preparation_requires_derived_complete_per_rank_kineto_recipes(
             str(tmp_path / "unsupported"),
             unsupported,
             compile_trace(unsupported),
+            qualification_policy(),
         )
 
 
@@ -243,6 +271,7 @@ def test_preparation_requires_exact_kineto_message_shapes(tmp_path: Path) -> Non
             str(tmp_path / "malformed"),
             malformed,
             compile_trace(malformed),
+            qualification_policy(),
         )
 
     skipped = qualification_trace()
@@ -252,6 +281,7 @@ def test_preparation_requires_exact_kineto_message_shapes(tmp_path: Path) -> Non
             str(tmp_path / "skipped"),
             skipped,
             compile_trace(skipped),
+            qualification_policy(),
         )
 
 
@@ -265,7 +295,7 @@ def test_prepare_refuses_existing_output_and_does_not_install_partial_manifest(
     marker = output / "owned-by-user"
     marker.write_text("preserve", encoding="utf-8")
     with pytest.raises(CommCanaryError, match="cannot create qualification bundle"):
-        prepare_qualification_request(str(output), trace, canary)
+        prepare_qualification_request(str(output), trace, canary, qualification_policy())
     assert marker.read_text(encoding="utf-8") == "preserve"
 
     over_budget = tmp_path / "over-budget"
@@ -274,6 +304,7 @@ def test_prepare_refuses_existing_output_and_does_not_install_partial_manifest(
             str(over_budget),
             trace,
             canary,
+            qualification_policy(),
             limits=ResourceLimits(max_param_compute_operations=23),
         )
     assert not over_budget.exists()
@@ -292,6 +323,12 @@ def test_request_verifier_detects_inventory_bytes_fidelity_and_binding_tampering
     canary_path.write_bytes(canary_path.read_bytes() + b" ")
     with pytest.raises(SchemaError, match="bytes do not match manifest"):
         verify_qualification_request(str(tampered_bundle))
+
+    policy_bundle, _ = _prepare(tmp_path / "policy-tampered")
+    policy_path = policy_bundle / "qualification-policy.json"
+    policy_path.write_bytes(policy_path.read_bytes() + b" ")
+    with pytest.raises(SchemaError, match="bytes do not match manifest"):
+        verify_qualification_request(str(policy_bundle))
 
     rehashed_bundle, request = _prepare(tmp_path / "rehashed")
     trace_path = rehashed_bundle / "source.trace.json"

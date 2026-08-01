@@ -114,8 +114,9 @@ from commcanary.execution import (
 )
 ```
 
-The preparation service accepts an already imported Kineto trace and compiled
-canary. It requires a source-bound canonical communication dtype and a complete
+The preparation service accepts an output directory, already imported Kineto
+trace, compiled canary, and validated `commcanary.qualification_policy.v1`
+mapping. It requires a source-bound canonical communication dtype and a complete
 per-rank contiguous-GEMM recipe derived between issue and an explicit wait for
 every event. `all_reduce` and `reduce_scatter` additionally require a
 source-bound `reduction_op`; broadcasts require a source-bound `root_rank`.

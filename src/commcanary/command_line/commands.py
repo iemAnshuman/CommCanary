@@ -341,6 +341,7 @@ def _print_doctor_report(report: Mapping[str, Any]) -> None:
 
 def prepare_qualification_command(args: Any) -> int:
     trace, limits = _import_kineto_profiles(args)
+    policy = load_json(args.policy, limits=limits)
     canary = compile_trace(
         trace,
         timing_sample_limit=args.timing_sample_limit,
@@ -351,6 +352,7 @@ def prepare_qualification_command(args: Any) -> int:
         args.output_directory,
         trace,
         canary,
+        policy,
         limits=limits,
     )
     print(f"prepared source-verified qualification request {request['request_id']}: {args.output_directory}")

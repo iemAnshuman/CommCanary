@@ -7,6 +7,45 @@ programmatically constructed inputs reused across capability suites.
 from __future__ import annotations
 
 from commcanary import TRACE_FORMAT
+from commcanary.artifacts import qualification_policy_sha256
+from commcanary.formats import QUALIFICATION_POLICY_FORMAT
+
+
+def qualification_policy():
+    """Return an explicit deterministic policy for qualification tests."""
+
+    policy = {
+        "format": QUALIFICATION_POLICY_FORMAT,
+        "primary_metric": "program_median_us",
+        "repetitions": {"warmup": 5, "minimum_measured": 20},
+        "regression": {
+            "relative_threshold_pct": 5.0,
+            "absolute_threshold_us": 2.0,
+            "threshold_combination": "larger_of_absolute_or_relative",
+        },
+        "uncertainty": {
+            "method": "percentile_bootstrap_median_difference",
+            "confidence": 0.95,
+            "bootstrap_resamples": 1000,
+            "seed": 7411,
+        },
+        "noise": {"max_relative_iqr_pct": 20.0},
+        "environment": {
+            "max_clock_variation_pct": 3.0,
+            "require_same_gpu_count": True,
+            "require_same_topology_class": True,
+        },
+        "outcome_policy": {
+            "incomplete_measurement": "inconclusive",
+            "unstable_measurement": "inconclusive",
+            "environment_mismatch": "incomparable",
+            "baseline_correctness_failure": "incomparable",
+            "candidate_correctness_failure": "fail",
+            "confidence_interval_crosses_threshold": "inconclusive",
+        },
+    }
+    policy["policy_id"] = qualification_policy_sha256(policy)
+    return policy
 
 
 def small_trace():

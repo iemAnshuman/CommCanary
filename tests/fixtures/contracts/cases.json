@@ -103,6 +103,21 @@
       "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
     }
   },
+  "qualification_request_legacy": {
+    "invalid": {
+      "path": [
+        "purpose"
+      ],
+      "value": "simulation-benchmark"
+    },
+    "tampered": {
+      "path": [
+        "bindings",
+        "execution_semantic_sha256"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  },
   "qualification_materialization": {
     "invalid": {
       "path": [

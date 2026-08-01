@@ -354,7 +354,8 @@ known rank-local value, and any unknown rank leaves the logical event unknown.
 
 ## ADR-008: Qualification requests are portable pre-execution evidence
 
-**Status:** Accepted for `commcanary.qualification_request.v1` and
+**Status:** Accepted for current `commcanary.qualification_request.v2`, legacy
+read/verify support for `commcanary.qualification_request.v1`, and
 `commcanary.qualification_materialization.v1`.
 
 ### Context
@@ -369,23 +370,25 @@ work and lets the recipient regenerate it independently.
 
 ### Decision
 
-A qualification request is a closed four-file directory containing a manifest,
-source trace, canary, and fidelity verification. The manifest binds the exact
-bytes of the other files, the canary's six source/execution/calibration/provenance
-commitments, and a canonical request ID. Directory verification rejects missing
-or extra files, symlinks, byte mismatches, semantic invalidity, rehashed source
-tampering, and manifest-to-canary disagreement. Preparation also requires a
+A current qualification request is a closed five-file directory containing a
+manifest, source trace, canary, fidelity verification, and predeclared decision
+policy. The manifest binds the exact bytes of the other files, the policy ID,
+the canary's six source/execution/calibration/provenance commitments, and a
+canonical request ID. Directory verification rejects missing or extra files,
+symlinks, byte mismatches, semantic invalidity, rehashed source tampering,
+policy substitution, and manifest-to-canary disagreement. Preparation also requires a
 source-bound canonical dtype on every canary event, a source-bound reduction
 operator on every reduction collective, and proves that the compact program can
 be lowered to the narrow exact-work collective vocabulary without expanding
 the executable.
 
-The format has a fixed request-only claim boundary:
+The current format has a fixed request-only claim boundary:
 
 - source correspondence is verified;
 - physical measurement is not included;
 - physical fidelity is unproven;
-- no qualification verdict is issued; and
+- the exact decision policy is bound before execution, but no qualification
+  verdict is issued; and
 - deterministic executable materialization is required. The request binds the
   communication dtype set, source-derived
   reduction-operator set, source-validated per-event message shapes,
@@ -396,6 +399,8 @@ The format has a fixed request-only claim boundary:
 The manifest carries content identity, not a signature or producer
 authentication. Preparation never overwrites an existing directory and installs
 the manifest last, so an interrupted directory cannot look complete.
+Historical four-file v1 requests remain verifiable to preserve already frozen
+evidence, but the writer emits only policy-bound v2 requests.
 
 The receiving side creates a closed two-file materialization without target
 timing calibration. Its manifest binds the exact request manifest, canonical

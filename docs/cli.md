@@ -100,16 +100,23 @@ measurements exist.
 Request preparation is a separate command:
 
 ```console
+# The checked-in policy is illustrative. Review and freeze thresholds for the
+# actual qualification decision before execution.
+commcanary verify-policy examples/qualification-policy.json
+
 commcanary prepare-qualification rank0.json rank1.json \
   --assume-shared-clock \
+  --policy examples/qualification-policy.json \
   --output-directory qualification-request
 ```
 
 It shares the Kineto filters, clock options, and bounded-input overrides of
 `import-kineto`. It additionally compiles, independently verifies source
-fidelity, and writes a fixed four-file request directory. The directory must
-not already exist and is never overwritten. Its manifest is installed last;
-an interrupted or failed preparation therefore cannot look complete.
+fidelity, binds the exact predeclared decision policy, and writes a fixed
+five-file v2 request directory. The directory must not already exist and is
+never overwritten. Its manifest is installed last; an interrupted or failed
+preparation therefore cannot look complete. Historical four-file v1 requests
+remain read/verify compatible, but the current writer never emits them.
 
 Preparation preserves source-bound communication dtype and requires a complete
 per-rank contiguous-GEMM recipe derived between asynchronous collective issue
@@ -212,6 +219,19 @@ per-rank correctness-check inventory. Its claims
 remain `physical_fidelity: unproven` and
 `qualification_verdict: not_issued`; local fake-runtime tests do not establish
 CUDA/NCCL conformance.
+
+Once independently produced baseline and candidate observations exist, apply
+the same explicit policy without re-running either measurement:
+
+```console
+commcanary evaluate-qualification examples/qualification-policy.json \
+  baseline.observation.json candidate.observation.json \
+  --output qualification-verdict.json
+```
+
+The stable verdict is exactly one of `pass`, `fail`, `inconclusive`, or
+`incomparable`. Confidence-boundary crossings and unstable measurements are
+not coerced into pass/fail.
 
 `export-param` is a low-level legacy encoding command for pinned integrations.
 Current upstream PARAM removed its basic and Kineto parsers and accepts Chakra

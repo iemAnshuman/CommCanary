@@ -15,13 +15,16 @@ from ..artifacts import (
     atomic_write_json,
     load_json,
     validate_canary,
+    validate_qualification_policy,
     validate_trace,
 )
 from ..artifacts.dtypes import dtype_size_bytes
 from ..artifacts.param import param_materialization_requirements
 from ..artifacts.qualification import (
     QUALIFICATION_ARTIFACT_FORMATS,
+    QUALIFICATION_ARTIFACT_FORMATS_V1,
     QUALIFICATION_ARTIFACT_PATHS,
+    QUALIFICATION_ARTIFACT_PATHS_V1,
     QUALIFICATION_EXECUTION_ADAPTER,
     QUALIFICATION_EXECUTOR_CONTRACT,
     QUALIFICATION_PROGRAM_ENCODING,
@@ -33,7 +36,7 @@ from ..artifacts.qualification import (
 from ..artifacts.qualification_program import qualification_compute_recipe_audit
 from ..artifacts.wire import JsonDict, as_int, normalize_ranks
 from ..errors import CommCanaryIOError, SchemaError
-from ..formats import QUALIFICATION_REQUEST_FORMAT
+from ..formats import QUALIFICATION_REQUEST_FORMAT, QUALIFICATION_REQUEST_V1_FORMAT
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..verification.canary import verify_canary_fidelity
 from ..version import package_version
@@ -50,6 +53,7 @@ def prepare_qualification_request(
     output_directory: str,
     trace: Mapping[str, Any],
     canary: Mapping[str, Any],
+    policy: Mapping[str, Any],
     *,
     limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
 ) -> JsonDict:
@@ -57,6 +61,7 @@ def prepare_qualification_request(
 
     validate_trace(trace, require_known_overlap=True, limits=limits)
     validate_canary(canary, limits=limits)
+    validate_qualification_policy(policy, limits=limits)
     fidelity = verify_canary_fidelity(trace, canary, limits=limits)
     if fidelity.get("status") != "source_verified":
         raise SchemaError("qualification request requires source-verified canary fidelity")
@@ -75,9 +80,10 @@ def prepare_qualification_request(
         "source_trace": copy.deepcopy(dict(trace)),
         "canary": copy.deepcopy(dict(canary)),
         "fidelity_verification": fidelity,
+        "qualification_policy": copy.deepcopy(dict(policy)),
     }
     references: JsonDict = {}
-    for artifact_id in ("source_trace", "canary", "fidelity_verification"):
+    for artifact_id in ("source_trace", "canary", "fidelity_verification", "qualification_policy"):
         path = output / QUALIFICATION_ARTIFACT_PATHS[artifact_id]
         atomic_write_json(
             path,
@@ -118,10 +124,16 @@ def prepare_qualification_request(
             "source_correspondence": "source_verified",
             "physical_measurement": "not_included",
             "physical_fidelity": "unproven",
-            "qualification_verdict": "not_issued",
+            "qualification_verdict": "policy_bound_not_issued",
         },
         "artifacts": references,
         "bindings": bindings,
+        "decision_policy": {
+            "policy_id": policy["policy_id"],
+            "policy_format": policy["format"],
+            "application": "required_before_execution",
+            "outcomes": ["fail", "incomparable", "inconclusive", "pass"],
+        },
         "target_execution": {
             "materialization": "deterministic_from_verified_request",
             "program_encoding": QUALIFICATION_PROGRAM_ENCODING,
@@ -169,7 +181,16 @@ def verify_qualification_request(
 
     directory = Path(bundle_directory)
     _validate_bundle_directory(directory)
-    expected_names = {QUALIFICATION_REQUEST_FILENAME, *QUALIFICATION_ARTIFACT_PATHS.values()}
+    manifest_path = directory / QUALIFICATION_REQUEST_FILENAME
+    _require_regular_file(manifest_path)
+    request = load_json(str(manifest_path), limits=limits)
+    validate_qualification_request(request, limits=limits)
+    is_current = request["format"] == QUALIFICATION_REQUEST_FORMAT
+    if request["format"] not in {QUALIFICATION_REQUEST_FORMAT, QUALIFICATION_REQUEST_V1_FORMAT}:
+        raise SchemaError("qualification bundle request format is unsupported")
+    artifact_paths = QUALIFICATION_ARTIFACT_PATHS if is_current else QUALIFICATION_ARTIFACT_PATHS_V1
+    artifact_formats = QUALIFICATION_ARTIFACT_FORMATS if is_current else QUALIFICATION_ARTIFACT_FORMATS_V1
+    expected_names = {QUALIFICATION_REQUEST_FILENAME, *artifact_paths.values()}
     observed_names = {entry.name for entry in directory.iterdir()}
     if observed_names != expected_names:
         missing = sorted(expected_names - observed_names)
@@ -178,17 +199,23 @@ def verify_qualification_request(
     for name in sorted(expected_names):
         _require_regular_file(directory / name)
 
-    request = load_json(str(directory / QUALIFICATION_REQUEST_FILENAME), limits=limits)
-    validate_qualification_request(request, limits=limits)
     artifacts = request["artifacts"]
     loaded: dict[str, JsonDict] = {}
-    for artifact_id in ("source_trace", "canary", "fidelity_verification"):
+    for artifact_id in artifact_paths:
         reference = artifacts[artifact_id]
-        path = directory / QUALIFICATION_ARTIFACT_PATHS[artifact_id]
+        path = directory / artifact_paths[artifact_id]
         observed_sha256, observed_size = _bounded_file_identity(path, limits=limits)
         if observed_sha256 != reference["sha256"] or observed_size != reference["size_bytes"]:
             raise SchemaError(f"qualification bundle artifact {artifact_id!r} bytes do not match manifest")
         loaded[artifact_id] = load_json(str(path), limits=limits)
+        if reference["format"] != artifact_formats[artifact_id]:
+            raise SchemaError(f"qualification bundle artifact {artifact_id!r} format is unsupported")
+
+    if is_current:
+        policy = loaded["qualification_policy"]
+        validate_qualification_policy(policy, limits=limits)
+        if request["decision_policy"]["policy_id"] != policy["policy_id"]:
+            raise SchemaError("qualification bundle decision policy ID does not match the bound policy")
 
     trace = loaded["source_trace"]
     canary = loaded["canary"]

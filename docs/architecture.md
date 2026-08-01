@@ -75,7 +75,7 @@ capture / Kineto
                                                                  │
                                          model recomputation ────┘
 
-source trace + canary + fidelity ──▶ qualification_request.v1
+source trace + canary + fidelity + policy ──▶ qualification_request.v2
                                            │
                          exact per-rank source-work recipes
                                            ▼

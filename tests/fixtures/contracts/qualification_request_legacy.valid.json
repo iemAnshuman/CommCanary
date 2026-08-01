@@ -1,0 +1,74 @@
+{
+  "format": "commcanary.qualification_request.v1",
+  "request_id": "768ce20cfa0bff9f0a7462289b998b78942af330fee068ec36731554f37c829e",
+  "purpose": "hardware-vendor-qualification",
+  "producer": {
+    "name": "commcanary",
+    "version": "0.3.0"
+  },
+  "claims": {
+    "source_correspondence": "source_verified",
+    "physical_measurement": "not_included",
+    "physical_fidelity": "unproven",
+    "qualification_verdict": "not_issued"
+  },
+  "artifacts": {
+    "source_trace": {
+      "path": "source.trace.json",
+      "format": "commcanary.trace.v1",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "size_bytes": 100
+    },
+    "canary": {
+      "path": "canary.json",
+      "format": "commcanary.canary.v2",
+      "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "size_bytes": 200
+    },
+    "fidelity_verification": {
+      "path": "fidelity.json",
+      "format": "commcanary.fidelity_verification.v1",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "size_bytes": 300
+    }
+  },
+  "bindings": {
+    "source_trace_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "source_normalized_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "execution_semantic_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "scheduler_execution_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "calibration_evaluation_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+    "artifact_provenance_sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "target_execution": {
+    "materialization": "deterministic_from_verified_request",
+    "program_encoding": "commcanary.source-bound-compute-recipe.v2",
+    "executor_contract": "async-issue-rank-gemm-recipe-explicit-wait.v2",
+    "execution_adapter": "conforming-adapter-required",
+    "upstream_param_compatibility": "not_claimed",
+    "communication_dtype_source": "source-bound-per-event",
+    "communication_dtypes": [
+      "bfloat16",
+      "float32"
+    ],
+    "communication_reduction_source": "source-bound-per-event",
+    "communication_reduction_ops": [
+      "sum"
+    ],
+    "communication_message_shape_source": "source-validated-per-event",
+    "all_to_all_split_policy": "equal-split-only",
+    "rank_arrival_timing": "emerges-from-source-bound-rank-local-work",
+    "compute_work_source": "source-bound-per-rank-exact-recipe",
+    "compute_recipe_method": "explicit-wait-linked-contiguous-gemm.v1",
+    "compute_recipe_projection_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+    "compute_recipe_event_count": 6,
+    "compute_recipe_operation_count": 24,
+    "target_compute_calibration": "not_used",
+    "source_overlap_observation": "bound-not-duration-paced",
+    "overlap_structure": "async-issue-exact-rank-work-explicit-wait",
+    "inflight_communication_policy": "single-collective",
+    "timestamp_pacing": "disabled",
+    "privacy_disclosure": "gemm-shapes-and-dtypes-revealed",
+    "physical_observation": "required_before_qualification_verdict"
+  }
+}

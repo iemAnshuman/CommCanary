@@ -6,7 +6,11 @@ import hashlib
 from typing import Any, Mapping
 
 from ..errors import SchemaError
-from ..formats import QUALIFICATION_MATERIALIZATION_FORMAT, QUALIFICATION_REQUEST_FORMAT
+from ..formats import (
+    QUALIFICATION_MATERIALIZATION_FORMAT,
+    QUALIFICATION_REQUEST_FORMAT,
+    QUALIFICATION_REQUEST_V1_FORMAT,
+)
 from ..resources import DEFAULT_RESOURCE_LIMITS, JsonResourceError, ResourceLimits, validate_json_mapping
 from .json_codec import canonical_json_bytes
 from .qualification import (
@@ -71,7 +75,7 @@ def validate_qualification_materialization(
         {"format", "request_id", "manifest_sha256", "manifest_size_bytes"},
         "qualification materialization request",
     )
-    if request.get("format") != QUALIFICATION_REQUEST_FORMAT:
+    if request.get("format") not in {QUALIFICATION_REQUEST_V1_FORMAT, QUALIFICATION_REQUEST_FORMAT}:
         raise SchemaError("qualification materialization request.format is unsupported")
     validate_sha256(request.get("request_id"), "qualification materialization request.request_id")
     validate_sha256(

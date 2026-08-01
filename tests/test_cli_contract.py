@@ -68,6 +68,8 @@ def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture
         "materialize-qualification",
         "verify-materialization",
         "execute-materialization",
+        "verify-policy",
+        "evaluate-qualification",
         "export-param",
         "verify-report",
         "capture",

@@ -256,6 +256,11 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         help="prepare a source-verified portable owner-to-lab qualification request",
     )
     _add_kineto_profile_arguments(qualification_parser)
+    qualification_parser.add_argument(
+        "--policy",
+        required=True,
+        help="predeclared commcanary.qualification_policy.v1 JSON to bind into the request",
+    )
     qualification_parser.add_argument("--output-directory", "-o", required=True)
     qualification_parser.add_argument("--timing-sample-limit", type=int, default=128)
     qualification_parser.add_argument(

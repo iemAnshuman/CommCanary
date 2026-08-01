@@ -63,6 +63,7 @@ def _qualification_sources(tmp_path: Path) -> dict[str, Path]:
         "source_trace",
         "canary",
         "fidelity",
+        "qualification_policy",
         "materialization_manifest",
         "replay_program",
     ):
@@ -150,6 +151,7 @@ def test_qualification_inputs_are_rank_local_canonical_and_non_overwriting(tmp_p
     assert sorted(path.name for path in request.iterdir()) == [
         "canary.json",
         "fidelity.json",
+        "qualification-policy.json",
         "qualification-request.json",
         "source.trace.json",
     ]
@@ -161,6 +163,24 @@ def test_qualification_inputs_are_rank_local_canonical_and_non_overwriting(tmp_p
 
     with pytest.raises(SystemExit, match="cannot create rank-local"):
         qualification_physical.stage_qualification_inputs(sources, rank=2, workspace=tmp_path)
+
+
+def test_qualification_staging_preserves_legacy_v1_inventory(tmp_path: Path) -> None:
+    sources = _qualification_sources(tmp_path)
+    sources.pop("qualification_policy")
+
+    request, _ = qualification_physical.stage_qualification_inputs(
+        sources,
+        rank=3,
+        workspace=tmp_path,
+    )
+
+    assert sorted(path.name for path in request.iterdir()) == [
+        "canary.json",
+        "fidelity.json",
+        "qualification-request.json",
+        "source.trace.json",
+    ]
 
 
 def test_qualification_staging_refuses_symlinked_and_empty_sources(tmp_path: Path) -> None:
