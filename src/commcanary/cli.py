@@ -30,6 +30,7 @@ from .command_line.commands import (
     compare_command,
     compile_command,
     doctor_command,
+    evaluate_qualification_command,
     execute_materialization_command,
     export_param_command,
     import_kineto_command,
@@ -42,6 +43,7 @@ from .command_line.commands import (
     verify_behavior_command,
     verify_fidelity_command,
     verify_materialization_command,
+    verify_policy_command,
     verify_qualification_command,
     verify_report_command,
 )
@@ -142,6 +144,14 @@ def _cmd_execute_materialization(args: Any) -> int:
     return execute_materialization_command(args)
 
 
+def _cmd_verify_policy(args: Any) -> int:
+    return verify_policy_command(args)
+
+
+def _cmd_evaluate_qualification(args: Any) -> int:
+    return evaluate_qualification_command(args)
+
+
 def _cmd_replay(args: Any) -> int:
     return replay_command(args, ablation_splitter=_split_ablations)
 
@@ -191,6 +201,8 @@ def _build_parser() -> argparse.ArgumentParser:
             materialize_qualification=_cmd_materialize_qualification,
             verify_materialization=_cmd_verify_materialization,
             execute_materialization=_cmd_execute_materialization,
+            verify_policy=_cmd_verify_policy,
+            evaluate_qualification=_cmd_evaluate_qualification,
             export_param=_cmd_export_param,
             verify_report=_cmd_verify_report,
             capture=_cmd_capture,

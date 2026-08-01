@@ -18,6 +18,7 @@ from ..artifacts import (
     SENSITIVE_JSON_POLICY,
     atomic_write_json,
     load_json,
+    validate_qualification_policy,
     validate_report,
     validate_trace,
     write_json,
@@ -42,6 +43,7 @@ from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..services import (
     compile_trace,
     ddmin_ranking_reduction,
+    evaluate_qualification_observations,
     import_failure_readiness_report,
     prepare_qualification_request,
     qualification_readiness_report,
@@ -427,6 +429,37 @@ def execute_materialization_command(args: Any) -> int:
         "and physical fidelity unproven; qualification verdict not issued"
     )
     return 0
+
+
+def verify_policy_command(args: Any) -> int:
+    policy = load_json(args.policy)
+    validate_qualification_policy(policy)
+    print(f"verified predeclared qualification policy: {policy['policy_id']}")
+    return EXIT_SUCCESS
+
+
+def evaluate_qualification_command(args: Any) -> int:
+    policy = load_json(args.policy)
+    baseline = load_json(args.baseline_observation)
+    candidate = load_json(args.candidate_observation)
+    verdict = evaluate_qualification_observations(policy, baseline, candidate)
+    write_json(args.output, verdict)
+    statistics = verdict["statistics"]
+    print(f"VERDICT: {str(verdict['verdict']).upper()}")
+    print()
+    if statistics["signed_difference_pct"] is not None:
+        print(f"Candidate median: {statistics['signed_difference_pct']:+.3f}%")
+    print(f"Acceptance threshold: {statistics['acceptance_threshold_us']:.3f} us")
+    if statistics["confidence_interval_lower_us"] is not None:
+        confidence_pct = statistics["confidence"] * 100.0
+        print(
+            f"{confidence_pct:.1f}% confidence interval: "
+            f"{statistics['confidence_interval_lower_us']:+.3f} to "
+            f"{statistics['confidence_interval_upper_us']:+.3f} us"
+        )
+    print()
+    print(f"Reason: {verdict['explanation']}")
+    return EXIT_SUCCESS if verdict["verdict"] == "pass" else EXIT_NEGATIVE_RESULT
 
 
 def _import_kineto_profiles(args: Any) -> tuple[Dict[str, Any], ResourceLimits]:

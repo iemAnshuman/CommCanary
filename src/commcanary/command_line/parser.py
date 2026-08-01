@@ -25,6 +25,8 @@ class CommandHandlers:
     materialize_qualification: CommandHandler
     verify_materialization: CommandHandler
     execute_materialization: CommandHandler
+    verify_policy: CommandHandler
+    evaluate_qualification: CommandHandler
     export_param: CommandHandler
     verify_report: CommandHandler
     capture: CommandHandler
@@ -312,6 +314,23 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         help=("bounded timeout for process-group initialization and operations (default: 300; maximum: 3600)"),
     )
     materialization_execute_parser.set_defaults(func=handlers.execute_materialization)
+
+    policy_verify_parser = sub.add_parser(
+        "verify-policy",
+        help="validate a predeclared physical qualification policy",
+    )
+    policy_verify_parser.add_argument("policy")
+    policy_verify_parser.set_defaults(func=handlers.verify_policy)
+
+    qualification_evaluate_parser = sub.add_parser(
+        "evaluate-qualification",
+        help="apply a bound policy to baseline and candidate physical observations",
+    )
+    qualification_evaluate_parser.add_argument("policy")
+    qualification_evaluate_parser.add_argument("baseline_observation")
+    qualification_evaluate_parser.add_argument("candidate_observation")
+    qualification_evaluate_parser.add_argument("--output", "-o", required=True)
+    qualification_evaluate_parser.set_defaults(func=handlers.evaluate_qualification)
 
     export_parser = sub.add_parser(
         "export-param",
