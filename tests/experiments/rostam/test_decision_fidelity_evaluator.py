@@ -155,6 +155,42 @@ def test_decision_fidelity_evaluator_applies_predeclared_reframe_condition() -> 
     }
 
 
+def test_decision_fidelity_evaluator_can_fail_without_triggering_reframe() -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, hashlib.sha256(policy_bytes).hexdigest(), len(policy_bytes))
+    for row in aggregate["selected_cells"]:
+        source = row["decision_gate"]["representations"]["source"]["timings_us"]
+        row["decision_gate"]["representations"]["exact_work"]["timings_us"] = [value * 1.5 for value in source]
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "fail"
+    assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is True
+    assert verdict["product_interpretation"]["kill_or_reframe_triggered"] is False
+    assert verdict["product_interpretation"]["positioning"] == "research_alpha_unvalidated"
+    assert any(
+        row["criterion_id"] == "exact_work_max_median_absolute_relative_error_pct" and not row["passed"]
+        for row in verdict["criteria"]
+    )
+
+
+def test_complete_unstable_evidence_is_inconclusive_and_cannot_trigger_reframe() -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, hashlib.sha256(policy_bytes).hexdigest(), len(policy_bytes))
+    aggregate["selected_cells"][0]["decision_gate"]["representations"]["source"]["timings_us"] = [
+        1.0,
+        199.0,
+    ] * 10
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "inconclusive"
+    assert verdict["uncertainty"]["status"] == "inconclusive"
+    assert verdict["uncertainty"]["unstable_cells"]
+    assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is False
+    assert verdict["product_interpretation"]["kill_or_reframe_triggered"] is False
+
+
 def test_incomplete_inventory_is_incomparable_and_cannot_trigger_reframe() -> None:
     verdict = _evaluate(complete=False)
 
@@ -165,6 +201,24 @@ def test_incomplete_inventory_is_incomparable_and_cannot_trigger_reframe() -> No
     ]
     assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is False
     assert verdict["product_interpretation"]["kill_or_reframe_triggered"] is False
+
+
+@pytest.mark.parametrize("mismatch", ["node", "artifact"])
+def test_environment_or_artifact_mismatch_is_incomparable(mismatch: str) -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, hashlib.sha256(policy_bytes).hexdigest(), len(policy_bytes))
+    if mismatch == "node":
+        aggregate["selected_cells"][0]["decision_gate_runtime"]["hostname"] = "toranj0.example"
+        expected_issue = "node_mismatch"
+    else:
+        aggregate["selected_cells"][0]["decision_gate"]["request"]["request_id"] = "e" * 64
+        expected_issue = "artifact_identity_mismatch"
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "incomparable"
+    assert expected_issue in [issue["code"] for issue in verdict["issues"]]
+    assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is False
 
 
 def test_policy_and_trusted_join_bindings_fail_closed() -> None:
