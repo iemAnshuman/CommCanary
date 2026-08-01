@@ -11,6 +11,7 @@ CommandHandler = Callable[[Any], int]
 
 @dataclass(frozen=True)
 class CommandHandlers:
+    doctor: CommandHandler
     compile: CommandHandler
     replay: CommandHandler
     compare: CommandHandler
@@ -83,6 +84,18 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         help="emit machine-readable JSON Lines diagnostics on stderr",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    doctor_parser = sub.add_parser(
+        "doctor",
+        help="diagnose whether Kineto profiles are ready for qualification",
+    )
+    _add_kineto_profile_arguments(doctor_parser)
+    doctor_parser.add_argument(
+        "--output",
+        "-o",
+        help="optional machine-readable readiness report",
+    )
+    doctor_parser.set_defaults(func=handlers.doctor)
 
     compile_parser = sub.add_parser("compile", help="compile a trace into a compact canary")
     compile_parser.add_argument("trace")

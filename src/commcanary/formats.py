@@ -16,6 +16,7 @@ COMPARE_FORMAT = "commcanary.compare.v2"
 FIDELITY_VERIFICATION_FORMAT = "commcanary.fidelity_verification.v1"
 BEHAVIOR_VERIFICATION_FORMAT = "commcanary.behavior_verification.v1"
 BEHAVIOR_SEARCH_EVIDENCE_FORMAT = "commcanary.behavior_search_evidence.experimental.v1"
+DOCTOR_REPORT_FORMAT = "commcanary.doctor_report.experimental.v1"
 REPORT_VERIFICATION_FORMAT = "commcanary.report_verification.v1"
 QUALIFICATION_REQUEST_FORMAT = "commcanary.qualification_request.v1"
 QUALIFICATION_MATERIALIZATION_FORMAT = "commcanary.qualification_materialization.v1"
@@ -137,6 +138,7 @@ __all__ = [
     "CANARY_INTEGRITY_PROFILE",
     "CANONICAL_JSON_VERSION",
     "COMPARE_FORMAT",
+    "DOCTOR_REPORT_FORMAT",
     "FIDELITY_VERIFICATION_FORMAT",
     "FORMAT_CAPABILITIES",
     "FormatCapability",

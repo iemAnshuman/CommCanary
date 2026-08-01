@@ -78,6 +78,7 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
         "CANARY_INTEGRITY_PROFILE",
         "CANONICAL_JSON_VERSION",
         "COMPARE_FORMAT",
+        "DOCTOR_REPORT_FORMAT",
         "FIDELITY_VERIFICATION_FORMAT",
         "FORMAT_CAPABILITIES",
         "FormatCapability",

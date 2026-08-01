@@ -82,7 +82,22 @@ profiles into the output; retain them separately for later byte verification.
 
 ## Portable qualification request
 
-The owner-side workflow is one command:
+Diagnose readiness before attempting to create an immutable request:
+
+```console
+commcanary doctor rank0.json rank1.json \
+  --assume-shared-clock \
+  --output readiness.json
+```
+
+The command exits zero only when every required exact-work gate passes. Exit
+status 1 is a diagnostic negative result, not an application crash. The JSON
+report records stable reason codes, coverage, offending event/rank locations,
+next capture actions, a structural privacy disclosure, and conservative size
+and memory estimates. Physical runtime remains `not_estimable` until target
+measurements exist.
+
+Request preparation is a separate command:
 
 ```console
 commcanary prepare-qualification rank0.json rank1.json \

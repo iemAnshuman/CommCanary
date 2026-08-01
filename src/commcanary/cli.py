@@ -29,6 +29,7 @@ from .command_line.commands import (
     baseline_command,
     compare_command,
     compile_command,
+    doctor_command,
     execute_materialization_command,
     export_param_command,
     import_kineto_command,
@@ -95,6 +96,10 @@ def _cmd_compile(args: Any) -> int:
         diagnostic_emitter=_emit_diagnostic,
         elapsed_clock=_elapsed_seconds,
     )
+
+
+def _cmd_doctor(args: Any) -> int:
+    return doctor_command(args)
 
 
 def _cmd_baseline(args: Any) -> int:
@@ -172,6 +177,7 @@ def _cmd_report(args: Any) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     return build_parser(
         handlers=CommandHandlers(
+            doctor=_cmd_doctor,
             compile=_cmd_compile,
             replay=_cmd_replay,
             compare=_cmd_compare,

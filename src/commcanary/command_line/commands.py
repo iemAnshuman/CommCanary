@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from dataclasses import replace
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from ..adapters.kineto import (
     kineto_trace_to_commcanary_trace,
@@ -42,14 +42,16 @@ from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..services import (
     compile_trace,
     ddmin_ranking_reduction,
+    import_failure_readiness_report,
     prepare_qualification_request,
+    qualification_readiness_report,
     synthesize_behavioral_canary,
     verify_qualification_request,
 )
 from ..verification.canary import verify_canary_behavior, verify_canary_fidelity
 from ..verification.report import verify_report_against_canary
 from ..workflows import materialize_qualification, verify_qualification_materialization
-from .codes import EXIT_SUCCESS
+from .codes import EXIT_NEGATIVE_RESULT, EXIT_SUCCESS
 
 DiagnosticEmitter = Callable[..., None]
 ElapsedClock = Callable[[float], float]
@@ -300,6 +302,39 @@ def import_kineto_command(args: Any) -> int:
         )
     )
     return 0
+
+
+def doctor_command(args: Any) -> int:
+    try:
+        trace, limits = _import_kineto_profiles(args)
+        report = qualification_readiness_report(trace, limits=limits)
+    except CommCanaryError as exc:
+        report = import_failure_readiness_report(exc)
+    if args.output:
+        write_json(args.output, report)
+    _print_doctor_report(report)
+    return EXIT_SUCCESS if report["status"] == "qualification_ready" else EXIT_NEGATIVE_RESULT
+
+
+def _print_doctor_report(report: Mapping[str, Any]) -> None:
+    summary = report["summary"]
+    print(f"Qualification readiness: {summary['qualification_readiness_pct']}%")
+    print(f"Supported product tier: {report['supported_product_tier']}")
+    print()
+    labels = {"pass": "PASS", "fail": "FAIL", "warn": "WARN"}
+    for check in report["checks"]:
+        print(f"{labels[check['status']]:4}  {check['message']} [{check['reason_code']}]")
+        for location in check["locations"][:5]:
+            event_label = location.get("event_id", location["event_index"])
+            print(f"      event={event_label} ranks={location['ranks']}")
+        if len(check["locations"]) > 5:
+            print(f"      ... and {len(check['locations']) - 5} more event(s)")
+        if check.get("detail"):
+            print(f"      {check['detail']}")
+    print()
+    print(f"Result: {report['status']}")
+    for action in report["next_actions"]:
+        print(f"Next action: {action}")
 
 
 def prepare_qualification_command(args: Any) -> int:

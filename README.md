@@ -118,12 +118,11 @@ source + canary + fidelity ──▶ qualification request
 ```
 
 The physical path is intentionally staged. A portable request contains the
-source trace, canary, and fidelity proof. It does not contain a supposedly
-portable executable: overlap-preserving GEMM counts depend on calibration for
-the receiving device. The lab-side materialization binds its operator-supplied
-calibration and exact generated program bytes, but explicitly does not claim
-execution, measurement, current upstream PARAM compatibility, or a
-qualification verdict.
+source trace, canary, fidelity proof, and exact source-observed rank-local GEMM
+recipes. Lab-side materialization deterministically binds those recipes and
+the generated program bytes; it does not fit source durations to target
+hardware. It explicitly does not claim execution, measurement, current
+upstream PARAM compatibility, or a qualification verdict.
 
 ### What this is not
 
@@ -210,6 +209,12 @@ Calling that "compression" would be a lie with units.
 For a model owner handing a workload-shaped artifact to a hardware lab:
 
 ```bash
+# Diagnose missing evidence before creating an immutable request.
+commcanary doctor rank0.json rank1.json \
+  --assume-shared-clock \
+  --workload-name private-serving-decode \
+  --output out/readiness.json
+
 commcanary prepare-qualification rank0.json rank1.json \
   --assume-shared-clock \
   --workload-name private-serving-decode \
@@ -234,6 +239,14 @@ python -m torch.distributed.run --standalone --nproc_per_node=2 \
   --distributed-timeout-seconds 300 \
   --output out/reference-execution.json
 ```
+
+`doctor` exits 0 only for `qualification_ready`; an importable but incomplete
+profile exits 1. Its report distinguishes `observational`, `simulatable`, and
+`qualification_ready`, uses stable failure reason codes with event/rank
+locations, provides a conservative bundle-size lower bound and compute-tensor
+memory bound where possible, and discloses structural privacy exposure. It
+does not predict physical runtime from source kernel durations: target
+measurements are required.
 
 Preparation imports all profiles, requires known overlap, compiles with
 lossless timing by default, recomputes source fidelity, and requires every
