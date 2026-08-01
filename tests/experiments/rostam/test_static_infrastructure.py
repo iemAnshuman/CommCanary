@@ -1194,11 +1194,14 @@ def test_design_marks_historical_evidence_and_the_exact_precluster_boundary() ->
     assert "No command in the completed local verification" in text
 
 
-def test_historical_paper_does_not_claim_current_regeneration_or_test_counts() -> None:
+def test_historical_paper_separates_old_tables_from_current_gate_evidence() -> None:
     text = (REPOSITORY_ROOT / "paper" / "draft.md").read_text(encoding="utf-8")
 
-    assert "historical campaign's complete raw attempts" in text
-    assert "cannot regenerate the numeric tables above" in text
-    assert "excluded from CommCanary release distributions" in text
+    assert "original raw campaign was not retained" in text
+    assert "they are not current release evidence" in text
+    assert "The later exact-work decision gate in §5.10 is different" in text
+    assert "independent reproduction bytes match" in text
+    assert "returned **`inconclusive`**" in text
+    assert "is excluded\nfrom CommCanary release distributions" in text
     assert "Everything regenerates from a public repository" not in text
     assert "126 tests" not in text

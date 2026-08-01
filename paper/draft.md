@@ -475,6 +475,27 @@ exploits. This bounds the achievable agreement of the entire proxy
 family studied here (~70–75% on this config set) and is the sharpest
 open question the data leaves.
 
+### 5.10 Exact-work follow-up gate
+
+A later, separately frozen same-node campaign tested a narrower proxy that
+replays exact source-observed rank-local GEMM work between asynchronous
+collective issue and explicit wait. Across eight configurations on the same
+four-A100 PCIe node, exact-work replay agreed with the full source workload on
+26/28 pairs (**92.86%**) with Kendall tau-b **0.857**. It recorded one false
+negative, one false positive, **1.55%** median absolute relative error, and
+**4.05%** p95 error. The isolated baseline agreed on 19/28 pairs and the
+stratified baseline on 10/28.
+
+Those results exceed the earlier proxy-family ceiling in §5.9 and identify the
+narrow exact-work representation as the strongest observed candidate. They do
+not establish a product verdict. The policy was fixed before execution and
+returned **`inconclusive`** because bootstrap intervals crossed pair/tie
+boundaries and several `nccl-2.20.5-tree-ll` cells exceeded the declared 20%
+relative-IQR stability limit. All numeric criteria passed, but uncertainty is
+part of the acceptance contract. The complete r1/r2/r3 attempt history,
+selection, zero-issue completeness verdict, raw archive, generated publication,
+and decision verdict are retained under `experiments/rostam/results/`.
+
 ## 6 Implications
 
 **For operators**: microbenchmark rankings of ALGO/PROTO settings are
@@ -509,22 +530,36 @@ disagreement (§5.8) is unexplained by construction. Multi-node,
 NVLink-class, MoE (all_to_all), and injected-skew conditions are natural
 extensions the released kit already parameterizes.
 
+The exact-work follow-up is subject to the same workload, node, topology, and
+GPU-count limitations. Although it materially improved point estimates, its
+frozen outcome was inconclusive under observed instability. A follow-up must
+freeze a noise/repetition plan independently; selecting a quieter retry or
+tuning thresholds after observing this campaign would invalidate the decision
+claim.
+
 ## 8 Artifact
 
 The repository preserves the CommCanary importer/compiler/exporter/verifier
 pipeline, the manifest-driven Rostam experiment subsystem, the overlap-aware
-reference replayer, and the historical analysis source. It does **not** contain
-the historical campaign's complete raw attempts, frozen manifest, selection,
-completeness verdict, or all sweep result JSONs. Consequently this checkout
-cannot regenerate the numeric tables above, and neither those tables nor a
-historical test count are current release evidence.
+reference replayer, and the historical analysis source. The tables through
+§5.9 remain a historical draft whose original raw campaign was not retained in
+the current append-only format, so they are not current release evidence.
 
-A future publication artifact must use the current immutable campaign workflow:
-retain every terminal attempt, select exactly one attempt per expected cell,
-obtain a complete fail-closed verdict, regenerate the aggregate and paper
-fragment from the hash-bound evidence, and byte-compare the tracked outputs.
-Until that evidence exists, this document remains the historical draft described
-in `paper/README.md` and is excluded from CommCanary release distributions.
+The later exact-work decision gate in §5.10 is different: the repository
+contains its frozen manifests, every immutable r1/r2/r3 attempt, the explicit
+r3 selection, zero-issue completeness verdict, source archives, normalized raw
+archive, generated aggregate, and four-state policy verdict. The primary and
+independent reproduction bytes match. Exact hashes and reproduction commands
+are documented in `experiments/rostam/results/README.md` and
+`docs/artifact-evaluation.md`.
+
+Any future publication must use that immutable workflow: retain every terminal
+attempt, select exactly one attempt per expected cell, obtain a complete
+fail-closed verdict, regenerate the aggregate and paper fragment from the
+hash-bound evidence, and byte-compare the tracked outputs. This document still
+remains the historical draft described in `paper/README.md` and is excluded
+from CommCanary release distributions; the generated r3 fragment is the
+authoritative source for the new result.
 
 ---
 
