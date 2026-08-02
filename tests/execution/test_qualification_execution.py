@@ -344,25 +344,24 @@ def test_injected_runtime_executes_bound_mixed_dtype_program_and_aggregates_all_
 ) -> None:
     request, materialization = _prepared_materialization(tmp_path)
     calls: dict[str, int] = {}
+    oracle_plan = preflight_qualification_execution(
+        str(request),
+        str(materialization),
+        world_size=4,
+        iterations=1,
+        warmup=1,
+        distributed_timeout_seconds=45,
+    )
+    validation_entries = [
+        entry
+        for entry in oracle_plan.entries
+        if entry.get("comms") in execution_module._COLLECTIVES and 0 in dict(oracle_plan.groups)[int(entry["pg_id"])]
+    ]
+    validation_index = 0
 
-    class FakeTensor:
-        def fill_(self, _value: int) -> FakeTensor:
-            return self
-
-        def zero_(self) -> FakeTensor:
-            return self
-
-        def narrow(self, _dimension: int, _start: int, _length: int) -> FakeTensor:
-            return self
-
-        def eq(self, _value: int) -> FakeTensor:
-            return self
-
-        def all(self) -> FakeTensor:
-            return self
-
-        def item(self) -> int:
-            return 1
+    class FakeTensor(_ContentTensor):
+        def __init__(self, length: int = 1) -> None:
+            super().__init__([0] * max(1, length))
 
     class FakeWork:
         def wait(self) -> None:
@@ -394,8 +393,9 @@ def test_injected_runtime_executes_bound_mixed_dtype_program_and_aggregates_all_
     ):
         setattr(fake_torch, dtype, dtype)
 
-    def tensor_factory(*_shape: Any, **_kwargs: Any) -> FakeTensor:
-        return FakeTensor()
+    def tensor_factory(*shape: Any, **_kwargs: Any) -> FakeTensor:
+        length = int(shape[0]) if shape and isinstance(shape[0], int) else 1
+        return FakeTensor(length)
 
     def mm(
         _left: FakeTensor,
@@ -427,8 +427,21 @@ def test_injected_runtime_executes_bound_mixed_dtype_program_and_aggregates_all_
         nonlocal initialized
         initialized = False
 
-    def operation(name: str) -> FakeWork:
+    def operation(name: str, output: _ContentTensor) -> FakeWork:
+        nonlocal validation_index
         calls[name] = calls.get(name, 0) + 1
+        if validation_index < len(validation_entries):
+            entry = validation_entries[validation_index]
+            assert entry["comms"] == name
+            expected = execution_module._validation_expected_output_values(
+                entry,
+                request_id=oracle_plan.request_id,
+                rank=0,
+                group_ranks=dict(oracle_plan.groups)[int(entry["pg_id"])],
+            )
+            assert len(output.values) == len(expected)
+            output.values[:] = list(expected)
+            validation_index += 1
         return FakeWork()
 
     fake_dist.group = types.SimpleNamespace(WORLD="world")  # type: ignore[attr-defined]
@@ -445,13 +458,13 @@ def test_injected_runtime_executes_bound_mixed_dtype_program_and_aggregates_all_
     fake_dist.barrier = lambda: None  # type: ignore[attr-defined]
     fake_dist.get_rank = lambda: 0  # type: ignore[attr-defined]
     fake_dist.get_world_size = lambda: 4  # type: ignore[attr-defined]
-    fake_dist.all_reduce = lambda *_args, **_kwargs: operation("all_reduce")  # type: ignore[attr-defined]
-    fake_dist.broadcast = lambda *_args, **_kwargs: operation("broadcast")  # type: ignore[attr-defined]
-    fake_dist.all_gather_into_tensor = lambda *_args, **_kwargs: operation("all_gather")  # type: ignore[attr-defined]
-    fake_dist.reduce_scatter_tensor = lambda *_args, **_kwargs: operation("reduce_scatter")  # type: ignore[attr-defined]
-    fake_dist.all_to_all_single = lambda *_args, **_kwargs: operation("all_to_all")  # type: ignore[attr-defined]
-    fake_dist.isend = lambda *_args, **_kwargs: operation("send")  # type: ignore[attr-defined]
-    fake_dist.irecv = lambda *_args, **_kwargs: operation("recv")  # type: ignore[attr-defined]
+    fake_dist.all_reduce = lambda tensor, **_kwargs: operation("all_reduce", tensor)  # type: ignore[attr-defined]
+    fake_dist.broadcast = lambda tensor, **_kwargs: operation("broadcast", tensor)  # type: ignore[attr-defined]
+    fake_dist.all_gather_into_tensor = lambda output, _input, **_kwargs: operation("all_gather", output)  # type: ignore[attr-defined]
+    fake_dist.reduce_scatter_tensor = lambda output, _input, **_kwargs: operation("reduce_scatter", output)  # type: ignore[attr-defined]
+    fake_dist.all_to_all_single = lambda output, _input, **_kwargs: operation("all_to_all", output)  # type: ignore[attr-defined]
+    fake_dist.isend = lambda tensor, **_kwargs: operation("send", tensor)  # type: ignore[attr-defined]
+    fake_dist.irecv = lambda tensor, **_kwargs: operation("recv", tensor)  # type: ignore[attr-defined]
 
     def all_gather_object(output: list[Any], local_value: Any) -> None:
         if isinstance(local_value, dict):
@@ -730,6 +743,152 @@ def test_preflight_message_shape_rejects_uneven_all_to_all_split() -> None:
             group_size=2,
             index=1,
         )
+
+
+class _ContentTensor:
+    def __init__(
+        self,
+        values: list[float | int],
+        *,
+        indices: list[int] | None = None,
+    ) -> None:
+        self.values = values
+        self.indices = list(range(len(values))) if indices is None else indices
+
+    def narrow(self, _dimension: int, start: int, length: int) -> _ContentTensor:
+        return _ContentTensor(self.values, indices=self.indices[start : start + length])
+
+    def __getitem__(self, item: slice) -> _ContentTensor:
+        return _ContentTensor(self.values, indices=self.indices[item])
+
+    def fill_(self, value: float | int) -> _ContentTensor:
+        for index in self.indices:
+            self.values[index] = value
+        return self
+
+    def zero_(self) -> _ContentTensor:
+        return self.fill_(0)
+
+    def eq(self, expected: float | int) -> _ContentTensor:
+        return _ContentTensor([int(self.values[index] == expected) for index in self.indices])
+
+    def all(self) -> _ContentTensor:
+        return _ContentTensor([int(all(self.values[index] for index in self.indices))])
+
+    def item(self) -> int:
+        assert len(self.indices) == 1
+        return int(self.values[self.indices[0]])
+
+
+def _oracle_entry(operation: str, *, reduction_op: str | None = None) -> dict[str, Any]:
+    group_size = 4
+    out_elements = 16
+    in_elements = out_elements
+    if operation == "all_gather":
+        in_elements = out_elements // group_size
+    elif operation == "reduce_scatter":
+        in_elements = out_elements * group_size
+    entry: dict[str, Any] = {
+        "comms": operation,
+        "req": 17,
+        "pg_id": 0,
+        "global_ranks": [0, 1, 2, 3],
+        "in_msg_size": in_elements,
+        "out_msg_size": out_elements,
+        "dtype": "float32",
+    }
+    if reduction_op is not None:
+        entry["reduction_op"] = reduction_op
+    return entry
+
+
+def _oracle_matches(entry: dict[str, Any], values: list[float | int], *, rank: int) -> bool:
+    output = _ContentTensor(values)
+    key = execution_module._communication_buffer_key(entry)
+    return execution_module._validation_output_matches(
+        entry,
+        request_id="request-oracle-test",
+        rank=rank,
+        group_ranks=(0, 1, 2, 3),
+        buffers={"communication": {key: (_ContentTensor([0] * int(entry["in_msg_size"])), output)}},
+    )
+
+
+def test_reduction_oracle_rejects_max_executed_for_requested_product() -> None:
+    entry = _oracle_entry("all_reduce", reduction_op="product")
+    expected = execution_module._validation_expected_output_values(
+        entry,
+        request_id="request-oracle-test",
+        rank=0,
+        group_ranks=(0, 1, 2, 3),
+    )
+    assert _oracle_matches(entry, list(expected), rank=0)
+    wrong: list[float | int] = []
+    for index in range(int(entry["out_msg_size"])):
+        lane = index % execution_module._VALIDATION_LANE_PERIOD
+        probe = execution_module._reduction_probe(
+            request_id="request-oracle-test",
+            request=int(entry["req"]),
+            group_ranks=(0, 1, 2, 3),
+            destination_rank=None,
+            lane=lane,
+            dtype="float32",
+            reduction_op="product",
+        )
+        wrong.append(probe.outcomes[execution_module._REDUCTION_OUTCOME_INDEX["max"]])
+    assert not _oracle_matches(entry, wrong, rank=0)
+
+
+def test_reduce_scatter_oracle_rejects_wrong_destination_shard() -> None:
+    entry = _oracle_entry("reduce_scatter", reduction_op="sum")
+    expected_rank_zero = execution_module._validation_expected_output_values(
+        entry,
+        request_id="request-oracle-test",
+        rank=0,
+        group_ranks=(0, 1, 2, 3),
+    )
+    wrong_rank_one = execution_module._validation_expected_output_values(
+        entry,
+        request_id="request-oracle-test",
+        rank=1,
+        group_ranks=(0, 1, 2, 3),
+    )
+    assert _oracle_matches(entry, list(expected_rank_zero), rank=0)
+    assert not _oracle_matches(entry, list(wrong_rank_one), rank=0)
+
+
+def test_all_gather_oracle_rejects_rank_block_permutation() -> None:
+    entry = _oracle_entry("all_gather")
+    expected = list(
+        execution_module._validation_expected_output_values(
+            entry,
+            request_id="request-oracle-test",
+            rank=0,
+            group_ranks=(0, 1, 2, 3),
+        )
+    )
+    block = int(entry["in_msg_size"])
+    permuted = expected[block : 2 * block] + expected[:block] + expected[2 * block :]
+    assert _oracle_matches(entry, expected, rank=0)
+    assert not _oracle_matches(entry, permuted, rank=0)
+
+
+def test_all_to_all_oracle_rejects_destination_chunk_permutation() -> None:
+    entry = _oracle_entry("all_to_all")
+    expected_rank_zero = execution_module._validation_expected_output_values(
+        entry,
+        request_id="request-oracle-test",
+        rank=0,
+        group_ranks=(0, 1, 2, 3),
+    )
+    wrong_rank_one = execution_module._validation_expected_output_values(
+        entry,
+        request_id="request-oracle-test",
+        rank=1,
+        group_ranks=(0, 1, 2, 3),
+    )
+    assert _oracle_matches(entry, list(expected_rank_zero), rank=0)
+    assert not _oracle_matches(entry, list(wrong_rank_one), rank=0)
 
 
 def test_distributed_environment_is_explicit_and_fail_closed() -> None:
