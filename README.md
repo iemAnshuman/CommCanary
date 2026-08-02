@@ -27,7 +27,10 @@ for exact-work replay—92.86% pair agreement and Kendall tau-b 0.857, versus
 67.86% and 0.764 for the isolated baseline—but its policy outcome was
 `inconclusive` because confidence intervals crossed decision boundaries and
 one configuration was unstable. Decision fidelity therefore remains unproven,
-not an implied property of the file format.
+not an implied property of the file format. That gate replayed the complete
+source-derived event program. It is evidence about an exact qualification
+capsule, not evidence that a smaller canary preserves the same decision or
+costs less to run.
 
 ![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
 table, the threshold reasons that tripped, and per-phase and per-operation regression
@@ -129,10 +132,18 @@ the generated program bytes; it does not fit source durations to target
 hardware. It explicitly does not claim execution, measurement, current
 upstream PARAM compatibility, or a qualification verdict.
 
+CommCanary treats two physical products separately. The implemented exact
+qualification capsule reconstructs the full trace-derived program for a
+verifiable owner-to-lab replay. A reduced decision canary must execute a
+smaller representation and separately earn decision-fidelity, regression-
+sensitivity, runtime-reduction, and artifact-size-reduction claims. No
+physical reduced-canary result exists yet.
+
 ### What this is not
 
 - **Not yet a validated hardware-qualification decision tool.** The completed
-  eight-configuration, same-allocation gate met every numeric point-estimate
+  eight-configuration gate, with all representations paired inside each
+  configuration's allocation, met every numeric point-estimate
   criterion: 26/28 pair agreement, tau-b 0.857, one false negative, one false
   positive, 1.55% median error, and 4.05% p95 error. Its exact predeclared
   outcome is nevertheless `inconclusive`, not `pass`: bootstrap intervals
@@ -874,13 +885,14 @@ are in [docs/architecture.md](docs/architecture.md).
 
 ## Important limitations
 
-The paper and Rostam design notes report a narrow historical physical campaign
-on one 4×A100 PCIe node. The legacy raw attempt archive was not committed, so
-the repository-local engineering gate cannot independently regenerate or
-revalidate those numbers. A new publication-grade claim requires the
-manifest-bound, hash-verified campaign described in the artifact-evaluation
-guide. Multi-node, NVLink-class, multi-model, and multi-generation-hardware
-evaluation; Chakra ET/current PARAM or Nsight ingestion; dependency-aware compute-kernel
-synthesis; and full per-window/per-motif Pareto minimisation remain open.
+The published Rostam evidence covers a narrow campaign on one 4×A100 PCIe
+node. Its exact-work decision verdict is reproducible and `inconclusive`; it
+does not establish a reduced canary, a cost benefit, or a portable hardware
+number. The repository now contains an unexecuted, separately versioned design
+for eight independent allocation blocks and simultaneous policy-margin
+uncertainty. It is implementation, not new evidence. Multi-node, NVLink-class,
+multi-model, and multi-generation-hardware evaluation; Chakra ET/current PARAM
+or Nsight ingestion; dependency-aware compute-kernel synthesis; and full
+per-window/per-motif Pareto minimisation remain open.
 “Model-free” means the artifact omits weights and application code; it does not
 by itself prove privacy or absence of trace leakage.

@@ -1,19 +1,30 @@
 # Rostam physical experiment — design
 
-> **Evidence status (updated 2026-07-26):** the narrative results later in this
-> document remain historical because their complete raw attempt archive is
-> absent from the repository. Three new campaigns (core, shared replay, and
-> explicit overlap) have now completed the immutable
-> manifest/attempt/selection/completeness/archive/publication workflow at one
-> repository identity, and the trusted join over all 280 cells regenerates
-> byte-for-byte. Their exact identities and the joined findings are recorded
-> below and in `docs/artifact-evaluation.md`; generated physical bytes remain
-> on Rostam.
+> **Evidence status (updated 2026-08-02):** the published core, shared-replay,
+> overlap, exact-work diagnostic, and August 1 decision-gate evidence is under
+> `experiments/rostam/results/`. The exact-work gate reached 26/28 pair
+> agreement, but its predeclared verdict remains `inconclusive`. A separately
+> versioned replicated-campaign design now exists; it has not run and adds no
+> physical evidence.
 
 Goal: physical evidence for the paper's central claim. Does a minimized,
 behavior-verified canary preserve the *decision* (configuration ranking and
 regression verdict) that the full workload exhibits on real hardware — in a
 setting where an isolated collective microbenchmark misleads?
+
+## Current product boundary
+
+The August 1 gate executed the full source-derived program twice: directly and
+through verified exact-work materialization. It tests the exact qualification
+capsule's reconstruction fidelity. It does not test whether a smaller physical
+canary preserves the decision or reduces runtime or artifact size.
+
+The next reduced-canary experiment must add a representation that actually
+executes the reduced artifact and compare it with exact replay, stratified and
+random sampling, and ddmin. Decision fidelity, regression sensitivity,
+physical runtime, and serialized size are separate outcomes. Until such a
+campaign passes, exact-work remains a positive conformance control rather than
+evidence for distillation.
 
 ## New publication-grade evidence checkpoint
 
@@ -83,18 +94,18 @@ agreement metric counts as disagreement while Kendall tau does not.
 
 ## July 2026 reproducibility boundary and pre-cluster handoff
 
-The measurements described later in this document are **historical reported
-evidence** from earlier Rostam work. This repository does not contain the
-complete frozen manifest, immutable attempt tree, submission ledger, and raw
-archive needed to revalidate those measurements. The Phase 7 work does not
-claim to have reproduced them. Any new paper/release claim must come from a new
-manifest-bound campaign and pass the strict completeness gate in `analyze.py`.
+This subsection records the boundary before the publication-grade campaigns
+ran. At that checkpoint, the older narrative measurements lacked a complete
+frozen manifest, immutable attempt tree, submission ledger, and raw archive;
+Phase 7 did not reproduce them. The later campaigns listed above supersede
+that gap at their own immutable identities. They do not retroactively turn the
+older reports into reproducible evidence.
 
 The local, non-cluster preparation is now implemented:
 
 - `configs.json` is a strict declarative catalog for site constraints, eight
-  configurations, physical producer/result schemas, eight workload recipes,
-  and four core/overlap/shared profiles. Catalog values are copied into an
+  configurations, physical producer/result schemas, eleven workload recipes,
+  and seven named profiles. Catalog values are copied into an
   immutable campaign; the catalog bytes are also a hashed manifest input.
 - `lib/campaign.py` creates stable cell ownership before submission.
   `lib/submission.py` validates the entire matrix and all bound inputs, freezes
@@ -347,8 +358,8 @@ NCCL overlap variants.
 ## Current kit layout and ownership
 
 The v2 catalog is declarative. It owns the expected site, eight configurations,
-eight workload recipes, exact argument vectors, dependencies, timeouts,
-producer/result schema IDs, and four named profiles. It does not execute a
+eleven workload recipes, exact argument vectors, dependencies, timeouts,
+producer/result schema IDs, and seven named profiles. It does not execute a
 workload while loading or planning.
 
 ```text

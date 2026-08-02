@@ -94,6 +94,12 @@ The earlier Rostam-side publication is retained separately: its older analyzer
 did not project `decision_gate_runtime`, so it is reproducible historical
 output but cannot feed the later fail-closed evaluator.
 
+The source and exact-work representations execute the same closed event
+program. This result is a positive control for exact qualification-capsule
+reconstruction, not evidence that a reduced canary is smaller, faster, or
+decision-faithful. The separately versioned replicated v2 design has not run
+and contributes no rows or verdict to this directory.
+
 r1 and r2 remain immutable integration evidence. r1 jobs `178523`–`178530`
 all reached terminal `parse-failed` after PyTorch's local-version suffix was
 compared literally. r2 jobs `178532`–`178538` succeeded, while 2.19.3 job

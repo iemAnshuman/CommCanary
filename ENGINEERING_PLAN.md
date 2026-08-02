@@ -19,9 +19,12 @@ limit. The kill/reframe test is deliberately not evaluated on noisy evidence.
 
 This establishes a promising differentiated result, not a qualification
 product. CommCanary remains a research alpha. No favorable retry may replace
-this result, and no threshold may be changed after observing it. A follow-up
-requires a separately frozen noise/repetition plan. The exact evidence hashes,
-failed r1/r2 integration history, and reproduction commands are recorded in
+this result, and no threshold may be changed after observing it. The campaign
+executed the complete source-derived program, so it is an exact-capsule
+positive control rather than evidence for canary reduction or cost savings. A
+separately versioned eight-block/24-pass follow-up design is implemented but
+has not been frozen or run on Rostam. The exact evidence hashes, failed r1/r2
+integration history, and reproduction commands are recorded in
 [`experiments/rostam/results/README.md`](experiments/rostam/results/README.md)
 and [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md).
 

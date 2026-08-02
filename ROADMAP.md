@@ -54,26 +54,37 @@ kill/reframe condition is deliberately not evaluated on noisy evidence. These
 results are promising evidence, not permission to relabel CommCanary a
 validated qualification tool.
 
+This gate reconstructed the complete source-derived program. It advances the
+exact qualification capsule, not the separate reduced-canary claim. A reduced
+physical canary must execute fewer or smaller artifacts and earn fidelity,
+regression-sensitivity, runtime, and size results of its own.
+
 See [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md) for the exact
 campaign identities, hashes, and reproduction contract.
 
 ## Product gates
 
-1. **Decision-fidelity follow-up.** The first complete predeclared matrix is
-   `inconclusive`, not failed and not passed. Any follow-up must freeze its
-   noise-control and repetition plan before execution; do not select a quieter
-   successful attempt or tune the policy to the observed answer.
-2. **Acceptance semantics — implemented for the first gate.** Statistic,
+1. **Replicated exact-capsule follow-up.** The first complete predeclared
+   matrix is `inconclusive`, not failed and not passed. The versioned v2 design
+   freezes eight complete allocation blocks, 24 balanced passes, environment
+   telemetry, hierarchical resampling, and simultaneous uncertainty. It has
+   not run; do not select a quieter successful attempt or tune its policy to an
+   observed answer.
+2. **Reduced decision canary.** Add and physically execute a genuinely reduced
+   representation. Compare it with exact replay, stratified and random
+   sampling, and ddmin on decision fidelity, false positives and negatives,
+   runtime, and artifact size.
+3. **Acceptance semantics — implemented for the first gate.** Statistic,
    thresholds, repetition policy, stability limit, bootstrap rule, and four
    outcomes were fixed and manifest-bound before execution. Preserve that
    policy/result separation in every later campaign.
-3. **Independent exchange.** Have a party who did not create the source bundle
+4. **Independent exchange.** Have a party who did not create the source bundle
    verify, materialize, execute, and interpret it using only the repository and
    artifact.
-4. **A second workload or topology.** Add an external trace, multi-node run, or
+5. **A second workload or topology.** Add an external trace, multi-node run, or
    materially different topology before making a general hardware-fidelity
    claim.
-5. **Current ecosystem interop.** Consume a reviewed Chakra protobuf schema and
+6. **Current ecosystem interop.** Consume a reviewed Chakra protobuf schema and
    preserve its dependency semantics end to end. The pinned legacy
    PARAM-derived encoding remains a narrow research bridge, not claimed
    current PARAM compatibility.

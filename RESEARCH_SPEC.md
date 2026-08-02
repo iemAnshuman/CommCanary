@@ -20,6 +20,23 @@ benchmark systems already cover those functions. The research contribution
 must be **tail-aware, workload-faithful minimisation** and must be evaluated by
 its ability to reproduce regressions and preserve configuration rankings.
 
+## Product and evidence boundary
+
+The physical workflow has two distinct modes:
+
+- The **exact qualification capsule** reconstructs the complete source-derived
+  collective/GEMM program. It tests portable reconstruction, provenance, and
+  independent replay. It makes no compression or cost-reduction claim.
+- The **reduced decision canary** must physically execute a smaller
+  representation. It must report decision fidelity, false-positive and
+  false-negative regressions, replay-time reduction, and serialized-size
+  reduction against exact replay, stratified sampling, random sampling, and
+  ddmin.
+
+The August 1 gate evaluated only the first mode. `exact_work` is now named as a
+positive conformance control in new campaign contracts. A reduced physical
+representation remains future work.
+
 ## Research questions
 
 ### RQ1 — When do isolated collective microbenchmarks mislead?
@@ -122,6 +139,18 @@ injected and naturally occurring regressions.
   independent byte-for-byte regeneration, exact per-rank and bounded total
   rectangular GEMM work, and explicit no-execution/no-measurement/no-verdict
   claims.
+- a content-addressed Rostam executor artifact that mechanically includes the
+  experiment package, is verified and privately staged by a standard-library
+  bootstrap, and runs under isolated Python before any project import;
+- descriptor-to-private-file staging for the manifest-bound CommCanary wheel,
+  campaign inputs, dependency artifacts, and selected analysis bytes;
+- operator-distinguishing and route-distinguishing collective correctness
+  probes, with mutation tests and an optional CPU/Gloo multiprocess
+  conformance test;
+- a separately versioned, not-yet-executed exact-capsule follow-up design with
+  eight complete allocation blocks, 24 balanced representation rotations,
+  dynamic policy-margin bootstrap draws, and simultaneous uncertainty over all
+  pair margins and reported criteria.
 
 ## Not implemented—and required before a strong systems-paper claim
 
@@ -134,9 +163,11 @@ injected and naturally occurring regressions.
   in-package torch.distributed reference implementation covers the five
   exactly materialized collectives and has run on the narrow four-A100 gate,
   but it does not establish current upstream interoperability;
-- independent allocation-level and broader hardware validation. The first
-  exact-work decision gate is `inconclusive`, and it did not execute a reduced
-  canary representation or establish runtime or artifact-size reduction;
+- execution of the frozen independent-allocation follow-up and broader
+  hardware validation. The first exact-work decision gate is `inconclusive`;
+  the new v2 campaign machinery has no physical observations, and neither
+  campaign executes a reduced canary or establishes runtime or artifact-size
+  reduction;
 - synthetic compute kernels calibrated to preserve interference;
 - simulator-side compute scheduling: after readiness is normalized,
   `compute_before_us` is descriptive and does not create a compute queue,

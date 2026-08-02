@@ -137,13 +137,47 @@ mask a missing rank. Before measurement, a separately resource-counted,
 untimed pass uses deterministic rank-dependent patterns to validate every
 collective output under its exact source-bound reduction operator and every
 receive endpoint, exchanges exact check counts across the launched world, and
-fails all ranks if any data result is wrong. Measured iterations retain both
+fails all ranks if any data result is wrong. Probe values bind request, source,
+destination, and element lane; dtype-aware multiple probes distinguish SUM,
+AVG, MIN, MAX, and PRODUCT and expose rank-block or destination-chunk
+permutations. Measured iterations retain both
 per-operation issue-to-wait samples and whole-program wall time per rank; the
 decision-facing makespan is the maximum rank duration, not a median of
-collective calls. The resulting diagnostic binds both artifact IDs and the
-program digest, but it currently has neither a stable semantic validator nor an
-authenticity mechanism. It is therefore self-reported execution evidence, not
-yet a verifiable physical-observation artifact.
+collective calls. The resulting physical envelope binds both artifact IDs and
+the program digest and is revalidated by the trusted analysis pipeline. It is
+still self-reported execution evidence: no signature or environment
+attestation authenticates the lab.
+
+## Rostam execution and evidence boundary
+
+New Rostam campaigns do not import experiment code from the mutable checkout.
+Campaign preparation deterministically packages every Python source under the
+`experiments.rostam` package, including package initializers, harness code,
+producers, adapters, and analysis modules, into one content-addressed zipapp.
+The campaign manifest binds the zipapp bytes and its mechanically generated
+source inventory. A small standard-library launch shim verifies and privately
+stages the separately bound bootstrap; that bootstrap verifies and privately
+stages the zipapp before starting isolated Python with `PYTHONPATH` and
+`PYTHONHOME` removed. Mutation tests alter every inventoried Python file and
+require rejection before executor startup.
+
+The decision-gate bootstrap treats the bound CommCanary wheel as a capability,
+not a verified pathname. It keeps the source descriptor open while copying the
+exact hashed bytes into a private `0700` directory, rehashes the read-only
+copy, imports only from that copy, and retains it through process termination.
+Replacing the original wheel before top-level import or before a later
+submodule import cannot change the loaded package.
+
+Manifest inputs and dependency artifacts follow the same rule when a path must
+cross a subprocess boundary: the executor copies bytes from the verified
+descriptor into the attempt's private workspace and passes only that staged
+path. Harness verification returns an immutable byte snapshot. Loaders hash
+and parse those same bytes instead of reopening the original pathname.
+Analysis therefore cannot observe a same-size replacement after verification.
+
+These controls establish byte identity relative to the frozen campaign. They
+do not authenticate the campaign owner or lab, and they do not upgrade an
+`inconclusive` physical verdict.
 
 `created_at` is intentionally volatile and excluded. Changing it alone does not
 invalidate a canary.

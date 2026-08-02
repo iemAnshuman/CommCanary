@@ -200,16 +200,18 @@ timing comparison prove neither physical fidelity nor a qualification verdict.
 Do not add an acceptance tolerance or issue a verdict until the later
 multi-configuration ranking gate provides a reviewed basis for that policy.
 
-### Predeclared decision-fidelity gate
+### Archived v1 exact-work decision gate
 
-The `decision-gate` profile is the product-claim experiment. Its immutable
+The `decision-gate` profile is the archived August 1 experiment. Its immutable
 policy is `experiments/rostam/policies/decision-fidelity-gate-v1.json`; the
 policy file itself is a separately hashed campaign input. One cell per
 configuration interleaves all six representations inside one allocation and
 process group:
 
 - direct source execution as ground truth;
-- exact-work materialization as the product candidate;
+- exact-work materialization, historically named the product candidate in the
+  immutable v1 policy and now interpreted as the positive reconstruction
+  control;
 - first-observed-per-collective-shape stratified sampling as the explicit kill
   baseline;
 - the full blocking collective sequence without compute as the isolated
@@ -252,9 +254,52 @@ source and is not retroactively rewritten; a replacement campaign must freeze
 the current analyzer before submission.
 
 Even a `pass` supports only the policy's declared single-node, four-A100,
-single-inflight all-reduce/GEMM/wait domain. This reduced-source campaign does
-not establish cost savings, importer generality, privacy acceptability, or
+single-inflight all-reduce/GEMM/wait domain. This campaign executes the same
+closed event program for source and exact-work. It does not establish canary
+reduction, cost savings, importer generality, privacy acceptability, or
 independent-operator usability.
+
+### Replicated v2 exact-capsule follow-up—not yet executed
+
+The `decision-gate-exact-replicated` profile and
+`decision-fidelity-gate-v2.json` define a replacement experiment without
+altering the archived v1 policy or verdict. Campaign preparation requires
+exactly eight repetitions. Each repetition is one complete allocation block;
+every configuration/block cell must have a distinct scheduler job and a
+distinct bound runtime observation.
+
+Each cell uses five warmups and 24 measured passes. The block-rotated cyclic
+schedule places every one of the six representations in every order position
+four times per cell, then rotates the starting position across blocks. Runtime
+evidence includes CPU affinity, GPU persistence and performance state,
+temperature, power draw and limit, current SM and memory clocks, topology, and
+the scheduler's node-state record. Retries may replace infrastructure failures
+only; a noisy successful attempt remains evidence and cannot be replaced by a
+quieter run.
+
+The v2 evaluator uses the allocation block as the outer paired bootstrap unit
+and the measured pass vector as the inner unit. Every bootstrap draw recomputes
+the relative tie threshold and policy margin from its sampled medians. One
+predeclared studentized max statistic supplies simultaneous intervals for all
+28 configuration-pair margins, reported metrics, and acceptance-criterion
+margins. A boundary crossing remains `inconclusive`.
+
+After a complete v2 campaign has selected evidence, the same dispatcher uses
+the policy schema to choose the immutable v2 evaluator:
+
+```console
+python -m experiments.rostam.evaluate_decision_gate \
+  PUBLICATION/aggregate.json \
+  --policy experiments/rostam/policies/decision-fidelity-gate-v2.json \
+  --output PUBLICATION/decision-fidelity-verdict.json
+```
+
+In v2, `exact_work` is explicitly a positive conformance control for the exact
+qualification capsule. The policy records reduced-canary and cost claims as
+`not_evaluated`. No v2 campaign has been frozen on Rostam, submitted, selected,
+or analyzed, so this section describes executable design rather than physical
+evidence. An authorized operator must freeze new executor, input, environment,
+and plan hashes before any submission.
 
 ### Decision-fidelity gate result (2026-08-01)
 

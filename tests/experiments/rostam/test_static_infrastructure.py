@@ -1294,8 +1294,11 @@ def test_vendored_third_party_checkouts_are_excluded_from_strict_typing() -> Non
 def test_design_marks_historical_evidence_and_the_exact_precluster_boundary() -> None:
     text = (EXPERIMENT_DIRECTORY / "DESIGN.md").read_text(encoding="utf-8")
 
-    assert "complete raw attempt archive" in text
-    assert "absent from the repository" in text
+    assert "Evidence status (updated 2026-08-02)" in text
+    assert "experiments/rostam/results/" in text
+    assert "older narrative measurements lacked a complete" in text
+    assert "They do not retroactively turn the\nolder reports into reproducible evidence" in text
+    assert "has not run and adds no\n> physical evidence" in text
     assert "Pre-cluster handoff: deliberately unresolved evidence" in text
     assert "pending-rostam-resolution" in text
     assert "PARAM patch evidence is reviewed locally" in text
