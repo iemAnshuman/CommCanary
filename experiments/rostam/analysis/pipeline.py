@@ -408,7 +408,7 @@ def _selected_capture_artifacts(
     if stored.record_sha256 != selected_entry.attempt_record_sha256 or record.measurement is None:
         raise AnalysisValidationError("selected dependency attempt content address is stale")
     result = load_cell_result(
-        verify_artifact_reference(frozen.directory, record.measurement).path,
+        verify_artifact_reference(frozen.directory, record.measurement).raw,
         cell_id=dependency_cell.id,
         cell_identity_sha256=dependency_cell.identity_sha256,
         producer_schema=dependency_workload.producer_schema,
@@ -670,7 +670,7 @@ def _selected_rows(
         verified = verify_artifact_reference(frozen.directory, record.measurement)
         workload = workloads[cell.workload_id]
         result = load_cell_result(
-            verified.path,
+            verified.raw,
             cell_id=cell.id,
             cell_identity_sha256=cell.identity_sha256,
             producer_schema=workload.producer_schema,

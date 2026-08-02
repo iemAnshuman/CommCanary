@@ -305,7 +305,7 @@ def write_cell_result(path: PathLike, result: CellResult) -> Path:
 
 
 def load_cell_result(
-    path: PathLike,
+    source: Union[PathLike, bytes],
     *,
     cell_id: str,
     cell_identity_sha256: str,
@@ -316,13 +316,18 @@ def load_cell_result(
     """Load one bounded canonical result and validate its exact ownership."""
 
     maximum = _bounded_integer(max_bytes, "max_bytes", minimum=1, maximum=_MAX_CAPTURE_BYTES)
-    result_path = Path(path)
-    if result_path.is_symlink() or not result_path.is_file():
-        raise ResultValidationError("result path must be a real regular file")
-    try:
-        raw = read_bounded_bytes(result_path, max_bytes=maximum, field="cell result")
-    except CanonicalJSONError as exc:
-        raise ResultValidationError(str(exc)) from exc
+    if isinstance(source, bytes):
+        raw = source
+        if len(raw) > maximum:
+            raise ResultValidationError(f"cell result exceeds max_bytes={maximum}")
+    else:
+        result_path = Path(source)
+        if result_path.is_symlink() or not result_path.is_file():
+            raise ResultValidationError("result path must be a real regular file")
+        try:
+            raw = read_bounded_bytes(result_path, max_bytes=maximum, field="cell result")
+        except CanonicalJSONError as exc:
+            raise ResultValidationError(str(exc)) from exc
     try:
         result = CellResult.from_json_bytes(raw)
     except CanonicalJSONError as exc:

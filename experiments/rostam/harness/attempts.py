@@ -7,9 +7,11 @@ the record plus checksum visible as one atomically-renamed directory.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
+import stat
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,7 +26,6 @@ from .canonical import (
     ContractError,
     canonical_json_bytes,
     contained_path,
-    file_sha256,
     read_bounded_bytes,
     read_bounded_text,
     safe_slug,
@@ -49,6 +50,7 @@ _CHECKSUM_RE = re.compile(r"^([0-9a-f]{64})  attempt\.json\n$")
 _MAX_ATTEMPT_NUMBER = 999_999
 _MAX_COMMAND_ARGUMENTS = 1024
 _MAX_COMMAND_BYTES = 1024 * 1024
+_MAX_VERIFIED_ARTIFACT_BYTES = 128 * 1024 * 1024
 
 
 class AttemptValidationError(ContractError):
@@ -195,55 +197,162 @@ class ArtifactReference:
 
 @dataclass(frozen=True)
 class VerifiedArtifact:
-    """A reference whose contained regular file matches its size and digest."""
+    """Exact bytes read once from a referenced contained regular file."""
 
     reference: ArtifactReference
-    path: Path
+    raw: bytes
+
+    @property
+    def sha256(self) -> str:
+        return hashlib.sha256(self.raw).hexdigest()
+
+
+def _open_directory(path: Path, *, reference: ArtifactReference) -> int:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        before = os.lstat(path)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise ArtifactVerificationError(
+            "artifact-missing",
+            reference,
+            f"artifact root does not exist: {reference.path}",
+        ) from exc
+    except OSError as exc:
+        raise ArtifactVerificationError(
+            "artifact-invalid",
+            reference,
+            f"artifact root is unsafe: {reference.path}",
+        ) from exc
+    if (
+        stat.S_ISLNK(before.st_mode)
+        or not stat.S_ISDIR(opened.st_mode)
+        or (
+            before.st_dev,
+            before.st_ino,
+        )
+        != (opened.st_dev, opened.st_ino)
+    ):
+        os.close(descriptor)
+        raise ArtifactVerificationError(
+            "artifact-invalid",
+            reference,
+            f"artifact root is not a stable real directory: {reference.path}",
+        )
+    return descriptor
+
+
+def _read_relative_artifact(root: Path, reference: ArtifactReference) -> bytes:
+    descriptors: List[int] = []
+    try:
+        current = _open_directory(root, reference=reference)
+        descriptors.append(current)
+        parts = PurePosixPath(reference.path).parts
+        directory_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
+        file_flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+        if hasattr(os, "O_NOFOLLOW"):
+            directory_flags |= os.O_NOFOLLOW
+            file_flags |= os.O_NOFOLLOW
+        for part in parts[:-1]:
+            current = os.open(part, directory_flags, dir_fd=current)
+            if not stat.S_ISDIR(os.fstat(current).st_mode):
+                os.close(current)
+                raise NotADirectoryError(part)
+            descriptors.append(current)
+        file_descriptor = os.open(parts[-1], file_flags, dir_fd=current)
+        descriptors.append(file_descriptor)
+        before = os.fstat(file_descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise ArtifactVerificationError(
+                "artifact-invalid",
+                reference,
+                f"artifact is not a regular file: {reference.path}",
+            )
+        if before.st_size != reference.size_bytes:
+            raise ArtifactVerificationError(
+                "artifact-stale",
+                reference,
+                f"artifact size mismatch for {reference.path}: "
+                f"expected {reference.size_bytes}, observed {before.st_size}",
+            )
+        if before.st_size > _MAX_VERIFIED_ARTIFACT_BYTES:
+            raise ArtifactVerificationError(
+                "artifact-invalid",
+                reference,
+                f"artifact exceeds the {_MAX_VERIFIED_ARTIFACT_BYTES}-byte verification limit: {reference.path}",
+            )
+        chunks: List[bytes] = []
+        observed_size = 0
+        digest = hashlib.sha256()
+        while True:
+            chunk = os.read(file_descriptor, min(1024 * 1024, reference.size_bytes + 1 - observed_size))
+            if not chunk:
+                break
+            observed_size += len(chunk)
+            if observed_size > reference.size_bytes:
+                raise ArtifactVerificationError(
+                    "artifact-stale",
+                    reference,
+                    f"artifact grew while it was read: {reference.path}",
+                )
+            chunks.append(chunk)
+            digest.update(chunk)
+        after = os.fstat(file_descriptor)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ) or observed_size != before.st_size:
+            raise ArtifactVerificationError(
+                "artifact-stale",
+                reference,
+                f"artifact changed while it was read: {reference.path}",
+            )
+        if digest.hexdigest() != reference.sha256:
+            raise ArtifactVerificationError(
+                "artifact-stale",
+                reference,
+                f"artifact SHA-256 mismatch for {reference.path}: "
+                f"expected {reference.sha256}, observed {digest.hexdigest()}",
+            )
+        return b"".join(chunks)
+    except ArtifactVerificationError:
+        raise
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise ArtifactVerificationError(
+            "artifact-missing",
+            reference,
+            f"artifact does not exist: {reference.path}",
+        ) from exc
+    except OSError as exc:
+        raise ArtifactVerificationError(
+            "artifact-invalid",
+            reference,
+            f"artifact path is unsafe: {reference.path}",
+        ) from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
 def verify_artifact_reference(run_directory: PathLike, reference: ArtifactReference) -> VerifiedArtifact:
     """Verify one content-addressed artifact below a run directory."""
 
     reference.validate()
-    root = Path(run_directory).expanduser().resolve()
-    parts = PurePosixPath(reference.path).parts
-    candidate = root
-    for part in parts:
-        candidate = candidate / part
-        if candidate.is_symlink():
-            raise ArtifactVerificationError(
-                "artifact-invalid",
-                reference,
-                f"artifact path contains a symlink: {reference.path}",
-            )
-    path = contained_path(root, *parts)
-    if not path.exists():
-        raise ArtifactVerificationError(
-            "artifact-missing",
-            reference,
-            f"artifact does not exist: {reference.path}",
-        )
-    if not path.is_file():
-        raise ArtifactVerificationError(
-            "artifact-invalid",
-            reference,
-            f"artifact is not a regular file: {reference.path}",
-        )
-    observed_size = path.stat().st_size
-    if observed_size != reference.size_bytes:
-        raise ArtifactVerificationError(
-            "artifact-stale",
-            reference,
-            f"artifact size mismatch for {reference.path}: expected {reference.size_bytes}, observed {observed_size}",
-        )
-    observed_sha256 = file_sha256(path)
-    if observed_sha256 != reference.sha256:
-        raise ArtifactVerificationError(
-            "artifact-stale",
-            reference,
-            f"artifact SHA-256 mismatch for {reference.path}: expected {reference.sha256}, observed {observed_sha256}",
-        )
-    return VerifiedArtifact(reference=reference, path=path)
+    root = Path(run_directory).expanduser()
+    raw = _read_relative_artifact(root, reference)
+    return VerifiedArtifact(reference=reference, raw=raw)
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import importlib
 import io
 import os
@@ -166,6 +167,30 @@ def test_runtime_environment_exposes_only_staged_experiment_modules(
         stderr=subprocess.PIPE,
     )
     assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+
+
+def test_bound_input_staging_survives_same_size_source_replacement(tmp_path: Path) -> None:
+    source = tmp_path / "bound.whl"
+    original = b"wheel-a"
+    replacement = b"wheel-b"
+    source.write_bytes(original)
+    staging = tmp_path / "private-inputs"
+    staging.mkdir(mode=0o700)
+
+    staged = cell_entrypoint._stage_bound_input(
+        source,
+        input_id="decision-gate-wheel",
+        expected_size=len(original),
+        expected_sha256=hashlib.sha256(original).hexdigest(),
+        staging_directory=staging,
+    )
+    newer = tmp_path / "newer.whl"
+    newer.write_bytes(replacement)
+    os.replace(newer, source)
+
+    assert staged.suffix == ".whl"
+    assert staged.read_bytes() == original
+    assert staged.stat().st_mode & 0o222 == 0
 
 
 def test_runtime_probe_enforces_its_memory_cap_with_mocked_process(

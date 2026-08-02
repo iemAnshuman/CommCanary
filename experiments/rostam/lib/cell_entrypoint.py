@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import ctypes
+import hashlib
 import importlib
 import io
 import json
@@ -13,6 +14,7 @@ import platform
 import re
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -27,6 +29,7 @@ from ..harness import (
     AttemptRecord,
     CellResult,
     ContractError,
+    VerifiedArtifact,
     canonical_json_bytes,
     canonical_sha256,
     derive_attempt_id,
@@ -144,9 +147,10 @@ def _workspace(run_directory: Path, cell_id: str, attempt_id: str) -> Path:
         parent.mkdir(exist_ok=True)
     workspace = cell_root / attempt_id
     try:
-        workspace.mkdir()
+        workspace.mkdir(mode=0o700)
     except FileExistsError as exc:
         raise CellEntrypointError(f"attempt workspace already exists: {workspace}") from exc
+    os.chmod(workspace, 0o700)
     return workspace
 
 
@@ -184,24 +188,146 @@ def _validate_site(manifest: Any) -> Dict[str, str]:
     }
 
 
-def _verify_inputs(manifest: Any) -> Dict[str, Path]:
+def _write_all(descriptor: int, payload: bytes) -> None:
+    view = memoryview(payload)
+    while view:
+        written = os.write(descriptor, view)
+        if written <= 0:
+            raise OSError("short write while staging a verified artifact")
+        view = view[written:]
+
+
+def _stage_bound_input(
+    source: Path,
+    *,
+    input_id: str,
+    expected_size: int,
+    expected_sha256: str,
+    staging_directory: Path,
+) -> Path:
+    if source.is_symlink():
+        raise CellEntrypointError(f"manifest input {input_id!r} is a symbolic link")
+    try:
+        resolved = source.resolve(strict=True)
+        before_name = os.stat(resolved, follow_symlinks=False)
+    except OSError as exc:
+        raise CellEntrypointError(f"manifest input {input_id!r} is missing or unsafe") from exc
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        source_descriptor = os.open(resolved, flags)
+    except OSError as exc:
+        raise CellEntrypointError(f"manifest input {input_id!r} cannot be opened safely") from exc
+    suffix = resolved.suffix
+    if not suffix or len(suffix) > 64 or not re.fullmatch(r"(?:\.[A-Za-z0-9_-]+)+", suffix):
+        suffix = ".bin"
+    destination = staging_directory / f"{input_id}{suffix}"
+    destination_descriptor = -1
+    completed = False
+    try:
+        before = os.fstat(source_descriptor)
+        if not stat.S_ISREG(before.st_mode) or (before_name.st_dev, before_name.st_ino) != (
+            before.st_dev,
+            before.st_ino,
+        ):
+            raise CellEntrypointError(f"manifest input {input_id!r} is not a stable regular file")
+        if before.st_size != expected_size:
+            raise CellEntrypointError(f"manifest input {input_id!r} has a stale size")
+        destination_descriptor = os.open(
+            destination,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0),
+            0o600,
+        )
+        digest = hashlib.sha256()
+        copied = 0
+        while True:
+            chunk = os.read(source_descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            copied += len(chunk)
+            if copied > expected_size:
+                raise CellEntrypointError(f"manifest input {input_id!r} grew while it was staged")
+            digest.update(chunk)
+            _write_all(destination_descriptor, chunk)
+        after = os.fstat(source_descriptor)
+        if (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ) or copied != expected_size:
+            raise CellEntrypointError(f"manifest input {input_id!r} changed while it was staged")
+        if digest.hexdigest() != expected_sha256:
+            raise CellEntrypointError(f"manifest input {input_id!r} is stale")
+        os.fsync(destination_descriptor)
+        os.close(destination_descriptor)
+        destination_descriptor = -1
+        os.chmod(destination, 0o400)
+        if destination.stat().st_size != expected_size or file_sha256(destination) != expected_sha256:
+            raise CellEntrypointError(f"staged manifest input {input_id!r} changed unexpectedly")
+        completed = True
+        return destination
+    finally:
+        os.close(source_descriptor)
+        if destination_descriptor >= 0:
+            os.close(destination_descriptor)
+        if not completed and (destination.exists() or destination.is_symlink()):
+            destination.unlink()
+
+
+def _verify_inputs(manifest: Any, workspace: Path) -> Dict[str, Path]:
     policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
     raw_paths = _object(policy.get("input_paths"), "campaign.policy.input_paths")
     artifacts = {artifact.id: artifact for artifact in manifest.campaign.inputs}
     if set(raw_paths) != set(artifacts):
         raise CellEntrypointError("manifest input_paths do not own exactly the declared inputs")
+    staging_directory = workspace / "inputs"
+    staging_directory.mkdir(mode=0o700)
     result: Dict[str, Path] = {}
     for input_id, artifact in artifacts.items():
         raw_path = raw_paths[input_id]
         if not isinstance(raw_path, str) or not raw_path:
             raise CellEntrypointError(f"manifest input path {input_id!r} is invalid")
-        path = Path(raw_path)
-        if path.is_symlink() or not path.is_file():
-            raise CellEntrypointError(f"manifest input {input_id!r} is missing or unsafe")
-        if path.stat().st_size != artifact.size_bytes or file_sha256(path) != artifact.sha256:
-            raise CellEntrypointError(f"manifest input {input_id!r} is stale")
-        result[input_id] = path.resolve()
+        result[input_id] = _stage_bound_input(
+            Path(raw_path),
+            input_id=input_id,
+            expected_size=artifact.size_bytes,
+            expected_sha256=artifact.sha256,
+            staging_directory=staging_directory,
+        )
     return result
+
+
+def _stage_verified_artifact(
+    verified: VerifiedArtifact,
+    *,
+    staging_directory: Path,
+    identity: str,
+) -> Path:
+    staging_directory.mkdir(mode=0o700, exist_ok=True)
+    suffix = Path(verified.reference.path).suffix
+    if not suffix or len(suffix) > 64 or not re.fullmatch(r"(?:\.[A-Za-z0-9_-]+)+", suffix):
+        suffix = ".bin"
+    name = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32] + suffix
+    destination = staging_directory / name
+    try:
+        _write_exclusive(destination, verified.raw)
+        os.chmod(destination, 0o400)
+        if file_sha256(destination) != verified.reference.sha256:
+            raise CellEntrypointError("private staged dependency artifact changed unexpectedly")
+        return destination
+    except BaseException:
+        if destination.exists() or destination.is_symlink():
+            destination.unlink()
+        raise
 
 
 def _verify_venv_wheel_binding(venv_directory: Path, manifest: Any) -> None:
@@ -310,6 +436,7 @@ def _dependency_artifacts(
     run_directory: Path,
     cell: Any,
     bindings: Mapping[str, str],
+    workspace: Path,
 ) -> Tuple[Dict[Tuple[str, str], Path], List[Dict[str, str]]]:
     if set(bindings) != set(cell.dependencies):
         raise CellEntrypointError("dependency-attempt bindings do not match the manifest cell")
@@ -325,7 +452,7 @@ def _dependency_artifacts(
         dependency_cell = manifest_cells[dependency_cell_id]
         dependency_workload = workloads[dependency_cell.workload_id]
         result = load_cell_result(
-            verify_artifact_reference(run_directory, record.measurement).path,
+            verify_artifact_reference(run_directory, record.measurement).raw,
             cell_id=dependency_cell_id,
             cell_identity_sha256=dependency_cell.identity_sha256,
             producer_schema=dependency_workload.producer_schema,
@@ -336,7 +463,12 @@ def _dependency_artifacts(
         artifacts = _object(measurement.get("artifacts"), "dependency measurement.artifacts")
         for artifact_id, raw_reference in artifacts.items():
             reference = ArtifactReference.from_dict(raw_reference, f"dependency artifact {artifact_id}")
-            paths[(dependency_workload.id, str(artifact_id))] = verify_artifact_reference(run_directory, reference).path
+            verified = verify_artifact_reference(run_directory, reference)
+            paths[(dependency_workload.id, str(artifact_id))] = _stage_verified_artifact(
+                verified,
+                staging_directory=workspace / "dependencies",
+                identity=f"{dependency_cell_id}:{attempt_id}:{artifact_id}",
+            )
         evidence.append(
             {
                 "cell_id": dependency_cell_id,
@@ -1091,8 +1223,14 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     stdout_path = workspace / "stdout.log"
     stderr_path = workspace / "stderr.log"
     result_path = workspace / "result.json"
-    input_paths = _verify_inputs(manifest)
-    dependency_paths, dependency_evidence = _dependency_artifacts(manifest, frozen.directory, cell, dependencies)
+    input_paths = _verify_inputs(manifest, workspace)
+    dependency_paths, dependency_evidence = _dependency_artifacts(
+        manifest,
+        frozen.directory,
+        cell,
+        dependencies,
+        workspace,
+    )
     experiment_directory = Path(os.environ["COMMCANARY_EXPERIMENT_DIR"]).resolve()
     executor_artifact = _verify_running_executor(manifest, experiment_directory)
     _verify_param_postimage(experiment_directory, input_paths)

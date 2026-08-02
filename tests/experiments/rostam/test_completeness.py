@@ -499,6 +499,35 @@ def test_artifact_verifier_rejects_symlinks_even_when_content_matches(tmp_path: 
     assert captured.value.code == "artifact-invalid"
 
 
+def test_verified_artifact_retains_exact_bytes_after_same_size_path_replacement(tmp_path: Path) -> None:
+    _manifest, frozen = _frozen_run(tmp_path)
+    original = b'{"value":1}'
+    replacement = b'{"value":2}'
+    assert len(original) == len(replacement)
+    artifact_path = frozen.directory / "artifacts" / "value.json"
+    artifact_path.parent.mkdir()
+    artifact_path.write_bytes(original)
+    reference = ArtifactReference.from_dict(
+        {
+            "path": "artifacts/value.json",
+            "sha256": hashlib.sha256(original).hexdigest(),
+            "size_bytes": len(original),
+        }
+    )
+
+    verified = verify_artifact_reference(frozen.directory, reference)
+    new_path = artifact_path.with_suffix(".new")
+    new_path.write_bytes(replacement)
+    os.replace(new_path, artifact_path)
+
+    assert verified.raw == original
+    assert verified.sha256 == reference.sha256
+    assert not hasattr(verified, "path")
+    with pytest.raises(ArtifactVerificationError) as captured:
+        verify_artifact_reference(frozen.directory, reference)
+    assert captured.value.code == "artifact-stale"
+
+
 def test_selection_and_verdict_storage_are_immutable_and_tamper_evident(tmp_path: Path) -> None:
     _manifest, frozen, _records, snapshot = _frozen_complete_selection(tmp_path)
     with pytest.raises(SelectionStoreError, match="already exists"):
