@@ -1,0 +1,201 @@
+{
+  "$id": "commcanary.rostam.decision-fidelity-verdict.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "commcanary.rostam.decision-fidelity-verdict.v2"},
+    "verdict_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "outcome": {"enum": ["fail", "incomparable", "inconclusive", "pass"]},
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "schema": {"const": "commcanary.rostam.decision-fidelity-policy.v2"},
+        "policy_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "size_bytes": {"minimum": 1, "type": "integer"}
+      },
+      "required": ["schema", "policy_id", "sha256", "size_bytes"],
+      "type": "object"
+    },
+    "evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "allocation_block_count": {"maximum": 10, "minimum": 5, "type": "integer"},
+        "completeness_verdict_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "configuration_count": {"minimum": 2, "type": "integer"},
+        "configuration_pair_count": {"minimum": 0, "type": "integer"},
+        "distinct_job_count": {"minimum": 0, "type": "integer"},
+        "environment_observation_count": {"minimum": 0, "type": "integer"},
+        "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "nodes": {"items": {"minLength": 1, "type": "string"}, "type": "array", "uniqueItems": true},
+        "run_id": {"minLength": 1, "type": "string"},
+        "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["aggregate_sha256", "allocation_block_count", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "run_id", "selection_sha256"],
+      "type": "object"
+    },
+    "issues": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {"minLength": 1, "type": "string"},
+          "detail": {"minLength": 1, "type": "string"}
+        },
+        "required": ["code", "detail"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "uncertainty": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
+        "inconclusive_pairs": {"items": {"minLength": 1, "type": "string"}, "type": "array"},
+        "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2"},
+        "metric_intervals": {
+          "additionalProperties": false,
+          "properties": {
+            "exact_work": {"$ref": "#/$defs/metric-intervals"},
+            "isolated": {"$ref": "#/$defs/metric-intervals"},
+            "no_overlap": {"$ref": "#/$defs/metric-intervals"},
+            "no_rank_skew": {"$ref": "#/$defs/metric-intervals"},
+            "stratified": {"$ref": "#/$defs/metric-intervals"}
+          },
+          "type": "object"
+        },
+        "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
+        "status": {"enum": ["decisive", "inconclusive"]},
+        "studentized_max_critical_value": {"type": ["number", "null"]},
+        "unstable_cells": {"items": {"minLength": 1, "type": "string"}, "type": "array"}
+      },
+      "required": ["confidence", "inconclusive_pairs", "method", "metric_intervals", "resamples", "status", "studentized_max_critical_value", "unstable_cells"],
+      "type": "object"
+    },
+    "pairwise_comparisons": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "first_configuration_id": {"minLength": 1, "type": "string"},
+          "second_configuration_id": {"minLength": 1, "type": "string"},
+          "representations": {
+            "additionalProperties": false,
+            "properties": {
+              "exact_work": {"$ref": "#/$defs/pair-result"},
+              "isolated": {"$ref": "#/$defs/pair-result"},
+              "no_overlap": {"$ref": "#/$defs/pair-result"},
+              "no_rank_skew": {"$ref": "#/$defs/pair-result"},
+              "source": {"$ref": "#/$defs/pair-result"},
+              "stratified": {"$ref": "#/$defs/pair-result"}
+            },
+            "required": ["exact_work", "isolated", "no_overlap", "no_rank_skew", "source", "stratified"],
+            "type": "object"
+          }
+        },
+        "required": ["first_configuration_id", "representations", "second_configuration_id"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "representation_metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_work": {"$ref": "#/$defs/representation-metrics"},
+        "isolated": {"$ref": "#/$defs/representation-metrics"},
+        "no_overlap": {"$ref": "#/$defs/representation-metrics"},
+        "no_rank_skew": {"$ref": "#/$defs/representation-metrics"},
+        "stratified": {"$ref": "#/$defs/representation-metrics"}
+      },
+      "type": "object"
+    },
+    "criteria": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "criterion_id": {"minLength": 1, "type": "string"},
+          "observed": {"type": "number"},
+          "observed_margin": {"type": "number"},
+          "operator": {"enum": ["<=", ">="]},
+          "required": {"type": "number"},
+          "simultaneous_margin_interval": {"$ref": "#/$defs/interval"},
+          "status": {"enum": ["fail", "inconclusive", "pass"]}
+        },
+        "required": ["criterion_id", "observed", "observed_margin", "operator", "required", "simultaneous_margin_interval", "status"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "product_interpretation": {
+      "additionalProperties": false,
+      "properties": {
+        "cost_claim": {"const": "not_evaluated_by_exact_work_control"},
+        "exact_work_claim": {"const": "portable_reconstruction_positive_control"},
+        "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
+        "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"},
+        "mode": {"const": "exact_qualification_capsule"},
+        "positioning": {"enum": ["exact_capsule_positive_control_supported", "exact_capsule_positive_control_unvalidated"]},
+        "reduced_canary_claim": {"const": "not_evaluated"}
+      },
+      "required": ["cost_claim", "exact_work_claim", "generality_claim", "independent_operator_claim", "mode", "positioning", "reduced_canary_claim"],
+      "type": "object"
+    }
+  },
+  "required": ["schema", "verdict_id", "outcome", "policy", "evidence", "issues", "uncertainty", "pairwise_comparisons", "representation_metrics", "criteria", "product_interpretation"],
+  "type": "object",
+  "$defs": {
+    "interval": {
+      "items": {"type": "number"},
+      "maxItems": 2,
+      "minItems": 2,
+      "type": "array"
+    },
+    "metric-intervals": {
+      "additionalProperties": false,
+      "properties": {
+        "false_negative_count": {"$ref": "#/$defs/interval"},
+        "false_positive_count": {"$ref": "#/$defs/interval"},
+        "kendall_tau_b": {"$ref": "#/$defs/interval"},
+        "median_absolute_relative_error_pct": {"$ref": "#/$defs/interval"},
+        "median_execution_time_ratio_to_source": {"$ref": "#/$defs/interval"},
+        "p95_absolute_relative_error_pct": {"$ref": "#/$defs/interval"},
+        "pairwise_ranking_agreement": {"$ref": "#/$defs/interval"}
+      },
+      "required": ["false_negative_count", "false_positive_count", "kendall_tau_b", "median_absolute_relative_error_pct", "median_execution_time_ratio_to_source", "p95_absolute_relative_error_pct", "pairwise_ranking_agreement"],
+      "type": "object"
+    },
+    "pair-result": {
+      "additionalProperties": false,
+      "properties": {
+        "difference_us": {"type": "number"},
+        "observed_label": {"enum": ["first_faster", "second_faster", "tie"]},
+        "policy_margin_us": {"type": "number"},
+        "simultaneous_margin_interval_us": {
+          "items": {"type": "number"},
+          "maxItems": 2,
+          "type": "array"
+        },
+        "tie_threshold_us": {"minimum": 0, "type": "number"},
+        "uncertainty_label": {"enum": ["first_faster", "inconclusive", "not_evaluated", "second_faster", "tie"]}
+      },
+      "required": ["difference_us", "observed_label", "policy_margin_us", "simultaneous_margin_interval_us", "tie_threshold_us", "uncertainty_label"],
+      "type": "object"
+    },
+    "representation-metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration_medians_us": {"additionalProperties": {"minimum": 0, "type": "number"}, "type": "object"},
+        "false_negative_count": {"minimum": 0, "type": "integer"},
+        "false_positive_count": {"minimum": 0, "type": "integer"},
+        "kendall_tau_b": {"maximum": 1, "minimum": -1, "type": "number"},
+        "median_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "median_execution_time_ratio_to_source": {"minimum": 0, "type": "number"},
+        "p95_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "pairwise_agreement_count": {"minimum": 0, "type": "integer"},
+        "pairwise_pair_count": {"minimum": 1, "type": "integer"},
+        "pairwise_ranking_agreement": {"maximum": 1, "minimum": 0, "type": "number"}
+      },
+      "required": ["configuration_medians_us", "false_negative_count", "false_positive_count", "kendall_tau_b", "median_absolute_relative_error_pct", "median_execution_time_ratio_to_source", "p95_absolute_relative_error_pct", "pairwise_agreement_count", "pairwise_pair_count", "pairwise_ranking_agreement"],
+      "type": "object"
+    }
+  }
+}

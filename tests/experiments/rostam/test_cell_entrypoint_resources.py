@@ -234,15 +234,19 @@ def test_runtime_fingerprint_records_driver_gpu_topology_binding_and_clocks(
             return 0
 
     inventory = (
-        "0, GPU-a, NVIDIA A100-PCIE-40GB, 550.54.15, 00000000:01:00.0, Enabled, 1410, 1215\n"
-        "1, GPU-b, NVIDIA A100-PCIE-40GB, 550.54.15, 00000000:02:00.0, Enabled, 1395, 1215\n"
+        "0, GPU-a, NVIDIA A100-PCIE-40GB, 550.54.15, 00000000:01:00.0, Enabled, P0, 55, 120.5, 250.0, 1410, 1215\n"
+        "1, GPU-b, NVIDIA A100-PCIE-40GB, 550.54.15, 00000000:02:00.0, Enabled, P2, 57, 118.0, 250.0, 1395, 1215\n"
     )
     observed_commands: list[tuple[str, ...]] = []
 
     def probe(command: Sequence[str], **_kwargs: Any) -> str:
         normalized = tuple(command)
         observed_commands.append(normalized)
-        return "GPU0 GPU1\nGPU0 X PIX\nGPU1 PIX X\n" if normalized[1:3] == ("topo", "-m") else inventory
+        if normalized[0] == "scontrol":
+            return "NodeName=toranj0 State=ALLOCATED CPULoad=1.25\n"
+        if normalized[1:3] == ("topo", "-m"):
+            return "GPU0 GPU1\nGPU0 X PIX\nGPU1 PIX X\n"
+        return inventory
 
     monkeypatch.setattr(importlib, "import_module", lambda _name: torch)
     monkeypatch.setattr(ctypes, "CDLL", lambda _path: Library())
@@ -264,16 +268,22 @@ def test_runtime_fingerprint_records_driver_gpu_topology_binding_and_clocks(
     assert runtime["torch_version"] == "2.4.1"
     assert runtime["torch_cuda_version"] == "12.1"
     assert runtime["runtime_nccl_version_code"] == 22005
+    assert evidence["schema"] == "commcanary.rostam.runtime-observation.v2"
     assert evidence["driver_version"] == "550.54.15"
     assert evidence["gpu_count"] == 2
     assert evidence["gpus"][0]["uuid"] == "GPU-a"
     assert evidence["gpus"][0]["sm_clock_mhz"] == 1410
     assert evidence["gpus"][1]["memory_clock_mhz"] == 1215
     assert evidence["gpus"][0]["persistence_mode"] == "Enabled"
+    assert evidence["gpus"][0]["performance_state"] == "P0"
+    assert evidence["gpus"][0]["temperature_c"] == 55
+    assert evidence["gpus"][0]["power_draw_w"] == 120.5
+    assert evidence["gpus"][0]["power_limit_w"] == 250.0
     assert evidence["topology"]["text"].startswith("GPU0 GPU1")
+    assert evidence["node_state"]["text"].startswith("NodeName=toranj0 State=ALLOCATED")
     assert evidence["binding"]["environment"]["CUDA_VISIBLE_DEVICES"] == "0,1"
     assert evidence["binding"]["cpu_affinity"] == [0, 2, 4]
-    assert len(observed_commands) == 2
+    assert len(observed_commands) == 3
 
 
 def test_runtime_fingerprint_rejects_malformed_probe_rows_without_running_a_probe(
@@ -316,3 +326,17 @@ def test_runtime_fingerprint_normalizes_nccl_load_failure(
             {"hostname": "toranj0", "job_id": "12345"},
         )
     assert "private filesystem detail" not in str(captured.value)
+
+
+def test_repetition_placeholder_resolves_to_the_manifest_cell_index(tmp_path: Path) -> None:
+    resolved = cell_entrypoint._resolve_argument(
+        "{repetition}",
+        repetition=7,
+        workspace=tmp_path / "workspace",
+        experiment_directory=tmp_path / "experiment",
+        venv_directory=tmp_path / "venv",
+        dependency_paths={},
+        input_paths={},
+    )
+
+    assert resolved == "7"

@@ -1,0 +1,171 @@
+{
+  "$id": "commcanary.rostam.physical.decision-gate-measurement.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt_id": {"pattern": "^a-[0-9]{6}$", "type": "string"},
+    "correctness_check_count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
+    "count": {"maximum": 1000, "minimum": 1, "type": "integer"},
+    "decision_claims": {
+      "additionalProperties": false,
+      "properties": {
+        "physical_decision_fidelity": {"const": "not_analyzed"},
+        "physical_execution": {"const": "same_allocation_self_reported"},
+        "qualification_verdict": {"const": "policy_bound_not_issued"}
+      },
+      "required": ["physical_decision_fidelity", "physical_execution", "qualification_verdict"],
+      "type": "object"
+    },
+    "execution": {
+      "additionalProperties": false,
+      "properties": {
+        "allocation_block": {"maximum": 999, "minimum": 0, "type": "integer"},
+        "iterations": {"const": 24},
+        "order_method": {"const": "allocation-block-rotated-latin-cycle.v2"},
+        "representation_order_by_iteration": {
+          "items": {
+            "items": {
+              "enum": ["source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew"]
+            },
+            "maxItems": 6,
+            "minItems": 6,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "maxItems": 24,
+          "minItems": 24,
+          "type": "array"
+        },
+        "source_event_count": {"minimum": 1, "type": "integer"},
+        "stratified_method": {"const": "first-observed-per-collective-shape.v1"},
+        "stratified_source_event_indices": {
+          "items": {"minimum": 0, "type": "integer"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
+        "warmup": {"maximum": 100, "minimum": 0, "type": "integer"},
+        "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
+      },
+      "required": ["allocation_block", "iterations", "order_method", "representation_order_by_iteration", "source_event_count", "stratified_method", "stratified_source_event_indices", "timing_semantics", "warmup", "world_size"],
+      "type": "object"
+    },
+    "global_ranks": {
+      "items": {"minimum": 0, "type": "integer"},
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "iqr_us": {"minimum": 0, "type": "number"},
+    "materialization": {
+      "additionalProperties": false,
+      "properties": {
+        "materialization_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "program_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["materialization_id", "program_sha256"],
+      "type": "object"
+    },
+    "operation": {"const": "all_reduce"},
+    "policy": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {"const": "commcanary.qualification_policy.v1"},
+        "policy_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["format", "policy_id"],
+      "type": "object"
+    },
+    "representations": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_work": {"$ref": "#/$defs/representation"},
+        "isolated": {"$ref": "#/$defs/representation"},
+        "no_overlap": {"$ref": "#/$defs/representation"},
+        "no_rank_skew": {"$ref": "#/$defs/representation"},
+        "source": {"$ref": "#/$defs/representation"},
+        "stratified": {"$ref": "#/$defs/representation"}
+      },
+      "required": ["exact_work", "isolated", "no_overlap", "no_rank_skew", "source", "stratified"],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "format": {"const": "commcanary.qualification_request.v2"},
+        "request_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+      },
+      "required": ["format", "request_id"],
+      "type": "object"
+    },
+    "runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {"minLength": 1, "type": "string"},
+        "job_id": {"type": ["string", "null"]},
+        "python_version": {"minLength": 1, "type": "string"},
+        "runtime_nccl_version_code": {"maximum": 99999, "minimum": 1, "type": "integer"},
+        "torch_cuda_version": {"type": ["string", "null"]},
+        "torch_version": {"minLength": 1, "type": "string"}
+      },
+      "required": ["hostname", "job_id", "python_version", "runtime_nccl_version_code", "torch_cuda_version", "torch_version"],
+      "type": "object"
+    },
+    "samples_us": {
+      "items": {"minimum": 0, "type": "number"},
+      "maxItems": 1000,
+      "minItems": 1,
+      "type": "array"
+    },
+    "value_us": {"minimum": 0, "type": "number"},
+    "wall_time_s": {"minimum": 0, "type": "number"},
+    "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
+  },
+  "required": ["attempt_id", "correctness_check_count", "count", "decision_claims", "execution", "global_ranks", "iqr_us", "materialization", "operation", "policy", "representations", "request", "runtime", "samples_us", "value_us", "wall_time_s", "world_size"],
+  "type": "object",
+  "$defs": {
+    "metrics": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {"const": 24},
+        "iqr_us": {"minimum": 0, "type": "number"},
+        "max_us": {"minimum": 0, "type": "number"},
+        "median_us": {"minimum": 0, "type": "number"},
+        "min_us": {"minimum": 0, "type": "number"}
+      },
+      "required": ["count", "iqr_us", "max_us", "median_us", "min_us"],
+      "type": "object"
+    },
+    "representation": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": ["causal_ablation", "ground_truth", "incumbent_baseline", "kill_condition_baseline", "positive_conformance_control"]
+        },
+        "executed_event_count": {"minimum": 1, "type": "integer"},
+        "metrics": {"$ref": "#/$defs/metrics"},
+        "rank_timings_us": {
+          "items": {
+            "items": {"minimum": 0, "type": "number"},
+            "maxItems": 24,
+            "minItems": 24,
+            "type": "array"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "semantics": {"minLength": 1, "type": "string"},
+        "template_count": {"minimum": 1, "type": "integer"},
+        "timings_us": {
+          "items": {"minimum": 0, "type": "number"},
+          "maxItems": 24,
+          "minItems": 24,
+          "type": "array"
+        }
+      },
+      "required": ["category", "executed_event_count", "metrics", "rank_timings_us", "semantics", "template_count", "timings_us"],
+      "type": "object"
+    }
+  }
+}

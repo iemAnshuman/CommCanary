@@ -20,6 +20,7 @@ OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
 CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
 QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
 DECISION_GATE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v1"
+DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v2"
 
 MICRO_PRODUCER_SCHEMA = "commcanary.rostam.physical.micro-producer.v1"
 FULL_PRODUCER_SCHEMA = "commcanary.rostam.physical.full-producer.v1"
@@ -28,6 +29,7 @@ OVERLAP_PRODUCER_SCHEMA = "commcanary.rostam.physical.overlap-producer.v1"
 CAPTURE_PRODUCER_SCHEMA = "commcanary.rostam.physical.capture-producer.v1"
 QUALIFICATION_PRODUCER_SCHEMA = "commcanary.rostam.physical.qualification-producer.v1"
 DECISION_GATE_PRODUCER_SCHEMA = "commcanary.rostam.physical.decision-gate-producer.v1"
+DECISION_GATE_REPLICATED_PRODUCER_SCHEMA = "commcanary.rostam.physical.decision-gate-producer.v2"
 
 MICRO_STDOUT_SCHEMA = "commcanary.rostam.microbench_tp8.stdout.v1"
 FULL_STDOUT_SCHEMA = "commcanary.rostam.workload_tp8.stdout.v1"
@@ -35,9 +37,11 @@ OVERLAP_STDOUT_SCHEMA = "commcanary.rostam.overlap_replay.stdout.v1"
 REFERENCE_EXECUTION_STDOUT_SCHEMA = "commcanary.reference-execution.stdout.v1"
 QUALIFICATION_STDOUT_SCHEMA = "commcanary.rostam.qualification-comparison.stdout.v1"
 DECISION_GATE_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v1"
+DECISION_GATE_REPLICATED_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v2"
 SOURCE_TIMING_SEMANTICS = "maximum-rank-unprofiled-whole-program-duration"
 DECISION_GATE_TIMING_SEMANTICS = "maximum-rank-cuda-event-whole-program-duration"
 DECISION_GATE_ORDER_METHOD = "iteration-rotated-latin-cycle.v1"
+DECISION_GATE_REPLICATED_ORDER_METHOD = "allocation-block-rotated-latin-cycle.v2"
 DECISION_GATE_STRATIFIED_METHOD = "first-observed-per-collective-shape.v1"
 _DECISION_GATE_REPRESENTATIONS = (
     "source",
@@ -54,6 +58,10 @@ _DECISION_GATE_REPRESENTATION_CONTRACTS = {
     "isolated": ("incumbent_baseline", "full-message-sequence-blocking-all-reduce-no-compute"),
     "no_overlap": ("causal_ablation", "blocking-all-reduce-then-exact-rank-work"),
     "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
+}
+_DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS = {
+    **_DECISION_GATE_REPRESENTATION_CONTRACTS,
+    "exact_work": ("positive_conformance_control", "verified-materialization-issue-rank-work-wait"),
 }
 
 
@@ -92,6 +100,7 @@ PHYSICAL_SCHEMA_PAIRS = {
     CAPTURE_MEASUREMENT_SCHEMA: CAPTURE_PRODUCER_SCHEMA,
     QUALIFICATION_MEASUREMENT_SCHEMA: QUALIFICATION_PRODUCER_SCHEMA,
     DECISION_GATE_MEASUREMENT_SCHEMA: DECISION_GATE_PRODUCER_SCHEMA,
+    DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA: DECISION_GATE_REPLICATED_PRODUCER_SCHEMA,
 }
 
 _RAW_LATENCY_FIELDS = {
@@ -1023,6 +1032,7 @@ def _decision_gate_representation(
     iterations: int,
     expected_event_count: int,
     expected_template_count: int,
+    contracts: Mapping[str, Tuple[str, str]],
 ) -> Tuple[Dict[str, Any], Tuple[float, ...]]:
     field = f"decision-gate producer stdout.representations.{representation}"
     value = _object(raw, field)
@@ -1039,7 +1049,7 @@ def _decision_gate_representation(
             "metrics",
         ),
     )
-    expected_category, expected_semantics = _DECISION_GATE_REPRESENTATION_CONTRACTS[representation]
+    expected_category, expected_semantics = contracts[representation]
     if value["category"] != expected_category or value["semantics"] != expected_semantics:
         raise PhysicalResultError(f"{field} semantics disagree with the declared representation")
     if _integer(value["executed_event_count"], f"{field}.executed_event_count", minimum=1) != expected_event_count:
@@ -1082,7 +1092,20 @@ def _decision_gate_payload(
     *,
     world_size: int,
     parameters: Mapping[str, Any],
+    measurement_schema: str,
+    repetition: Optional[int],
 ) -> Tuple[Mapping[str, Any], Tuple[float, ...]]:
+    replicated = measurement_schema == DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA
+    if replicated:
+        if repetition is None or isinstance(repetition, bool) or not 0 <= repetition <= 999:
+            raise PhysicalResultError("replicated decision-gate cell repetition is invalid")
+        stdout_schema = DECISION_GATE_REPLICATED_STDOUT_SCHEMA
+        order_method = DECISION_GATE_REPLICATED_ORDER_METHOD
+        contracts = _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS
+    else:
+        stdout_schema = DECISION_GATE_STDOUT_SCHEMA
+        order_method = DECISION_GATE_ORDER_METHOD
+        contracts = _DECISION_GATE_REPRESENTATION_CONTRACTS
     payload = _last_json_object(stdout)
     _strict(
         payload,
@@ -1099,8 +1122,8 @@ def _decision_gate_payload(
             "claims",
         ),
     )
-    if payload["schema"] != DECISION_GATE_STDOUT_SCHEMA:
-        raise PhysicalResultError(f"decision-gate producer stdout requires schema {DECISION_GATE_STDOUT_SCHEMA!r}")
+    if payload["schema"] != stdout_schema:
+        raise PhysicalResultError(f"decision-gate producer stdout requires schema {stdout_schema!r}")
     request = _decision_gate_reference(
         payload["request"],
         "decision-gate producer stdout.request",
@@ -1134,21 +1157,20 @@ def _decision_gate_payload(
         },
     )
     execution = _object(payload["execution"], "decision-gate producer stdout.execution")
-    _strict(
-        execution,
-        "decision-gate producer stdout.execution",
-        (
-            "world_size",
-            "iterations",
-            "warmup",
-            "timing_semantics",
-            "order_method",
-            "representation_order_by_iteration",
-            "source_event_count",
-            "stratified_method",
-            "stratified_source_event_indices",
-        ),
-    )
+    execution_fields = {
+        "world_size",
+        "iterations",
+        "warmup",
+        "timing_semantics",
+        "order_method",
+        "representation_order_by_iteration",
+        "source_event_count",
+        "stratified_method",
+        "stratified_source_event_indices",
+    }
+    if replicated:
+        execution_fields.add("allocation_block")
+    _strict(execution, "decision-gate producer stdout.execution", execution_fields)
     iterations = _integer(parameters.get("iterations"), "workload.parameters.iterations", minimum=1, maximum=1000)
     warmup = _integer(parameters.get("warmup"), "workload.parameters.warmup", maximum=100)
     source_event_count = _integer(
@@ -1161,11 +1183,13 @@ def _decision_gate_payload(
         or execution["iterations"] != iterations
         or execution["warmup"] != warmup
         or execution["timing_semantics"] != DECISION_GATE_TIMING_SEMANTICS
-        or execution["order_method"] != DECISION_GATE_ORDER_METHOD
+        or execution["order_method"] != order_method
         or execution["source_event_count"] != source_event_count
         or execution["stratified_method"] != DECISION_GATE_STRATIFIED_METHOD
     ):
         raise PhysicalResultError("decision-gate execution contract disagrees with the frozen workload")
+    if replicated and execution["allocation_block"] != repetition:
+        raise PhysicalResultError("decision-gate allocation block disagrees with its manifest repetition")
     selected = execution["stratified_source_event_indices"]
     expected_selected = parameters.get("expected_stratified_source_event_indices")
     if not isinstance(selected, list) or selected != expected_selected or not selected:
@@ -1179,7 +1203,7 @@ def _decision_gate_payload(
     if not isinstance(raw_orders, list) or len(raw_orders) != iterations:
         raise PhysicalResultError("decision-gate representation order inventory is incomplete")
     for iteration, order in enumerate(raw_orders):
-        offset = iteration % len(_DECISION_GATE_REPRESENTATIONS)
+        offset = ((repetition or 0) + iteration) % len(_DECISION_GATE_REPRESENTATIONS)
         expected_order = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
         if order != expected_order:
             raise PhysicalResultError(f"decision-gate representation order disagrees at iteration {iteration}")
@@ -1242,6 +1266,7 @@ def _decision_gate_payload(
             iterations=iterations,
             expected_event_count=event_count,
             expected_template_count=template_count,
+            contracts=contracts,
         )
         if representation == "source":
             source_samples = samples
@@ -1346,6 +1371,7 @@ def adapt_physical_measurement(
     stderr: str,
     wall_time_s: float,
     runtime: Any,
+    repetition: Optional[int] = None,
     trace_sha256: Optional[str] = None,
     artifacts: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -1381,12 +1407,14 @@ def adapt_physical_measurement(
             world_size=world_size,
             parameters=parameter_object,
         )
-    elif measurement_schema == DECISION_GATE_MEASUREMENT_SCHEMA:
+    elif measurement_schema in {DECISION_GATE_MEASUREMENT_SCHEMA, DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA}:
         world_size, _ = validate_physical_layout(parameter_object)
         payload, samples = _decision_gate_payload(
             stdout,
             world_size=world_size,
             parameters=parameter_object,
+            measurement_schema=measurement_schema,
+            repetition=repetition,
         )
         source_capture = None
         source_samples = None
@@ -1488,7 +1516,7 @@ def adapt_physical_measurement(
                 },
             }
         )
-    elif measurement_schema == DECISION_GATE_MEASUREMENT_SCHEMA:
+    elif measurement_schema in {DECISION_GATE_MEASUREMENT_SCHEMA, DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA}:
         assert payload is not None
         payload_runtime = _object(payload["runtime"], "decision-gate producer runtime")
         for field in ("torch_version", "torch_cuda_version", "runtime_nccl_version_code"):

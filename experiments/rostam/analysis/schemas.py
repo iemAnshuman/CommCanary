@@ -20,10 +20,13 @@ PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.overlap-measur
 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
 PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.qualification-measurement.v1"
 PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.decision-gate-measurement.v1"
+PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2 = "commcanary.rostam.physical.decision-gate-measurement.v2"
 RAW_ARCHIVE_DESCRIPTOR_SCHEMA = "commcanary.rostam.raw-archive-descriptor.v1"
 CROSS_COMMIT_COMPATIBILITY_SCHEMA = "commcanary.rostam.cross-commit-compatibility.v1"
 DECISION_FIDELITY_POLICY_SCHEMA = "commcanary.rostam.decision-fidelity-policy.v1"
 DECISION_FIDELITY_VERDICT_SCHEMA = "commcanary.rostam.decision-fidelity-verdict.v1"
+DECISION_FIDELITY_POLICY_SCHEMA_V2 = "commcanary.rostam.decision-fidelity-policy.v2"
+DECISION_FIDELITY_VERDICT_SCHEMA_V2 = "commcanary.rostam.decision-fidelity-verdict.v2"
 
 _SCHEMA_DIRECTORY = Path(__file__).resolve().parent.parent / "schemas"
 _SCHEMA_FILES = {
@@ -38,10 +41,13 @@ _SCHEMA_FILES = {
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "physical-capture-measurement-v1.schema.json",
     PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "physical-qualification-measurement-v1.schema.json",
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: "physical-decision-gate-measurement-v1.schema.json",
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2: "physical-decision-gate-measurement-v2.schema.json",
     RAW_ARCHIVE_DESCRIPTOR_SCHEMA: "raw-archive-descriptor-v1.schema.json",
     CROSS_COMMIT_COMPATIBILITY_SCHEMA: "cross-commit-compatibility-v1.schema.json",
     DECISION_FIDELITY_POLICY_SCHEMA: "decision-fidelity-policy-v1.schema.json",
     DECISION_FIDELITY_VERDICT_SCHEMA: "decision-fidelity-verdict-v1.schema.json",
+    DECISION_FIDELITY_POLICY_SCHEMA_V2: "decision-fidelity-policy-v2.schema.json",
+    DECISION_FIDELITY_VERDICT_SCHEMA_V2: "decision-fidelity-verdict-v2.schema.json",
 }
 _PHYSICAL_PRODUCER_CONTRACTS = {
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.micro-producer.v1",
@@ -51,6 +57,7 @@ _PHYSICAL_PRODUCER_CONTRACTS = {
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.capture-producer.v1",
     PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.qualification-producer.v1",
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA: "commcanary.rostam.physical.decision-gate-producer.v1",
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2: "commcanary.rostam.physical.decision-gate-producer.v2",
 }
 _PRODUCER_CONTRACTS = {
     LOCAL_PREPARE_MEASUREMENT_SCHEMA: ("commcanary.experiment.prepare.v1", "success"),
@@ -114,6 +121,15 @@ _PHYSICAL_SPECIFIC_FIELDS = {
         "representations",
         "request",
     },
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2: {
+        "correctness_check_count",
+        "decision_claims",
+        "execution",
+        "materialization",
+        "policy",
+        "representations",
+        "request",
+    },
 }
 _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
 _OVERLAP_REPLAY_MODES = {"explicit-wait-overlap", "fixed-input-explicit-wait-overlap"}
@@ -134,6 +150,10 @@ _DECISION_GATE_REPRESENTATION_CONTRACTS = {
     "isolated": ("incumbent_baseline", "full-message-sequence-blocking-all-reduce-no-compute"),
     "no_overlap": ("causal_ablation", "blocking-all-reduce-then-exact-rank-work"),
     "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
+}
+_DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS = {
+    **_DECISION_GATE_REPRESENTATION_CONTRACTS,
+    "exact_work": ("positive_conformance_control", "verified-materialization-issue-rank-work-wait"),
 }
 
 
@@ -235,9 +255,19 @@ def _strict_object(raw: Any, field: str, expected_fields: set[str]) -> Mapping[s
 def _decision_gate_attributes(
     raw: Mapping[str, Any],
     *,
+    schema: str,
     world_size: int,
     samples: Tuple[float, ...],
 ) -> Dict[str, Any]:
+    replicated = schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
+    order_method = (
+        "allocation-block-rotated-latin-cycle.v2" if replicated else "iteration-rotated-latin-cycle.v1"
+    )
+    contracts = (
+        _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS
+        if replicated
+        else _DECISION_GATE_REPRESENTATION_CONTRACTS
+    )
     request = _strict_object(raw["request"], "measurement.request", {"format", "request_id"})
     if request["format"] != "commcanary.qualification_request.v2":
         raise MeasurementValidationError("decision-gate request format is unsupported")
@@ -258,21 +288,20 @@ def _decision_gate_attributes(
         if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
             raise MeasurementValidationError(f"{field} is invalid")
 
-    execution = _strict_object(
-        raw["execution"],
-        "measurement.execution",
-        {
-            "iterations",
-            "order_method",
-            "representation_order_by_iteration",
-            "source_event_count",
-            "stratified_method",
-            "stratified_source_event_indices",
-            "timing_semantics",
-            "warmup",
-            "world_size",
-        },
-    )
+    execution_fields = {
+        "iterations",
+        "order_method",
+        "representation_order_by_iteration",
+        "source_event_count",
+        "stratified_method",
+        "stratified_source_event_indices",
+        "timing_semantics",
+        "warmup",
+        "world_size",
+    }
+    if replicated:
+        execution_fields.add("allocation_block")
+    execution = _strict_object(raw["execution"], "measurement.execution", execution_fields)
     iterations = execution["iterations"]
     warmup = execution["warmup"]
     event_count = execution["source_event_count"]
@@ -289,10 +318,13 @@ def _decision_gate_attributes(
         or event_count <= 0
         or execution["world_size"] != world_size
         or execution["timing_semantics"] != "maximum-rank-cuda-event-whole-program-duration"
-        or execution["order_method"] != "iteration-rotated-latin-cycle.v1"
+        or execution["order_method"] != order_method
         or execution["stratified_method"] != "first-observed-per-collective-shape.v1"
     ):
         raise MeasurementValidationError("decision-gate execution contract is inconsistent")
+    allocation_block = execution.get("allocation_block", 0)
+    if isinstance(allocation_block, bool) or not isinstance(allocation_block, int) or not 0 <= allocation_block <= 999:
+        raise MeasurementValidationError("decision-gate allocation block is invalid")
     selected = execution["stratified_source_event_indices"]
     if (
         not isinstance(selected, list)
@@ -307,7 +339,7 @@ def _decision_gate_attributes(
     if not isinstance(orders, list) or len(orders) != iterations:
         raise MeasurementValidationError("decision-gate representation order inventory is incomplete")
     for iteration, order in enumerate(orders):
-        offset = iteration % len(_DECISION_GATE_REPRESENTATIONS)
+        offset = (allocation_block + iteration) % len(_DECISION_GATE_REPRESENTATIONS)
         expected = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
         if order != expected:
             raise MeasurementValidationError(f"decision-gate representation order is invalid at iteration {iteration}")
@@ -336,7 +368,7 @@ def _decision_gate_attributes(
                 "timings_us",
             },
         )
-        expected_category, expected_semantics = _DECISION_GATE_REPRESENTATION_CONTRACTS[representation]
+        expected_category, expected_semantics = contracts[representation]
         expected_event_count = len(selected) if representation == "stratified" else event_count
         expected_template_count = len(selected) if representation in {"stratified", "isolated"} else event_count
         if (
@@ -646,9 +678,10 @@ def _physical_measurement(
             "absolute_relative_median_error_pct": absolute_error,
             "comparison_claims": expected_claims,
         }
-    elif schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+    elif schema in {PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA, PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2}:
         physical_attributes = _decision_gate_attributes(
             raw,
+            schema=schema,
             world_size=world_size,
             samples=samples,
         )

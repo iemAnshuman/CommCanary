@@ -15,6 +15,7 @@ from ..harness import (
     CanonicalJSONError,
     ContractError,
     canonical_json_bytes,
+    canonical_sha256,
     file_sha256,
     freeze_campaign,
     read_bounded_bytes,
@@ -126,6 +127,72 @@ def _verify_gemm_calibration_binding(*, catalog: Catalog, profile_id: str, input
         raise CampaignPreparationError(f"GEMM calibration input does not match the catalog declaration: {mismatches!r}")
 
 
+def _verify_decision_fidelity_binding(
+    *,
+    catalog: Catalog,
+    profile_id: str,
+    inputs: Mapping[str, Path],
+    repetitions: int,
+) -> None:
+    profile = catalog.profile(profile_id)
+    declarations = []
+    for workload in catalog.selected_workloads(profile):
+        parameters = workload.parameters.to_value()
+        policy_id = parameters.get("decision_fidelity_policy_id")
+        if policy_id is None:
+            continue
+        if not isinstance(policy_id, str) or _SHA256_RE.fullmatch(policy_id) is None:
+            raise CampaignPreparationError(f"workload {workload.id!r} decision-fidelity policy ID is invalid")
+        allocation_blocks = parameters.get("allocation_blocks")
+        if allocation_blocks is not None and (
+            isinstance(allocation_blocks, bool)
+            or not isinstance(allocation_blocks, int)
+            or not 5 <= allocation_blocks <= 10
+        ):
+            raise CampaignPreparationError(f"workload {workload.id!r} allocation block count is invalid")
+        declarations.append((workload.id, policy_id, allocation_blocks))
+    if not declarations:
+        return
+    if len(declarations) != 1:
+        raise CampaignPreparationError("a campaign profile must select exactly one decision-fidelity workload")
+    workload_id, expected_policy_id, allocation_blocks = declarations[0]
+    path = inputs.get("decision-fidelity-policy")
+    if path is None or path.is_symlink() or not path.is_file():
+        raise CampaignPreparationError("decision-fidelity campaign requires a real policy input")
+    try:
+        policy = strict_json_loads(
+            read_bounded_bytes(
+                path,
+                max_bytes=DEFAULT_JSON_LIMITS.max_document_bytes,
+                field="decision-fidelity policy input",
+            )
+        )
+    except (CanonicalJSONError, OSError, UnicodeError) as exc:
+        raise CampaignPreparationError(f"cannot read decision-fidelity policy input: {exc}") from exc
+    if not isinstance(policy, Mapping):
+        raise CampaignPreparationError("decision-fidelity policy input must be an object")
+    projection = dict(policy)
+    observed_policy_id = projection.pop("policy_id", None)
+    scope = policy.get("scope")
+    measurement = policy.get("measurement")
+    if (
+        observed_policy_id != expected_policy_id
+        or canonical_sha256(projection) != expected_policy_id
+        or not isinstance(scope, Mapping)
+        or scope.get("workload_id") != workload_id
+        or scope.get("configuration_ids") != sorted(profile.configuration_ids)
+    ):
+        raise CampaignPreparationError("decision-fidelity policy input disagrees with the catalog profile")
+    if allocation_blocks is not None and (
+        repetitions != allocation_blocks
+        or not isinstance(measurement, Mapping)
+        or measurement.get("allocation_blocks") != allocation_blocks
+    ):
+        raise CampaignPreparationError(
+            f"replicated decision-fidelity campaign requires exactly {allocation_blocks} campaign repetitions"
+        )
+
+
 def build_campaign(
     *,
     catalog: Catalog,
@@ -166,6 +233,12 @@ def build_campaign(
             f"profile input ownership mismatch: missing={missing!r}, unexpected={unexpected!r}"
         )
     _verify_gemm_calibration_binding(catalog=catalog, profile_id=profile_id, inputs=bound_inputs)
+    _verify_decision_fidelity_binding(
+        catalog=catalog,
+        profile_id=profile_id,
+        inputs=bound_inputs,
+        repetitions=repetitions,
+    )
     experiment_directory = catalog_path.resolve().parent
     expected_bootstrap = experiment_directory / "executor_bootstrap.py"
     if bound_inputs[EXECUTOR_BOOTSTRAP_INPUT_ID].resolve() != expected_bootstrap.resolve():

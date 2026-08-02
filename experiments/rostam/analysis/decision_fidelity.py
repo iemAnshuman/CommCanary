@@ -21,6 +21,7 @@ from ..harness import (
 from .pipeline import ANALYSIS_SCHEMA
 from .schemas import (
     DECISION_FIDELITY_POLICY_SCHEMA,
+    DECISION_FIDELITY_POLICY_SCHEMA_V2,
     DECISION_FIDELITY_VERDICT_SCHEMA,
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
 )
@@ -96,6 +97,11 @@ def decision_fidelity_policy_sha256(policy: Mapping[str, Any]) -> str:
 
 def validate_decision_fidelity_policy(raw: Any) -> Dict[str, Any]:
     """Validate the immutable experiment policy without optional dependencies."""
+
+    if isinstance(raw, Mapping) and raw.get("schema") == DECISION_FIDELITY_POLICY_SCHEMA_V2:
+        from .decision_fidelity_v2 import validate_decision_fidelity_policy_v2
+
+        return validate_decision_fidelity_policy_v2(raw)
 
     policy = _object(
         raw,
@@ -455,7 +461,12 @@ def evaluate_decision_fidelity(
     aggregate = _object(aggregate, "aggregate")
     if not isinstance(policy_bytes, bytes) or not 0 < len(policy_bytes) <= _POLICY_LIMITS.max_document_bytes:
         raise DecisionFidelityError("decision fidelity policy bytes are outside the supported limit")
-    validated_policy = validate_decision_fidelity_policy(strict_json_loads(policy_bytes, limits=_POLICY_LIMITS))
+    raw_policy = strict_json_loads(policy_bytes, limits=_POLICY_LIMITS)
+    if isinstance(raw_policy, Mapping) and raw_policy.get("schema") == DECISION_FIDELITY_POLICY_SCHEMA_V2:
+        from .decision_fidelity_v2 import evaluate_decision_fidelity_v2
+
+        return evaluate_decision_fidelity_v2(aggregate, policy_bytes)
+    validated_policy = validate_decision_fidelity_policy(raw_policy)
     policy_sha256 = sha256_hex(policy_bytes)
     policy_size_bytes = len(policy_bytes)
     if aggregate.get("schema") != ANALYSIS_SCHEMA:

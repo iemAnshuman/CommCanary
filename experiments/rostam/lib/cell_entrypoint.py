@@ -9,6 +9,7 @@ import hashlib
 import importlib
 import io
 import json
+import math
 import os
 import platform
 import re
@@ -482,6 +483,7 @@ def _dependency_artifacts(
 def _resolve_argument(
     value: str,
     *,
+    repetition: int,
     workspace: Path,
     experiment_directory: Path,
     venv_directory: Path,
@@ -494,6 +496,10 @@ def _resolve_argument(
             raise CellEntrypointError(f"unsupported command placeholder in {value!r}")
         return value
     token, suffix = match.groups()
+    if token == "repetition":
+        if suffix:
+            raise CellEntrypointError("repetition placeholder cannot have a path suffix")
+        return str(repetition)
     if token == "workspace":
         base = workspace
     elif token == "experiment_dir":
@@ -796,21 +802,32 @@ def _gpu_inventory(raw: str) -> Tuple[Dict[str, Any], ...]:
     result: List[Dict[str, Any]] = []
     observed_indices = set()
     for row_index, row in enumerate(rows):
-        if len(row) != 8:
+        if len(row) != 12:
             raise CellEntrypointError(f"nvidia-smi GPU inventory row {row_index} has {len(row)} fields")
         fields = [item.strip() for item in row]
-        if any(len(fields[index]) > 16 for index in (0, 6, 7)):
-            raise CellEntrypointError(f"nvidia-smi GPU inventory row {row_index} has oversized integers")
+        if any(len(fields[index]) > 32 for index in (0, 7, 8, 9, 10, 11)):
+            raise CellEntrypointError(f"nvidia-smi GPU inventory row {row_index} has oversized numbers")
         try:
             index = int(fields[0])
-            sm_clock_mhz = int(fields[6])
-            memory_clock_mhz = int(fields[7])
+            temperature_c = int(fields[7])
+            power_draw_w = float(fields[8])
+            power_limit_w = float(fields[9])
+            sm_clock_mhz = int(fields[10])
+            memory_clock_mhz = int(fields[11])
         except ValueError as exc:
-            raise CellEntrypointError(f"nvidia-smi GPU inventory row {row_index} has invalid integers") from exc
+            raise CellEntrypointError(f"nvidia-smi GPU inventory row {row_index} has invalid numbers") from exc
         if not 0 <= index < _MAX_GPU_COUNT or index in observed_indices:
             raise CellEntrypointError("nvidia-smi GPU indices are duplicate or outside the supported range")
-        if sm_clock_mhz < 0 or memory_clock_mhz < 0:
-            raise CellEntrypointError("nvidia-smi GPU clocks must be non-negative")
+        if (
+            not -50 <= temperature_c <= 200
+            or not math.isfinite(power_draw_w)
+            or power_draw_w < 0.0
+            or not math.isfinite(power_limit_w)
+            or power_limit_w <= 0.0
+            or sm_clock_mhz < 0
+            or memory_clock_mhz < 0
+        ):
+            raise CellEntrypointError("nvidia-smi GPU telemetry is outside the supported range")
         observed_indices.add(index)
         result.append(
             {
@@ -820,6 +837,10 @@ def _gpu_inventory(raw: str) -> Tuple[Dict[str, Any], ...]:
                 "driver_version": _observed_text(fields[3], f"gpus[{row_index}].driver_version", maximum=128),
                 "pci_bus_id": _observed_text(fields[4], f"gpus[{row_index}].pci_bus_id", maximum=128),
                 "persistence_mode": _observed_text(fields[5], f"gpus[{row_index}].persistence_mode", maximum=64),
+                "performance_state": _observed_text(fields[6], f"gpus[{row_index}].performance_state", maximum=64),
+                "temperature_c": temperature_c,
+                "power_draw_w": power_draw_w,
+                "power_limit_w": power_limit_w,
                 "sm_clock_mhz": sm_clock_mhz,
                 "memory_clock_mhz": memory_clock_mhz,
             }
@@ -897,7 +918,8 @@ def _runtime_fingerprint(
     }
     inventory_command = (
         "nvidia-smi",
-        "--query-gpu=index,uuid,name,driver_version,pci.bus_id,persistence_mode,clocks.current.sm,clocks.current.memory",
+        "--query-gpu=index,uuid,name,driver_version,pci.bus_id,persistence_mode,pstate,temperature.gpu,"
+        "power.draw,power.limit,clocks.current.sm,clocks.current.memory",
         "--format=csv,noheader,nounits",
     )
     gpus = _gpu_inventory(_run_bounded_probe(inventory_command))
@@ -909,8 +931,16 @@ def _runtime_fingerprint(
         "topology",
         maximum=_PROBE_OUTPUT_BYTES,
     )
+    node_name = hostname.split(".", 1)[0]
+    node_state = _observed_text(
+        _run_bounded_probe(("scontrol", "show", "node", "--oneliner", node_name))
+        .replace("\r\n", "\n")
+        .rstrip("\n"),
+        "node_state",
+        maximum=_PROBE_OUTPUT_BYTES,
+    )
     evidence = {
-        "schema": "commcanary.rostam.runtime-observation.v1",
+        "schema": "commcanary.rostam.runtime-observation.v2",
         "runtime": dict(runtime),
         "driver_version": driver_versions[0],
         "gpu_count": len(gpus),
@@ -918,6 +948,10 @@ def _runtime_fingerprint(
         "topology": {
             "method": "nvidia-smi topo -m",
             "text": topology,
+        },
+        "node_state": {
+            "method": "scontrol show node --oneliner HOSTNAME",
+            "text": node_state,
         },
         "binding": _binding_observation(),
         "probe_policy": {
@@ -1245,6 +1279,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         raise CellEntrypointError("cell entrypoint is not running from the manifest-selected venv")
     _verify_venv_wheel_binding(venv_directory, manifest)
     resolution = {
+        "repetition": cell.repetition,
         "workspace": workspace,
         "experiment_directory": experiment_directory,
         "venv_directory": venv_directory,
@@ -1334,6 +1369,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
                 stderr=stderr,
                 wall_time_s=wall_time_s,
                 runtime=runtime,
+                repetition=cell.repetition,
                 trace_sha256=None if trace_path is None else file_sha256(trace_path),
                 artifacts=capture_artifacts,
             )

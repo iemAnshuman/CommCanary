@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import os
 import tempfile
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ from .schemas import (
     LOCAL_PREPARE_MEASUREMENT_SCHEMA,
     PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
     PHYSICAL_FULL_MEASUREMENT_SCHEMA,
     PHYSICAL_MICRO_MEASUREMENT_SCHEMA,
     PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
@@ -72,6 +74,18 @@ PUBLICATION_FILENAMES = (
 
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
 _PER_CAMPAIGN_POLICY_FIELDS = frozenset({"catalog_profile", "input_paths"})
+_RUNTIME_OBSERVATION_SCHEMA_V1 = "commcanary.rostam.runtime-observation.v1"
+_RUNTIME_OBSERVATION_SCHEMA_V2 = "commcanary.rostam.runtime-observation.v2"
+_BINDING_ENVIRONMENT_FIELDS = {
+    "CUDA_VISIBLE_DEVICES",
+    "OMP_NUM_THREADS",
+    "SLURM_CPUS_PER_TASK",
+    "SLURM_JOB_GPUS",
+    "SLURM_LOCALID",
+    "SLURM_NODEID",
+    "SLURM_PROCID",
+    "SLURM_STEP_GPUS",
+}
 # The publication serializer emits an aggregate this module just built from
 # already-validated evidence, so its budget bounds our own output rather than
 # untrusted input.  A measured 280-cell core/shared/overlap join produced
@@ -467,6 +481,144 @@ def _trace_binding_sha256(
     raise AnalysisValidationError("physical replay trace path is not bound to a dependency artifact or manifest input")
 
 
+def _replicated_environment_binding(
+    runtime_observation: Mapping[str, Any],
+    *,
+    world_size: int,
+    cell_id: str,
+) -> Dict[str, Any]:
+    required_observation_fields = {
+        "schema",
+        "runtime",
+        "driver_version",
+        "gpu_count",
+        "gpus",
+        "topology",
+        "node_state",
+        "binding",
+        "probe_policy",
+    }
+    required_gpu_fields = {
+        "index",
+        "uuid",
+        "name",
+        "driver_version",
+        "pci_bus_id",
+        "persistence_mode",
+        "performance_state",
+        "temperature_c",
+        "power_draw_w",
+        "power_limit_w",
+        "sm_clock_mhz",
+        "memory_clock_mhz",
+    }
+    driver_version = runtime_observation.get("driver_version")
+    gpus = runtime_observation.get("gpus")
+    if (
+        runtime_observation.get("schema") != _RUNTIME_OBSERVATION_SCHEMA_V2
+        or set(runtime_observation) != required_observation_fields
+        or not isinstance(driver_version, str)
+        or not driver_version
+        or not isinstance(gpus, list)
+        or len(gpus) != world_size
+        or runtime_observation.get("gpu_count") != len(gpus)
+        or any(not isinstance(gpu, Mapping) or set(gpu) != required_gpu_fields for gpu in gpus)
+    ):
+        raise AnalysisValidationError(f"replicated decision-gate environment evidence is incomplete for cell {cell_id!r}")
+    gpu_indices: List[int] = []
+    for gpu in gpus:
+        index = gpu["index"]
+        text_fields = (
+            "uuid",
+            "name",
+            "driver_version",
+            "pci_bus_id",
+            "persistence_mode",
+            "performance_state",
+        )
+        temperature = gpu["temperature_c"]
+        powers = (gpu["power_draw_w"], gpu["power_limit_w"])
+        clocks = (gpu["sm_clock_mhz"], gpu["memory_clock_mhz"])
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or any(not isinstance(gpu[field], str) or not gpu[field] for field in text_fields)
+            or gpu["driver_version"] != driver_version
+            or isinstance(temperature, bool)
+            or not isinstance(temperature, int)
+            or not -50 <= temperature <= 200
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                or float(value) < 0.0
+                for value in powers
+            )
+            or float(gpu["power_limit_w"]) <= 0.0
+            or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in clocks)
+        ):
+            raise AnalysisValidationError(
+                f"replicated decision-gate GPU evidence is invalid for cell {cell_id!r}"
+            )
+        gpu_indices.append(index)
+    if sorted(gpu_indices) != list(range(world_size)):
+        raise AnalysisValidationError(f"replicated decision-gate GPU inventory is stale for cell {cell_id!r}")
+
+    topology = runtime_observation.get("topology")
+    node_state = runtime_observation.get("node_state")
+    binding = runtime_observation.get("binding")
+    probe_policy = runtime_observation.get("probe_policy")
+    if (
+        not isinstance(topology, Mapping)
+        or set(topology) != {"method", "text"}
+        or topology.get("method") != "nvidia-smi topo -m"
+        or not isinstance(topology.get("text"), str)
+        or not topology["text"]
+        or not isinstance(node_state, Mapping)
+        or set(node_state) != {"method", "text"}
+        or node_state.get("method") != "scontrol show node --oneliner HOSTNAME"
+        or not isinstance(node_state.get("text"), str)
+        or not node_state["text"]
+        or not isinstance(binding, Mapping)
+        or set(binding) != {"environment", "cpu_affinity", "cpu_affinity_method"}
+        or binding.get("cpu_affinity_method") != "sched_getaffinity"
+        or not isinstance(probe_policy, Mapping)
+        or set(probe_policy) != {"timeout_seconds", "max_output_bytes_per_stream"}
+        or isinstance(probe_policy.get("timeout_seconds"), bool)
+        or not isinstance(probe_policy.get("timeout_seconds"), int)
+        or probe_policy["timeout_seconds"] <= 0
+        or isinstance(probe_policy.get("max_output_bytes_per_stream"), bool)
+        or not isinstance(probe_policy.get("max_output_bytes_per_stream"), int)
+        or probe_policy["max_output_bytes_per_stream"] <= 0
+    ):
+        raise AnalysisValidationError(
+            f"replicated decision-gate host environment evidence is incomplete for cell {cell_id!r}"
+        )
+    environment = binding.get("environment")
+    affinity = binding.get("cpu_affinity")
+    if (
+        not isinstance(environment, Mapping)
+        or set(environment) != _BINDING_ENVIRONMENT_FIELDS
+        or any(value is not None and (not isinstance(value, str) or not value) for value in environment.values())
+        or not isinstance(affinity, list)
+        or not affinity
+        or any(isinstance(cpu, bool) or not isinstance(cpu, int) or cpu < 0 for cpu in affinity)
+        or affinity != sorted(set(affinity))
+    ):
+        raise AnalysisValidationError(
+            f"replicated decision-gate process binding evidence is incomplete for cell {cell_id!r}"
+        )
+    return {
+        "schema": runtime_observation["schema"],
+        "driver_version": driver_version,
+        "gpus": list(gpus),
+        "topology": dict(topology),
+        "node_state": dict(node_state),
+        "binding": dict(binding),
+        "observation_sha256": canonical_sha256(runtime_observation),
+    }
+
+
 def _physical_binding(
     manifest: RunManifest,
     frozen: FrozenRun,
@@ -502,10 +654,17 @@ def _physical_binding(
     runtime_observation = metadata.get("runtime_observation")
     if (
         not isinstance(runtime_observation, Mapping)
-        or runtime_observation.get("schema") != "commcanary.rostam.runtime-observation.v1"
+        or runtime_observation.get("schema") not in {_RUNTIME_OBSERVATION_SCHEMA_V1, _RUNTIME_OBSERVATION_SCHEMA_V2}
         or runtime_observation.get("runtime") != observed_runtime
     ):
         raise AnalysisValidationError(f"physical runtime observation is stale for cell {cell.id!r}")
+    replicated_environment: Optional[Dict[str, Any]] = None
+    if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2:
+        replicated_environment = _replicated_environment_binding(
+            runtime_observation,
+            world_size=physical.world_size,
+            cell_id=cell.id,
+        )
     attributes = physical.attributes
     if workload.measurement_schema == PHYSICAL_MICRO_MEASUREMENT_SCHEMA:
         if attributes.get("dtype") != _command_option(parameters, "--dtype") or attributes.get(
@@ -581,7 +740,10 @@ def _physical_binding(
             "qualification_verdict": "not_issued",
         }:
             raise AnalysisValidationError(f"physical qualification claims are stale for cell {cell.id!r}")
-    elif workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+    elif workload.measurement_schema in {
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
+    }:
         expected_attributes = {
             "request_id": parameters.get("expected_request_id"),
             "materialization_id": parameters.get("expected_materialization_id"),
@@ -604,6 +766,8 @@ def _physical_binding(
             "stratified_source_event_indices": parameters.get("expected_stratified_source_event_indices"),
             "world_size": parameters.get("world_size"),
         }
+        if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2:
+            expected_execution["allocation_block"] = cell.repetition
         if not isinstance(execution, Mapping) or any(
             execution.get(field) != expected for field, expected in expected_execution.items()
         ):
@@ -631,9 +795,14 @@ def _physical_binding(
             }
         ),
     }
-    if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA:
+    if workload.measurement_schema in {
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
+    }:
         binding["decision_gate"] = dict(attributes)
         binding["decision_gate_runtime"] = physical.runtime.to_dict()
+    if replicated_environment is not None:
+        binding["decision_gate_environment"] = replicated_environment
     return binding
 
 
@@ -1007,6 +1176,7 @@ def _build_aggregate(
         PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
         PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
         PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
         PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
     }:
         schema_ids.update(
@@ -1017,6 +1187,7 @@ def _build_aggregate(
                 PHYSICAL_OVERLAP_MEASUREMENT_SCHEMA,
                 PHYSICAL_CAPTURE_MEASUREMENT_SCHEMA,
                 PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+                PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
                 PHYSICAL_QUALIFICATION_MEASUREMENT_SCHEMA,
             }
         )

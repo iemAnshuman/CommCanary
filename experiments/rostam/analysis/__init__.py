@@ -16,6 +16,7 @@ from .decision_fidelity import (
     validate_decision_fidelity_policy,
     write_decision_fidelity_verdict,
 )
+from .decision_fidelity_v2 import evaluate_decision_fidelity_v2, validate_decision_fidelity_policy_v2
 from .pipeline import (
     AGGREGATE_CSV_FILENAME,
     AGGREGATE_JSON_FILENAME,
@@ -38,6 +39,7 @@ from .schemas import (
     LOCAL_FAIL_ONCE_MEASUREMENT_SCHEMA,
     LOCAL_PREPARE_MEASUREMENT_SCHEMA,
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
     MeasurementValidationError,
     ScalarMeasurement,
     validate_scalar_measurement,
@@ -63,6 +65,7 @@ __all__ = [
     "GeneratedPublication",
     "MeasurementValidationError",
     "PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA",
+    "PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2",
     "PersistedVerdictStaleError",
     "PreparedCrossCommitCompatibility",
     "PublicationMismatchError",
@@ -70,12 +73,14 @@ __all__ = [
     "compare_publication_to_golden",
     "decision_fidelity_policy_sha256",
     "evaluate_decision_fidelity",
+    "evaluate_decision_fidelity_v2",
     "analysis_implementation_record",
     "load_cross_commit_compatibility",
     "load_decision_fidelity_policy",
     "prepare_cross_commit_compatibility",
     "validate_scalar_measurement",
     "validate_decision_fidelity_policy",
+    "validate_decision_fidelity_policy_v2",
     "validate_schema_documents",
     "verify_regenerate_compare",
     "verify_regenerate_campaigns",

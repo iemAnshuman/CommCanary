@@ -1,0 +1,138 @@
+{
+  "$id": "commcanary.rostam.decision-fidelity-policy.v2",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "commcanary.rostam.decision-fidelity-policy.v2"},
+    "policy_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration_ids": {
+          "items": {"minLength": 1, "type": "string"},
+          "minItems": 2,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "representations": {
+          "additionalProperties": false,
+          "properties": {
+            "exact_work": {"const": "positive_conformance_control"},
+            "isolated": {"const": "incumbent_baseline"},
+            "no_overlap": {"const": "causal_ablation"},
+            "no_rank_skew": {"const": "causal_ablation"},
+            "source": {"const": "ground_truth"},
+            "stratified": {"const": "sampling_baseline"}
+          },
+          "required": ["exact_work", "isolated", "no_overlap", "no_rank_skew", "source", "stratified"],
+          "type": "object"
+        },
+        "supported_domain": {"minLength": 1, "type": "string"},
+        "workload_id": {"const": "decision-gate-exact-replicated"}
+      },
+      "required": ["configuration_ids", "representations", "supported_domain", "workload_id"],
+      "type": "object"
+    },
+    "measurement": {
+      "additionalProperties": false,
+      "properties": {
+        "allocation_blocks": {"maximum": 10, "minimum": 5, "type": "integer"},
+        "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-and-block"},
+        "block_pairing": {"const": "campaign-repetition-index"},
+        "max_relative_iqr_pct": {"maximum": 1000, "minimum": 0, "type": "number"},
+        "measured_repetitions": {"const": 24},
+        "order_method": {"const": "allocation-block-rotated-latin-cycle.v2"},
+        "required_correctness": {"const": "passed"},
+        "required_environment_evidence": {"const": ["cpu_affinity", "gpu_clocks", "gpu_persistence_mode", "gpu_power", "gpu_temperature", "node_state"]},
+        "require_distinct_job_ids": {"const": true},
+        "retry_policy": {"const": "infrastructure-failure-only-never-retry-for-noise"},
+        "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
+        "warmup": {"maximum": 100, "minimum": 0, "type": "integer"}
+      },
+      "required": ["allocation_blocks", "allocation_policy", "block_pairing", "max_relative_iqr_pct", "measured_repetitions", "order_method", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
+      "type": "object"
+    },
+    "comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_tie_threshold_us": {"minimum": 0, "type": "number"},
+        "classification_error_counting": {
+          "additionalProperties": false,
+          "properties": {
+            "opposite_direction": {"const": "one_false_negative_and_one_false_positive"},
+            "source_direction_candidate_tie": {"const": "false_negative"},
+            "source_tie_candidate_direction": {"const": "false_positive"}
+          },
+          "required": ["opposite_direction", "source_direction_candidate_tie", "source_tie_candidate_direction"],
+          "type": "object"
+        },
+        "configuration_pair_order": {"const": "lexicographic-unordered-pairs"},
+        "pair_label_method": {"const": "larger-of-absolute-or-relative-tie-band.v1"},
+        "primary_metric": {"const": "median-of-allocation-medians-us"},
+        "relative_threshold_reference": {"const": "smaller_pair_median"},
+        "relative_tie_threshold_pct": {"minimum": 0, "type": "number"},
+        "reported_metrics": {
+          "const": ["pairwise_ranking_agreement", "kendall_tau_b", "false_negative_count", "false_positive_count", "median_absolute_relative_error_pct", "p95_absolute_relative_error_pct", "median_execution_time_ratio_to_source"]
+        },
+        "uncertainty": {
+          "additionalProperties": false,
+          "properties": {
+            "boundary_crossing_outcome": {"const": "inconclusive"},
+            "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
+            "inner_unit": {"const": "measured-iteration-vector-within-cell"},
+            "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2"},
+            "outer_unit": {"const": "complete-allocation-block"},
+            "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
+            "seed": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"},
+            "simultaneous_scope": {"const": "all-pair-margins-and-reported-metrics"}
+          },
+          "required": ["boundary_crossing_outcome", "confidence", "inner_unit", "method", "outer_unit", "resamples", "seed", "simultaneous_scope"],
+          "type": "object"
+        }
+      },
+      "required": ["absolute_tie_threshold_us", "classification_error_counting", "configuration_pair_order", "pair_label_method", "primary_metric", "relative_threshold_reference", "relative_tie_threshold_pct", "reported_metrics", "uncertainty"],
+      "type": "object"
+    },
+    "pass_criteria": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_work_max_false_negative_count": {"minimum": 0, "type": "integer"},
+        "exact_work_max_false_positive_count": {"minimum": 0, "type": "integer"},
+        "exact_work_max_median_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "exact_work_max_p95_absolute_relative_error_pct": {"minimum": 0, "type": "number"},
+        "exact_work_min_agreement_advantage_pairs_over_isolated": {"minimum": 0, "type": "integer"},
+        "exact_work_min_agreement_advantage_pairs_over_stratified": {"minimum": 0, "type": "integer"},
+        "exact_work_min_kendall_tau_b": {"maximum": 1, "minimum": -1, "type": "number"},
+        "exact_work_min_pairwise_agreement": {"maximum": 1, "minimum": 0, "type": "number"}
+      },
+      "required": ["exact_work_max_false_negative_count", "exact_work_max_false_positive_count", "exact_work_max_median_absolute_relative_error_pct", "exact_work_max_p95_absolute_relative_error_pct", "exact_work_min_agreement_advantage_pairs_over_isolated", "exact_work_min_agreement_advantage_pairs_over_stratified", "exact_work_min_kendall_tau_b", "exact_work_min_pairwise_agreement"],
+      "type": "object"
+    },
+    "outcomes": {
+      "additionalProperties": false,
+      "properties": {
+        "fail": {"minLength": 1, "type": "string"},
+        "incomparable": {"minLength": 1, "type": "string"},
+        "inconclusive": {"minLength": 1, "type": "string"},
+        "pass": {"minLength": 1, "type": "string"}
+      },
+      "required": ["fail", "incomparable", "inconclusive", "pass"],
+      "type": "object"
+    },
+    "claim_boundary": {
+      "additionalProperties": false,
+      "properties": {
+        "cost_claim": {"const": "not_evaluated_by_exact_work_control"},
+        "exact_work_claim": {"const": "portable_reconstruction_positive_control"},
+        "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
+        "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"},
+        "mode": {"const": "exact_qualification_capsule"},
+        "reduced_canary_claim": {"const": "not_evaluated"}
+      },
+      "required": ["cost_claim", "exact_work_claim", "generality_claim", "independent_operator_claim", "mode", "reduced_canary_claim"],
+      "type": "object"
+    }
+  },
+  "required": ["schema", "policy_id", "scope", "measurement", "comparison", "pass_criteria", "outcomes", "claim_boundary"],
+  "type": "object"
+}

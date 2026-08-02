@@ -1,0 +1,103 @@
+{
+  "schema": "commcanary.rostam.decision-fidelity-policy.v2",
+  "policy_id": "b06aa21be9ce432ba2f76e89ebef19be355fdd3586ca2eb154e3ee776690b291",
+  "scope": {
+    "workload_id": "decision-gate-exact-replicated",
+    "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
+    "configuration_ids": [
+      "nccl-2.19.3-default",
+      "nccl-2.20.5-default",
+      "nccl-2.20.5-ring-ll",
+      "nccl-2.20.5-ring-ll128",
+      "nccl-2.20.5-ring-simple",
+      "nccl-2.20.5-tree-ll",
+      "nccl-2.20.5-tree-ll128",
+      "nccl-2.20.5-tree-simple"
+    ],
+    "representations": {
+      "source": "ground_truth",
+      "exact_work": "positive_conformance_control",
+      "stratified": "sampling_baseline",
+      "isolated": "incumbent_baseline",
+      "no_overlap": "causal_ablation",
+      "no_rank_skew": "causal_ablation"
+    }
+  },
+  "measurement": {
+    "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-and-block",
+    "allocation_blocks": 8,
+    "block_pairing": "campaign-repetition-index",
+    "order_method": "allocation-block-rotated-latin-cycle.v2",
+    "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
+    "warmup": 5,
+    "measured_repetitions": 24,
+    "required_correctness": "passed",
+    "max_relative_iqr_pct": 20.0,
+    "require_distinct_job_ids": true,
+    "required_environment_evidence": [
+      "cpu_affinity",
+      "gpu_clocks",
+      "gpu_persistence_mode",
+      "gpu_power",
+      "gpu_temperature",
+      "node_state"
+    ],
+    "retry_policy": "infrastructure-failure-only-never-retry-for-noise"
+  },
+  "comparison": {
+    "primary_metric": "median-of-allocation-medians-us",
+    "configuration_pair_order": "lexicographic-unordered-pairs",
+    "pair_label_method": "larger-of-absolute-or-relative-tie-band.v1",
+    "absolute_tie_threshold_us": 10.0,
+    "relative_tie_threshold_pct": 5.0,
+    "relative_threshold_reference": "smaller_pair_median",
+    "classification_error_counting": {
+      "source_direction_candidate_tie": "false_negative",
+      "source_tie_candidate_direction": "false_positive",
+      "opposite_direction": "one_false_negative_and_one_false_positive"
+    },
+    "uncertainty": {
+      "method": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2",
+      "confidence": 0.95,
+      "resamples": 10000,
+      "seed": 8241,
+      "outer_unit": "complete-allocation-block",
+      "inner_unit": "measured-iteration-vector-within-cell",
+      "simultaneous_scope": "all-pair-margins-and-reported-metrics",
+      "boundary_crossing_outcome": "inconclusive"
+    },
+    "reported_metrics": [
+      "pairwise_ranking_agreement",
+      "kendall_tau_b",
+      "false_negative_count",
+      "false_positive_count",
+      "median_absolute_relative_error_pct",
+      "p95_absolute_relative_error_pct",
+      "median_execution_time_ratio_to_source"
+    ]
+  },
+  "pass_criteria": {
+    "exact_work_min_pairwise_agreement": 0.8,
+    "exact_work_min_kendall_tau_b": 0.7,
+    "exact_work_max_false_negative_count": 1,
+    "exact_work_max_false_positive_count": 1,
+    "exact_work_max_median_absolute_relative_error_pct": 10.0,
+    "exact_work_max_p95_absolute_relative_error_pct": 15.0,
+    "exact_work_min_agreement_advantage_pairs_over_isolated": 2,
+    "exact_work_min_agreement_advantage_pairs_over_stratified": 2
+  },
+  "outcomes": {
+    "pass": "complete stable evidence satisfies every criterion with simultaneous confidence",
+    "fail": "complete stable evidence violates at least one criterion with simultaneous confidence",
+    "inconclusive": "simultaneous uncertainty crosses one or more required decision boundaries",
+    "incomparable": "allocation inventory, identity, correctness, or execution requirements are violated"
+  },
+  "claim_boundary": {
+    "mode": "exact_qualification_capsule",
+    "exact_work_claim": "portable_reconstruction_positive_control",
+    "reduced_canary_claim": "not_evaluated",
+    "cost_claim": "not_evaluated_by_exact_work_control",
+    "generality_claim": "not_evaluated_beyond_the_declared_supported_domain",
+    "independent_operator_claim": "not_evaluated_by_this_campaign"
+  }
+}

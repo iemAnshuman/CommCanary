@@ -8,12 +8,15 @@ import pytest
 from experiments.rostam import decision_gate_physical
 from experiments.rostam.analysis.schemas import (
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA,
+    PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
     MeasurementValidationError,
     validate_scalar_measurement,
 )
 from experiments.rostam.lib.physical_results import (
     DECISION_GATE_MEASUREMENT_SCHEMA,
     DECISION_GATE_PRODUCER_SCHEMA,
+    DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA,
+    DECISION_GATE_REPLICATED_PRODUCER_SCHEMA,
     PhysicalResultError,
     adapt_physical_measurement,
 )
@@ -99,6 +102,56 @@ def _adapt(payload: dict) -> dict:
     )
 
 
+def _replicated_payload(allocation_block: int) -> dict:
+    gathered = [
+        {
+            "rank": rank,
+            "timings_us": {
+                representation: [float(100 + index + rank) for index in range(24)]
+                for representation in decision_gate_physical.REPRESENTATION_IDS
+            },
+        }
+        for rank in range(4)
+    ]
+    return decision_gate_physical.result_payload(
+        request={"format": "commcanary.qualification_request.v2", "request_id": REQUEST_ID},
+        materialization_id=MATERIALIZATION_ID,
+        program_sha256=PROGRAM_SHA256,
+        policy={"format": "commcanary.qualification_policy.v1", "policy_id": POLICY_ID},
+        world_size=4,
+        iterations=24,
+        warmup=5,
+        source_event_count=8,
+        selected_indices=(0, 1),
+        gathered=gathered,
+        correctness_checks_per_rank=(2, 2, 2, 2),
+        runtime={
+            "torch_version": "2.4.1",
+            "torch_cuda_version": "12.1",
+            "runtime_nccl_version_code": 22005,
+            "distributed_backend": "nccl",
+        },
+        allocation_block=allocation_block,
+    )
+
+
+def _adapt_replicated(payload: dict, *, repetition: int) -> dict:
+    parameters = _parameters()
+    parameters["iterations"] = 24
+    parameters["warmup"] = 5
+    return adapt_physical_measurement(
+        measurement_schema=DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA,
+        producer_schema=DECISION_GATE_REPLICATED_PRODUCER_SCHEMA,
+        attempt_id="a-000001",
+        parameters=parameters,
+        stdout=json.dumps(payload),
+        stderr="",
+        wall_time_s=3.5,
+        runtime=_runtime(),
+        repetition=repetition,
+    )
+
+
 def test_decision_gate_adapter_recomputes_every_representation() -> None:
     measurement = _adapt(_payload())
 
@@ -126,6 +179,28 @@ def test_decision_gate_analysis_revalidates_nested_evidence() -> None:
         "format": "commcanary.qualification_policy.v1",
         "policy_id": POLICY_ID,
     }
+
+
+def test_replicated_decision_gate_binds_block_schedule_and_positive_control() -> None:
+    measurement = _adapt_replicated(_replicated_payload(2), repetition=2)
+
+    scalar = validate_scalar_measurement(
+        PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
+        DECISION_GATE_REPLICATED_PRODUCER_SCHEMA,
+        "a-000001",
+        measurement,
+    )
+
+    assert scalar.physical is not None
+    assert scalar.physical.attributes["execution"]["allocation_block"] == 2
+    assert scalar.physical.attributes["representations"]["exact_work"]["category"] == (
+        "positive_conformance_control"
+    )
+
+
+def test_replicated_decision_gate_rejects_cross_block_substitution() -> None:
+    with pytest.raises(PhysicalResultError, match="allocation block"):
+        _adapt_replicated(_replicated_payload(2), repetition=3)
 
 
 def test_decision_gate_analysis_refuses_rank_timing_tamper() -> None:

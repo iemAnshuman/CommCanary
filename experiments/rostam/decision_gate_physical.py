@@ -38,8 +38,10 @@ from commcanary.services import verify_qualification_request
 from .qualification_physical import stage_qualification_inputs
 
 DECISION_GATE_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v1"
+DECISION_GATE_REPLICATED_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v2"
 DECISION_GATE_TIMING_SEMANTICS = "maximum-rank-cuda-event-whole-program-duration"
 DECISION_GATE_ORDER_METHOD = "iteration-rotated-latin-cycle.v1"
+DECISION_GATE_REPLICATED_ORDER_METHOD = "allocation-block-rotated-latin-cycle.v2"
 STRATIFIED_METHOD = "first-observed-per-collective-shape.v1"
 REPRESENTATION_IDS = (
     "source",
@@ -56,6 +58,10 @@ REPRESENTATION_METADATA = {
     "isolated": ("incumbent_baseline", "full-message-sequence-blocking-all-reduce-no-compute"),
     "no_overlap": ("causal_ablation", "blocking-all-reduce-then-exact-rank-work"),
     "no_rank_skew": ("causal_ablation", "issue-rank-zero-work-on-every-rank-wait"),
+}
+REPLICATED_REPRESENTATION_METADATA = {
+    **REPRESENTATION_METADATA,
+    "exact_work": ("positive_conformance_control", "verified-materialization-issue-rank-work-wait"),
 }
 DEFAULT_DISTRIBUTED_TIMEOUT_SECONDS = 300
 _MAX_PROC_MAPS_BYTES = 4 * 1024 * 1024
@@ -93,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-policy-id", required=True)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--warmup", type=int, default=5)
+    parser.add_argument("--allocation-block", type=int)
     parser.add_argument(
         "--distributed-timeout-seconds",
         type=int,
@@ -254,8 +261,8 @@ def stratified_indices(events: Sequence[GateEvent]) -> Tuple[int, ...]:
     return tuple(selected)
 
 
-def representation_order(iteration: int) -> Tuple[str, ...]:
-    offset = iteration % len(REPRESENTATION_IDS)
+def representation_order(iteration: int, *, allocation_block: int = 0) -> Tuple[str, ...]:
+    offset = (allocation_block + iteration) % len(REPRESENTATION_IDS)
     return REPRESENTATION_IDS[offset:] + REPRESENTATION_IDS[:offset]
 
 
@@ -291,9 +298,12 @@ def result_payload(
     gathered: Sequence[Mapping[str, Any]],
     correctness_checks_per_rank: Sequence[int],
     runtime: Mapping[str, Any],
+    allocation_block: Optional[int] = None,
 ) -> Dict[str, Any]:
     if len(gathered) != world_size:
         raise SystemExit("decision-gate timing inventory does not cover the launched world")
+    if allocation_block is not None and allocation_block < 0:
+        raise SystemExit("allocation_block must be non-negative")
     representations: Dict[str, Any] = {}
     for representation in REPRESENTATION_IDS:
         by_rank: List[List[float]] = []
@@ -313,7 +323,8 @@ def result_payload(
         maxima = [max(by_rank[rank][iteration] for rank in range(world_size)) for iteration in range(iterations)]
         rounded_by_rank = [[round(value, 3) for value in values] for values in by_rank]
         rounded_maxima = [round(value, 3) for value in maxima]
-        category, semantics = REPRESENTATION_METADATA[representation]
+        metadata = REPRESENTATION_METADATA if allocation_block is None else REPLICATED_REPRESENTATION_METADATA
+        category, semantics = metadata[representation]
         if representation == "stratified":
             executed_events = len(selected_indices)
             template_count = len(selected_indices)
@@ -335,8 +346,31 @@ def result_payload(
                 "max_us": round(max(rounded_maxima), 3),
             },
         }
+    execution: Dict[str, Any] = {
+        "world_size": world_size,
+        "iterations": iterations,
+        "warmup": warmup,
+        "timing_semantics": DECISION_GATE_TIMING_SEMANTICS,
+        "order_method": (
+            DECISION_GATE_ORDER_METHOD
+            if allocation_block is None
+            else DECISION_GATE_REPLICATED_ORDER_METHOD
+        ),
+        "representation_order_by_iteration": [
+            list(representation_order(index, allocation_block=allocation_block or 0)) for index in range(iterations)
+        ],
+        "source_event_count": source_event_count,
+        "stratified_method": STRATIFIED_METHOD,
+        "stratified_source_event_indices": list(selected_indices),
+    }
+    if allocation_block is not None:
+        execution["allocation_block"] = allocation_block
     return {
-        "schema": DECISION_GATE_STDOUT_SCHEMA,
+        "schema": (
+            DECISION_GATE_STDOUT_SCHEMA
+            if allocation_block is None
+            else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
+        ),
         "request": {
             "format": request["format"],
             "request_id": request["request_id"],
@@ -349,17 +383,7 @@ def result_payload(
             "format": policy["format"],
             "policy_id": policy["policy_id"],
         },
-        "execution": {
-            "world_size": world_size,
-            "iterations": iterations,
-            "warmup": warmup,
-            "timing_semantics": DECISION_GATE_TIMING_SEMANTICS,
-            "order_method": DECISION_GATE_ORDER_METHOD,
-            "representation_order_by_iteration": [list(representation_order(index)) for index in range(iterations)],
-            "source_event_count": source_event_count,
-            "stratified_method": STRATIFIED_METHOD,
-            "stratified_source_event_indices": list(selected_indices),
-        },
+        "execution": execution,
         "runtime": dict(runtime),
         "correctness": {
             "status": "passed",
@@ -466,6 +490,7 @@ def _execute(
     iterations: int,
     warmup: int,
     timeout_seconds: int,
+    allocation_block: int,
 ) -> Tuple[Sequence[Mapping[str, Any]], Sequence[int], Mapping[str, Any]]:
     try:
         import torch  # type: ignore[import-not-found]
@@ -585,7 +610,7 @@ def _execute(
         timings: Dict[str, List[float]] = {name: [] for name in REPRESENTATION_IDS}
         for pass_index in range(-warmup, iterations):
             order_index = pass_index if pass_index >= 0 else pass_index + warmup
-            order = representation_order(order_index)
+            order = representation_order(order_index, allocation_block=allocation_block)
             for representation in order:
                 for tensor in communication.values():
                     tensor.zero_()
@@ -634,6 +659,11 @@ def run(args: argparse.Namespace) -> int:
         "distributed-timeout-seconds",
         maximum=3600,
     )
+    allocation_block = args.allocation_block
+    if allocation_block is not None and (
+        isinstance(allocation_block, bool) or not 0 <= allocation_block <= 999
+    ):
+        raise SystemExit("allocation-block must be an integer in [0, 999]")
     rank, world_size, local_rank = distributed_execution_environment(os.environ)
     sources = {
         "request_manifest": args.request_manifest,
@@ -683,6 +713,7 @@ def run(args: argparse.Namespace) -> int:
         iterations=iterations,
         warmup=args.warmup,
         timeout_seconds=timeout_seconds,
+        allocation_block=allocation_block or 0,
     )
     if rank == 0:
         payload = result_payload(
@@ -698,6 +729,7 @@ def run(args: argparse.Namespace) -> int:
             gathered=gathered,
             correctness_checks_per_rank=correctness,
             runtime=runtime,
+            allocation_block=allocation_block,
         )
         print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False), flush=True)
     return 0

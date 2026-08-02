@@ -75,6 +75,17 @@ def test_representation_order_rotates_every_measured_iteration() -> None:
     assert [order[0] for order in orders] == list(decision_gate_physical.REPRESENTATION_IDS)
 
 
+def test_replicated_schedule_balances_positions_and_rotates_block_start() -> None:
+    positions = {representation: [0] * 6 for representation in decision_gate_physical.REPRESENTATION_IDS}
+    for iteration in range(24):
+        order = decision_gate_physical.representation_order(iteration, allocation_block=3)
+        for position, representation in enumerate(order):
+            positions[representation][position] += 1
+
+    assert all(counts == [4, 4, 4, 4, 4, 4] for counts in positions.values())
+    assert decision_gate_physical.representation_order(0, allocation_block=1)[0] == "exact_work"
+
+
 def test_warmup_order_indices_rotate_before_measured_indices_restart() -> None:
     warmup = 5
     pass_indices = range(-warmup, 2)
@@ -150,6 +161,46 @@ def test_result_payload_recomputes_max_rank_metrics_and_retains_raw_samples(tmp_
     assert payload["representations"]["isolated"]["template_count"] == 2
     assert payload["correctness"]["total_check_count"] == 8
     assert payload["claims"]["physical_decision_fidelity"] == "not_analyzed"
+
+
+def test_replicated_payload_declares_positive_control_and_block_schedule(tmp_path: Path) -> None:
+    _trace, policy, request, materialization, plan = _gate_inputs(tmp_path)
+    gathered = [
+        {
+            "rank": rank,
+            "timings_us": {
+                representation: [float(index + rank + 1) for index in range(24)]
+                for representation in decision_gate_physical.REPRESENTATION_IDS
+            },
+        }
+        for rank in range(4)
+    ]
+
+    payload = decision_gate_physical.result_payload(
+        request=request,
+        materialization_id=materialization["materialization_id"],
+        program_sha256=plan.program_sha256,
+        policy=policy,
+        world_size=4,
+        iterations=24,
+        warmup=5,
+        source_event_count=8,
+        selected_indices=(0, 1),
+        gathered=gathered,
+        correctness_checks_per_rank=(2, 2, 2, 2),
+        runtime={
+            "torch_version": "2.4.1",
+            "torch_cuda_version": "12.1",
+            "runtime_nccl_version_code": 22005,
+            "distributed_backend": "nccl",
+        },
+        allocation_block=2,
+    )
+
+    assert payload["schema"] == "commcanary.rostam.decision-gate.stdout.v2"
+    assert payload["execution"]["allocation_block"] == 2
+    assert payload["execution"]["representation_order_by_iteration"][0][0] == "stratified"
+    assert payload["representations"]["exact_work"]["category"] == "positive_conformance_control"
 
 
 def test_main_accepts_forwarded_bootstrap_arguments(monkeypatch) -> None:

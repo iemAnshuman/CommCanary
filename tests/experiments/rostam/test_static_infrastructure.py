@@ -315,7 +315,7 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert catalog.site.partition == "cuda-A100"
     assert catalog.site.node_constraints == ("toranj1",)
     assert len(catalog.configurations) == 8
-    assert len(catalog.workloads) == 10
+    assert len(catalog.workloads) == 11
     core = catalog.profile("core")
     assert core.workload_ids == ("micro", "full", "trace-build", "canary-param")
     assert "canary-overlap" not in core.workload_ids
@@ -385,6 +385,20 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert decision_parameters["expected_stratified_source_event_indices"] == [0, 1]
     assert decision_parameters["decision_fidelity_policy_id"] == (
         "43f1daff9a07c3ef4732c67747f409fcdcbf012f7f7115b91b356484a26f4113"
+    )
+
+    replicated = catalog.profile("decision-gate-exact-replicated")
+    assert replicated.configuration_ids == tuple(configuration.id for configuration in catalog.configurations)
+    assert replicated.workload_ids == ("decision-gate-exact-replicated",)
+    replicated_workload = catalog.selected_workloads(replicated)[0]
+    replicated_parameters = replicated_workload.parameters.to_value()
+    replicated_command = replicated_parameters["command"]
+    assert replicated_workload.measurement_schema.endswith("decision-gate-measurement.v2")
+    assert replicated_parameters["allocation_blocks"] == 8
+    assert replicated_parameters["iterations"] == 24
+    assert replicated_command[replicated_command.index("--allocation-block") + 1] == "{repetition}"
+    assert replicated_parameters["decision_fidelity_policy_id"] == (
+        "b06aa21be9ce432ba2f76e89ebef19be355fdd3586ca2eb154e3ee776690b291"
     )
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -943,7 +957,10 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
         "decision-gate-wheel",
     ):
         path = tmp_path / input_id
-        path.write_bytes(b"reviewed-decision-input")
+        if input_id == "decision-fidelity-policy":
+            path.write_bytes((EXPERIMENT_DIRECTORY / "policies" / "decision-fidelity-gate-v1.json").read_bytes())
+        else:
+            path.write_bytes(b"reviewed-decision-input")
         inputs[input_id] = path
     campaign = build_campaign(
         catalog=load_catalog(CATALOG_PATH),
@@ -968,6 +985,80 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
     assert set(policy["script_hashes"]) == {path.name for path in EXPERIMENT_DIRECTORY.glob("*.sbatch")}
     assert policy["executor"]["artifact_input_id"] == EXECUTOR_ARTIFACT_INPUT_ID
     assert policy["executor"]["source_file_count"] > 20
+
+
+def test_replicated_decision_gate_profile_expands_complete_allocation_blocks(tmp_path: Path) -> None:
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    for input_id in (
+        "decision-fidelity-policy",
+        "decision-gate-canary",
+        "decision-gate-fidelity",
+        "decision-gate-materialization-manifest",
+        "decision-gate-qualification-policy",
+        "decision-gate-replay-program",
+        "decision-gate-request-manifest",
+        "decision-gate-source-trace",
+        "decision-gate-wheel",
+    ):
+        path = tmp_path / input_id
+        if input_id == "decision-fidelity-policy":
+            path.write_bytes((EXPERIMENT_DIRECTORY / "policies" / "decision-fidelity-gate-v2.json").read_bytes())
+        else:
+            path.write_bytes(b"reviewed-replicated-decision-input")
+        inputs[input_id] = path
+    campaign = build_campaign(
+        catalog=load_catalog(CATALOG_PATH),
+        catalog_path=CATALOG_PATH,
+        profile_id="decision-gate-exact-replicated",
+        run_id="rostam-decision-gate-replicated-static-fixture",
+        repetitions=8,
+        repository_commit="1" * 40,
+        repository_dirty=False,
+        repository_patch_sha256=None,
+        source_archive_sha256="2" * 64,
+        inputs=inputs,
+    )
+    manifest = build_run_manifest(campaign)
+
+    assert len(manifest.cells) == 64
+    assert {cell.repetition for cell in manifest.cells} == set(range(8))
+    for repetition in range(8):
+        assert len([cell for cell in manifest.cells if cell.repetition == repetition]) == 8
+
+
+def test_replicated_decision_gate_profile_refuses_wrong_allocation_block_count(tmp_path: Path) -> None:
+    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    for input_id in (
+        "decision-fidelity-policy",
+        "decision-gate-canary",
+        "decision-gate-fidelity",
+        "decision-gate-materialization-manifest",
+        "decision-gate-qualification-policy",
+        "decision-gate-replay-program",
+        "decision-gate-request-manifest",
+        "decision-gate-source-trace",
+        "decision-gate-wheel",
+    ):
+        path = tmp_path / input_id
+        if input_id == "decision-fidelity-policy":
+            path.write_bytes((EXPERIMENT_DIRECTORY / "policies" / "decision-fidelity-gate-v2.json").read_bytes())
+        else:
+            path.write_bytes(b"reviewed-replicated-decision-input")
+        inputs[input_id] = path
+
+    with pytest.raises(CampaignPreparationError, match="exactly 8 campaign repetitions"):
+        build_campaign(
+            catalog=load_catalog(CATALOG_PATH),
+            catalog_path=CATALOG_PATH,
+            profile_id="decision-gate-exact-replicated",
+            run_id="rostam-decision-gate-replicated-wrong-block-count",
+            repetitions=7,
+            repository_commit="1" * 40,
+            repository_dirty=False,
+            repository_patch_sha256=None,
+            source_archive_sha256="2" * 64,
+            inputs=inputs,
+        )
 
 
 def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Path) -> None:
