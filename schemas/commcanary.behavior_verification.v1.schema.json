@@ -413,6 +413,7 @@
         "status": {
           "enum": [
             "source_verified",
+            "partial_source_verified",
             "failed"
           ]
         },
@@ -420,6 +421,12 @@
           "enum": [
             "source_corresponding",
             "internally_consistent"
+          ]
+        },
+        "source_coverage": {
+          "enum": [
+            "full",
+            "partial"
           ]
         },
         "checks": {

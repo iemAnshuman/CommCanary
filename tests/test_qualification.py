@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 
+import commcanary.qualification_io as qualification_io_module
 from commcanary.artifacts import (
     qualification_materialization_sha256,
     qualification_request_sha256,
     validate_qualification_request,
 )
-from commcanary.compiler import compile_trace
+from commcanary.compiler import compile_trace, verify_canary_fidelity
 from commcanary.errors import CommCanaryError, SchemaError
 from commcanary.resources import ResourceLimits
 from commcanary.services import (
@@ -88,9 +89,73 @@ def test_prepare_and_verify_binds_exact_rank_local_work_without_calibration(
     assert target["source_overlap_observation"] == "bound-not-duration-paced"
     assert target["overlap_structure"] == "async-issue-exact-rank-work-explicit-wait"
     assert target["privacy_disclosure"] == "gemm-shapes-and-dtypes-revealed"
+    assert target["communication_inventory_source"] == "full-generated-program"
+    assert target["communication_operations"] == ["all_reduce"]
+    assert target["communication_dtypes"] == ["float32"]
+    assert target["communication_reduction_ops"] == ["sum"]
+    assert target["communication_message_shapes"] == [
+        {
+            "operation": "all_reduce",
+            "dtype": "float32",
+            "world_size": 4,
+            "in_msg_size": 32768,
+            "out_msg_size": 32768,
+        }
+    ]
     assert "compute_fill_dtype" not in target
     assert "compute_fill_gemm_dim" not in target
     assert verify_qualification_request(str(bundle)) == request
+
+
+def test_partial_canary_cannot_qualify_unseen_suffix_semantics(tmp_path: Path) -> None:
+    trace = qualification_trace()
+    for event in trace["events"][3:]:
+        event["dtype"] = "float16"
+        event["reduction_op"] = "max"
+        event["bytes"] = event["metadata"]["kineto_in_msg_nelems"] * 2
+    prefix_canary = compile_trace(trace, max_events=3)
+
+    fidelity = verify_canary_fidelity(trace, prefix_canary)
+    assert fidelity["status"] == "partial_source_verified"
+    assert fidelity["source_coverage"] == "partial"
+    with pytest.raises(SchemaError, match="requires full source coverage"):
+        prepare_qualification_request(
+            str(tmp_path / "partial-request"),
+            trace,
+            prefix_canary,
+            qualification_policy(),
+        )
+    assert not (tmp_path / "partial-request").exists()
+
+
+def test_verifier_rejects_a_rehashed_partial_canary_bundle(tmp_path: Path) -> None:
+    trace = qualification_trace()
+    for event in trace["events"][3:]:
+        event["dtype"] = "float16"
+        event["reduction_op"] = "max"
+        event["bytes"] = event["metadata"]["kineto_in_msg_nelems"] * 2
+    bundle = tmp_path / "request"
+    request = prepare_qualification_request(
+        str(bundle),
+        trace,
+        compile_trace(trace),
+        qualification_policy(),
+    )
+    prefix_canary = compile_trace(trace, max_events=3)
+    canary_path = bundle / "canary.json"
+    fidelity_path = bundle / "fidelity.json"
+    _write_json(canary_path, prefix_canary)
+    _write_json(fidelity_path, verify_canary_fidelity(trace, prefix_canary))
+    _refresh_reference(request, "canary", canary_path)
+    _refresh_reference(request, "fidelity_verification", fidelity_path)
+    compiler = prefix_canary["compiler"]
+    for field in request["bindings"]:
+        request["bindings"][field] = compiler[field]
+    request["request_id"] = qualification_request_sha256(request)
+    _write_json(bundle / "qualification-request.json", request)
+
+    with pytest.raises(SchemaError, match="requires full source coverage"):
+        verify_qualification_request(str(bundle))
 
 
 def test_historical_v1_physical_request_remains_verifiable() -> None:
@@ -409,6 +474,34 @@ def test_materialization_is_deterministic_exact_work_not_an_execution_claim(
             "markers": ["commcanary:qualification:complete:tp0:all_reduce"],
         }
     assert verify_qualification_materialization(str(bundle), str(output)) == materialization
+
+
+def test_materialization_uses_the_verified_single_read_request_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle, request = _prepare(tmp_path / "request")
+    source_path = bundle / "source.trace.json"
+    source_sha256 = request["artifacts"]["source_trace"]["sha256"]
+    real_decode = qualification_io_module.decode_bounded_json_bytes
+    mutated = False
+
+    def decode_then_mutate(raw: bytes, **kwargs: object) -> object:
+        nonlocal mutated
+        if not mutated and hashlib.sha256(raw).hexdigest() == source_sha256:
+            mutated = True
+            source_path.write_bytes(b"{}")
+        return real_decode(raw, **kwargs)
+
+    monkeypatch.setattr(qualification_io_module, "decode_bounded_json_bytes", decode_then_mutate)
+    output = tmp_path / "materialization"
+    materialization = materialize_qualification(str(bundle), str(output))
+
+    assert mutated
+    assert materialization["compute_work"]["event_count"] == 6
+    assert materialization["program"]["entry_count"] == 19
+    with pytest.raises(SchemaError, match="bytes do not match manifest"):
+        verify_qualification_request(str(bundle))
 
 
 def test_materialization_refuses_existing_output_and_detects_program_tampering(

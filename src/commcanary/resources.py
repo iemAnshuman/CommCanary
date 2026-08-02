@@ -158,7 +158,7 @@ def load_bounded_json(
     verifies that the resulting tree contains only JSON-native values.
     """
 
-    return _decode_bounded_json(_read_bounded_json_bytes(path, limits=limits), limits=limits)
+    return decode_bounded_json_bytes(_read_bounded_json_bytes(path, limits=limits), limits=limits)
 
 
 def load_bounded_json_with_identity(
@@ -169,7 +169,7 @@ def load_bounded_json_with_identity(
     """Decode once and return the exact source-byte SHA-256 and size."""
 
     raw = _read_bounded_json_bytes(path, limits=limits)
-    data = _decode_bounded_json(raw, limits=limits)
+    data = decode_bounded_json_bytes(raw, limits=limits)
     return data, hashlib.sha256(raw).hexdigest(), len(raw)
 
 
@@ -181,7 +181,17 @@ def _read_bounded_json_bytes(path: str, *, limits: ResourceLimits) -> bytes:
     return raw
 
 
-def _decode_bounded_json(raw: bytes, *, limits: ResourceLimits) -> Any:
+def decode_bounded_json_bytes(
+    raw: bytes,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> Any:
+    """Decode one already-read bounded JSON byte snapshot."""
+
+    if not isinstance(raw, bytes):
+        raise TypeError("raw JSON input must be bytes")
+    if len(raw) > limits.max_input_bytes:
+        raise JsonResourceError(f"input exceeds max_input_bytes={limits.max_input_bytes}")
     text = raw.decode("utf-8")
     preflight_json_depth(text, max_depth=limits.max_json_depth)
     data = json.loads(

@@ -176,9 +176,7 @@ def validate_qualification_request(
             raise SchemaError("qualification request decision_policy.outcomes must name the canonical four states")
 
     target = _mapping(request.get("target_execution"), "qualification request target_execution")
-    _require_exact_fields(
-        target,
-        {
+    base_target_fields = {
             "materialization",
             "program_encoding",
             "executor_contract",
@@ -203,9 +201,22 @@ def validate_qualification_request(
             "timestamp_pacing",
             "privacy_disclosure",
             "physical_observation",
-        },
-        "qualification request target_execution",
-    )
+    }
+    inventory_fields = {
+        "communication_inventory_source",
+        "communication_operations",
+        "communication_message_shapes",
+    }
+    allowed_target_fields = {
+        frozenset(base_target_fields),
+        frozenset(base_target_fields | inventory_fields),
+    }
+    if frozenset(target) not in allowed_target_fields:
+        _require_exact_fields(
+            target,
+            base_target_fields | inventory_fields,
+            "qualification request target_execution",
+        )
     expected_fixed_target = {
         "materialization": "deterministic_from_verified_request",
         "program_encoding": QUALIFICATION_PROGRAM_ENCODING,
@@ -249,6 +260,55 @@ def validate_qualification_request(
         raise SchemaError(
             "qualification request target_execution.communication_reduction_ops must be sorted and unique"
         )
+    if inventory_fields <= set(target):
+        if target.get("communication_inventory_source") != "full-generated-program":
+            raise SchemaError(
+                "qualification request target_execution.communication_inventory_source is unsupported"
+            )
+        raw_operations = target.get("communication_operations")
+        supported_operations = {"all_reduce", "all_gather", "reduce_scatter", "all_to_all", "broadcast"}
+        if (
+            not isinstance(raw_operations, list)
+            or not raw_operations
+            or any(not isinstance(value, str) or value not in supported_operations for value in raw_operations)
+            or raw_operations != sorted(set(raw_operations))
+        ):
+            raise SchemaError(
+                "qualification request target_execution.communication_operations must be a sorted unique list"
+            )
+        raw_shapes = target.get("communication_message_shapes")
+        if not isinstance(raw_shapes, list) or not raw_shapes:
+            raise SchemaError(
+                "qualification request target_execution.communication_message_shapes must be a non-empty list"
+            )
+        normalized_shapes = []
+        for index, raw_shape in enumerate(raw_shapes):
+            shape = _mapping(
+                raw_shape,
+                f"qualification request target_execution.communication_message_shapes[{index}]",
+            )
+            _require_exact_fields(
+                shape,
+                {"operation", "dtype", "world_size", "in_msg_size", "out_msg_size"},
+                f"qualification request target_execution.communication_message_shapes[{index}]",
+            )
+            operation = shape.get("operation")
+            if not isinstance(operation, str) or operation not in supported_operations:
+                raise SchemaError("qualification request communication message shape operation is unsupported")
+            dtype = require_param_dtype(
+                shape.get("dtype"),
+                label="qualification request communication message shape dtype",
+            )
+            world_size = as_int(shape.get("world_size"))
+            in_msg_size = as_int(shape.get("in_msg_size"))
+            out_msg_size = as_int(shape.get("out_msg_size"))
+            if world_size <= 0 or in_msg_size <= 0 or out_msg_size <= 0:
+                raise SchemaError("qualification request communication message shapes must be positive")
+            normalized_shapes.append((operation, dtype, world_size, in_msg_size, out_msg_size))
+        if normalized_shapes != sorted(set(normalized_shapes)):
+            raise SchemaError(
+                "qualification request target_execution.communication_message_shapes must be sorted and unique"
+            )
     validate_sha256(
         target.get("compute_recipe_projection_sha256"),
         "qualification request target_execution.compute_recipe_projection_sha256",

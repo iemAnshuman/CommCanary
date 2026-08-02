@@ -29,7 +29,7 @@ from .qualification import (
     QUALIFICATION_COMPUTE_RECIPE_PROJECTION,
 )
 from .trace import validate_trace
-from .wire import JsonDict, as_float, as_int, normalize_ranks
+from .wire import SUPPORTED_REDUCTION_OPS, JsonDict, as_float, as_int, normalize_ranks
 
 
 def qualification_compute_recipe_audit(
@@ -248,6 +248,60 @@ def trace_to_qualification_program(
     return entries, audit
 
 
+def qualification_program_communication_inventory(
+    entries: List[JsonDict],
+) -> JsonDict:
+    """Describe the communication semantics present in a generated program."""
+
+    operations: Set[str] = set()
+    dtypes: Set[str] = set()
+    reduction_ops: Set[str] = set()
+    message_shapes: Set[Tuple[str, str, int, int, int]] = set()
+    supported_operations = set(PARAM_COLLECTIVE_OP_NAMES.values())
+    for index, entry in enumerate(entries):
+        operation = entry.get("comms")
+        if operation in {None, "init", "wait"}:
+            continue
+        if not isinstance(operation, str) or operation not in supported_operations:
+            raise SchemaError(f"qualification program entry {index} has an unsupported communication operation")
+        dtype = require_param_dtype(
+            entry.get("dtype"),
+            label=f"qualification program entry {index} communication dtype",
+        )
+        world_size = as_int(entry.get("world_size"))
+        in_msg_size = as_int(entry.get("in_msg_size"))
+        out_msg_size = as_int(entry.get("out_msg_size"))
+        if world_size <= 0 or in_msg_size <= 0 or out_msg_size <= 0:
+            raise SchemaError(f"qualification program entry {index} has a non-positive message shape")
+        reduction_op = entry.get("reduction_op")
+        if operation in {"all_reduce", "reduce_scatter"}:
+            if not isinstance(reduction_op, str) or reduction_op not in SUPPORTED_REDUCTION_OPS:
+                raise SchemaError(f"qualification program entry {index} lacks a supported reduction operator")
+            reduction_ops.add(reduction_op)
+        elif reduction_op is not None:
+            raise SchemaError(f"qualification program entry {index} attaches reduction semantics to {operation}")
+        operations.add(operation)
+        dtypes.add(dtype)
+        message_shapes.add((operation, dtype, world_size, in_msg_size, out_msg_size))
+    if not operations:
+        raise SchemaError("qualification program contains no communication operations")
+    return {
+        "communication_operations": sorted(operations),
+        "communication_dtypes": sorted(dtypes),
+        "communication_reduction_ops": sorted(reduction_ops),
+        "communication_message_shapes": [
+            {
+                "operation": operation,
+                "dtype": dtype,
+                "world_size": world_size,
+                "in_msg_size": in_msg_size,
+                "out_msg_size": out_msg_size,
+            }
+            for operation, dtype, world_size, in_msg_size, out_msg_size in sorted(message_shapes)
+        ],
+    }
+
+
 def _require_qualification_trace(
     trace: Mapping[str, Any],
     *,
@@ -411,5 +465,6 @@ __all__ = [
     "qualification_compute_recipe_audit",
     "qualification_compute_tensor_bytes",
     "qualification_compute_tensor_elements",
+    "qualification_program_communication_inventory",
     "trace_to_qualification_program",
 ]

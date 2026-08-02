@@ -302,14 +302,14 @@ def test_preflight_binds_the_exact_parsed_program_after_directory_verification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request, materialization = _prepared_materialization(tmp_path)
-    real_verify = execution_module.verify_qualification_materialization
+    real_load = execution_module.load_verified_qualification_materialization
 
-    def verify_then_mutate(
+    def load_then_mutate(
         request_directory: str,
         materialization_directory: str,
         **kwargs: Any,
-    ) -> dict[str, Any]:
-        result = real_verify(
+    ) -> Any:
+        result = real_load(
             request_directory,
             materialization_directory,
             **kwargs,
@@ -326,15 +326,16 @@ def test_preflight_binds_the_exact_parsed_program_after_directory_verification(
 
     monkeypatch.setattr(
         execution_module,
-        "verify_qualification_materialization",
-        verify_then_mutate,
+        "load_verified_qualification_materialization",
+        load_then_mutate,
     )
-    with pytest.raises(SchemaError, match="changed after materialization verification"):
-        preflight_qualification_execution(
-            str(request),
-            str(materialization),
-            world_size=4,
-        )
+    plan = preflight_qualification_execution(
+        str(request),
+        str(materialization),
+        world_size=4,
+    )
+    compute_entry = next(entry for entry in plan.entries if entry.get("compute") == "gemm_recipe")
+    assert compute_entry["recipe_by_rank"]["0"][0]["m"] == 2
 
 
 def test_injected_runtime_executes_bound_mixed_dtype_program_and_aggregates_all_ranks(

@@ -183,6 +183,23 @@
         "upstream_param_compatibility": {
           "const": "not_claimed"
         },
+        "communication_inventory_source": {
+          "const": "full-generated-program"
+        },
+        "communication_operations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "all_reduce",
+              "all_gather",
+              "reduce_scatter",
+              "all_to_all",
+              "broadcast"
+            ]
+          }
+        },
         "communication_dtype_source": {
           "const": "source-bound-per-event"
         },
@@ -212,6 +229,33 @@
         },
         "communication_message_shape_source": {
           "const": "source-validated-per-event"
+        },
+        "communication_message_shapes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["operation", "dtype", "world_size", "in_msg_size", "out_msg_size"],
+            "properties": {
+              "operation": {
+                "enum": ["all_reduce", "all_gather", "reduce_scatter", "all_to_all", "broadcast"]
+              },
+              "dtype": {
+                "$ref": "#/$defs/paramDtype"
+              },
+              "world_size": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+              },
+              "in_msg_size": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+              },
+              "out_msg_size": {
+                "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"
+              }
+            },
+            "additionalProperties": false
+          }
         },
         "all_to_all_split_policy": {
           "const": "equal-split-only"
@@ -255,6 +299,11 @@
         "physical_observation": {
           "const": "required_before_qualification_verdict"
         }
+      },
+      "dependentRequired": {
+        "communication_inventory_source": ["communication_operations", "communication_message_shapes"],
+        "communication_operations": ["communication_inventory_source", "communication_message_shapes"],
+        "communication_message_shapes": ["communication_inventory_source", "communication_operations"]
       },
       "additionalProperties": false
     }

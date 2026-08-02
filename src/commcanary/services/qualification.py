@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import os
-import stat
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Tuple
 
 from ..artifacts import (
     SENSITIVE_JSON_POLICY,
     atomic_write_json,
-    load_json,
     validate_canary,
     validate_qualification_policy,
     validate_trace,
@@ -33,10 +29,14 @@ from ..artifacts.qualification import (
     qualification_request_sha256,
     validate_qualification_request,
 )
-from ..artifacts.qualification_program import qualification_compute_recipe_audit
+from ..artifacts.qualification_program import (
+    qualification_program_communication_inventory,
+    trace_to_qualification_program,
+)
 from ..artifacts.wire import JsonDict, as_int, normalize_ranks
 from ..errors import CommCanaryIOError, SchemaError
 from ..formats import QUALIFICATION_REQUEST_FORMAT, QUALIFICATION_REQUEST_V1_FORMAT
+from ..qualification_io import VerifiedDirectory
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..verification.canary import verify_canary_fidelity
 from ..version import package_version
@@ -47,6 +47,17 @@ _IMMUTABLE_QUALIFICATION_JSON_POLICY = replace(
     create_parents=False,
     overwrite=False,
 )
+
+
+@dataclass(frozen=True)
+class VerifiedQualificationInputs:
+    """Request inputs parsed from one descriptor-bound bundle snapshot."""
+
+    request: JsonDict
+    trace: JsonDict
+    canary: JsonDict
+    manifest_sha256: str
+    manifest_size_bytes: int
 
 
 def prepare_qualification_request(
@@ -62,6 +73,7 @@ def prepare_qualification_request(
     validate_trace(trace, require_known_overlap=True, limits=limits)
     validate_canary(canary, limits=limits)
     validate_qualification_policy(policy, limits=limits)
+    _require_full_source_coverage(trace, canary, label="qualification request")
     fidelity = verify_canary_fidelity(trace, canary, limits=limits)
     if fidelity.get("status") != "source_verified":
         raise SchemaError("qualification request requires source-verified canary fidelity")
@@ -72,7 +84,14 @@ def prepare_qualification_request(
         limits=limits,
     )
     _validate_source_message_shapes(trace)
-    compute_audit = qualification_compute_recipe_audit(trace, limits=limits)
+    program, compute_audit = trace_to_qualification_program(trace, limits=limits)
+    communication_inventory = qualification_program_communication_inventory(program)
+    if materialization["communication_dtypes"] != communication_inventory["communication_dtypes"]:
+        raise SchemaError("qualification canary communication dtypes do not match the full generated program")
+    if materialization["communication_reduction_ops"] != communication_inventory["communication_reduction_ops"]:
+        raise SchemaError(
+            "qualification canary communication reduction operators do not match the full generated program"
+        )
 
     output = Path(output_directory)
     _create_new_bundle_directory(output)
@@ -140,11 +159,14 @@ def prepare_qualification_request(
             "executor_contract": QUALIFICATION_EXECUTOR_CONTRACT,
             "execution_adapter": QUALIFICATION_EXECUTION_ADAPTER,
             "upstream_param_compatibility": QUALIFICATION_UPSTREAM_PARAM_COMPATIBILITY,
+            "communication_inventory_source": "full-generated-program",
+            "communication_operations": communication_inventory["communication_operations"],
             "communication_dtype_source": "source-bound-per-event",
-            "communication_dtypes": materialization["communication_dtypes"],
+            "communication_dtypes": communication_inventory["communication_dtypes"],
             "communication_reduction_source": "source-bound-per-event",
-            "communication_reduction_ops": materialization["communication_reduction_ops"],
+            "communication_reduction_ops": communication_inventory["communication_reduction_ops"],
             "communication_message_shape_source": "source-validated-per-event",
+            "communication_message_shapes": communication_inventory["communication_message_shapes"],
             "all_to_all_split_policy": "equal-split-only",
             "rank_arrival_timing": "emerges-from-source-bound-rank-local-work",
             "compute_work_source": "source-bound-per-rank-exact-recipe",
@@ -179,37 +201,56 @@ def verify_qualification_request(
 ) -> JsonDict:
     """Verify exact inventory, bytes, semantic bindings, and source fidelity."""
 
-    directory = Path(bundle_directory)
-    _validate_bundle_directory(directory)
-    manifest_path = directory / QUALIFICATION_REQUEST_FILENAME
-    _require_regular_file(manifest_path)
-    request = load_json(str(manifest_path), limits=limits)
-    validate_qualification_request(request, limits=limits)
-    is_current = request["format"] == QUALIFICATION_REQUEST_FORMAT
-    if request["format"] not in {QUALIFICATION_REQUEST_FORMAT, QUALIFICATION_REQUEST_V1_FORMAT}:
-        raise SchemaError("qualification bundle request format is unsupported")
-    artifact_paths = QUALIFICATION_ARTIFACT_PATHS if is_current else QUALIFICATION_ARTIFACT_PATHS_V1
-    artifact_formats = QUALIFICATION_ARTIFACT_FORMATS if is_current else QUALIFICATION_ARTIFACT_FORMATS_V1
-    expected_names = {QUALIFICATION_REQUEST_FILENAME, *artifact_paths.values()}
-    observed_names = {entry.name for entry in directory.iterdir()}
-    if observed_names != expected_names:
-        missing = sorted(expected_names - observed_names)
-        unexpected = sorted(observed_names - expected_names)
-        raise SchemaError(f"qualification bundle inventory mismatch: missing={missing!r}, unexpected={unexpected!r}")
-    for name in sorted(expected_names):
-        _require_regular_file(directory / name)
+    verified = load_verified_qualification_inputs(bundle_directory, limits=limits)
+    return copy.deepcopy(verified.request)
 
-    artifacts = request["artifacts"]
-    loaded: dict[str, JsonDict] = {}
-    for artifact_id in artifact_paths:
-        reference = artifacts[artifact_id]
-        path = directory / artifact_paths[artifact_id]
-        observed_sha256, observed_size = _bounded_file_identity(path, limits=limits)
-        if observed_sha256 != reference["sha256"] or observed_size != reference["size_bytes"]:
-            raise SchemaError(f"qualification bundle artifact {artifact_id!r} bytes do not match manifest")
-        loaded[artifact_id] = load_json(str(path), limits=limits)
-        if reference["format"] != artifact_formats[artifact_id]:
-            raise SchemaError(f"qualification bundle artifact {artifact_id!r} format is unsupported")
+
+def load_verified_qualification_inputs(
+    bundle_directory: str,
+    *,
+    limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
+) -> VerifiedQualificationInputs:
+    """Return all executable inputs from the exact bytes verified together."""
+
+    directory = Path(bundle_directory)
+    with VerifiedDirectory(directory, label="qualification bundle") as opened:
+        manifest_snapshot = opened.read_json(
+            QUALIFICATION_REQUEST_FILENAME,
+            limits=limits,
+            require_object=True,
+        )
+        request = manifest_snapshot.value
+        validate_qualification_request(request, limits=limits)
+        is_current = request["format"] == QUALIFICATION_REQUEST_FORMAT
+        if request["format"] not in {QUALIFICATION_REQUEST_FORMAT, QUALIFICATION_REQUEST_V1_FORMAT}:
+            raise SchemaError("qualification bundle request format is unsupported")
+        artifact_paths = QUALIFICATION_ARTIFACT_PATHS if is_current else QUALIFICATION_ARTIFACT_PATHS_V1
+        artifact_formats = QUALIFICATION_ARTIFACT_FORMATS if is_current else QUALIFICATION_ARTIFACT_FORMATS_V1
+        expected_names = {QUALIFICATION_REQUEST_FILENAME, *artifact_paths.values()}
+        observed_names = opened.names()
+        if observed_names != expected_names:
+            missing = sorted(expected_names - observed_names)
+            unexpected = sorted(observed_names - expected_names)
+            raise SchemaError(
+                f"qualification bundle inventory mismatch: missing={missing!r}, unexpected={unexpected!r}"
+            )
+
+        artifacts = request["artifacts"]
+        loaded: dict[str, JsonDict] = {}
+        for artifact_id in artifact_paths:
+            reference = artifacts[artifact_id]
+            snapshot = opened.read_json(
+                artifact_paths[artifact_id],
+                limits=limits,
+                require_object=True,
+            )
+            if snapshot.sha256 != reference["sha256"] or snapshot.size_bytes != reference["size_bytes"]:
+                raise SchemaError(f"qualification bundle artifact {artifact_id!r} bytes do not match manifest")
+            loaded[artifact_id] = snapshot.value
+            if reference["format"] != artifact_formats[artifact_id]:
+                raise SchemaError(f"qualification bundle artifact {artifact_id!r} format is unsupported")
+        if opened.names() != observed_names:
+            raise SchemaError("qualification bundle inventory changed while it was verified")
 
     if is_current:
         policy = loaded["qualification_policy"]
@@ -221,8 +262,13 @@ def verify_qualification_request(
     canary = loaded["canary"]
     validate_trace(trace, require_known_overlap=True, limits=limits)
     validate_canary(canary, limits=limits)
+    _require_full_source_coverage(trace, canary, label="qualification bundle")
     expected_fidelity = verify_canary_fidelity(trace, canary, limits=limits)
-    if loaded["fidelity_verification"] != expected_fidelity:
+    stored_fidelity = loaded["fidelity_verification"]
+    comparable_fidelity = copy.deepcopy(expected_fidelity)
+    if "source_coverage" not in stored_fidelity:
+        comparable_fidelity.pop("source_coverage", None)
+    if stored_fidelity != comparable_fidelity:
         raise SchemaError("qualification bundle fidelity verification does not recompute exactly")
     if expected_fidelity.get("status") != "source_verified":
         raise SchemaError("qualification bundle canary is not source verified")
@@ -239,12 +285,27 @@ def verify_qualification_request(
         limits=limits,
     )
     _validate_source_message_shapes(trace)
-    if request["target_execution"]["communication_dtypes"] != materialization["communication_dtypes"]:
-        raise SchemaError("qualification bundle target communication dtypes do not match canary events")
-    if request["target_execution"]["communication_reduction_ops"] != materialization["communication_reduction_ops"]:
-        raise SchemaError("qualification bundle target communication reduction operators do not match canary events")
-    compute_audit = qualification_compute_recipe_audit(trace, limits=limits)
+    program, compute_audit = trace_to_qualification_program(trace, limits=limits)
+    communication_inventory = qualification_program_communication_inventory(program)
+    if materialization["communication_dtypes"] != communication_inventory["communication_dtypes"]:
+        raise SchemaError("qualification bundle canary communication dtypes do not match the full generated program")
+    if materialization["communication_reduction_ops"] != communication_inventory["communication_reduction_ops"]:
+        raise SchemaError(
+            "qualification bundle canary communication reduction operators do not match the full generated program"
+        )
     target = request["target_execution"]
+    if target["communication_dtypes"] != communication_inventory["communication_dtypes"]:
+        raise SchemaError("qualification bundle target communication dtypes do not match the full generated program")
+    if target["communication_reduction_ops"] != communication_inventory["communication_reduction_ops"]:
+        raise SchemaError(
+            "qualification bundle target communication reduction operators do not match the full generated program"
+        )
+    if "communication_inventory_source" in target and (
+        target["communication_inventory_source"] != "full-generated-program"
+        or target["communication_operations"] != communication_inventory["communication_operations"]
+        or target["communication_message_shapes"] != communication_inventory["communication_message_shapes"]
+    ):
+        raise SchemaError("qualification bundle target communication inventory does not match the full program")
     if (
         target["compute_recipe_method"] != compute_audit["method"]
         or target["compute_recipe_projection_sha256"] != compute_audit["projection_sha256"]
@@ -252,7 +313,30 @@ def verify_qualification_request(
         or target["compute_recipe_operation_count"] != compute_audit["operation_count"]
     ):
         raise SchemaError("qualification bundle target compute-recipe commitments do not match the source trace")
-    return copy.deepcopy(request)
+    return VerifiedQualificationInputs(
+        request=copy.deepcopy(request),
+        trace=copy.deepcopy(trace),
+        canary=copy.deepcopy(canary),
+        manifest_sha256=manifest_snapshot.sha256,
+        manifest_size_bytes=manifest_snapshot.size_bytes,
+    )
+
+
+def _require_full_source_coverage(
+    trace: Mapping[str, Any],
+    canary: Mapping[str, Any],
+    *,
+    label: str,
+) -> None:
+    events = trace.get("events")
+    compiler = canary.get("compiler")
+    if not isinstance(events, list) or not isinstance(compiler, Mapping):
+        raise SchemaError(f"{label} cannot establish full source coverage")
+    source_events = as_int(compiler.get("source_events"))
+    if source_events != len(events):
+        raise SchemaError(
+            f"{label} requires full source coverage: canary covers {source_events} of {len(events)} trace events"
+        )
 
 
 def _validate_source_message_shapes(trace: Mapping[str, Any]) -> None:
@@ -386,62 +470,19 @@ def _create_new_bundle_directory(output: Path) -> None:
         ) from exc
 
 
-def _validate_bundle_directory(directory: Path) -> None:
-    try:
-        mode = os.lstat(str(directory)).st_mode
-    except FileNotFoundError as exc:
-        raise SchemaError(f"{directory} does not exist") from exc
-    except OSError as exc:
-        raise CommCanaryIOError(
-            f"cannot inspect qualification bundle directory {directory}: {exc}",
-            path=str(directory),
-            operation="inspect bundle directory",
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
-        raise SchemaError("qualification bundle path must be a real directory, not a symlink")
-
-
-def _require_regular_file(path: Path) -> None:
-    try:
-        mode = os.lstat(str(path)).st_mode
-    except OSError as exc:
-        raise CommCanaryIOError(
-            f"cannot inspect qualification bundle artifact {path}: {exc}",
-            path=str(path),
-            operation="inspect bundle artifact",
-        ) from exc
-    if stat.S_ISLNK(mode) or not stat.S_ISREG(mode):
-        raise SchemaError(f"qualification bundle artifact must be a regular file: {path.name}")
-
-
 def _bounded_file_identity(
     path: Path,
     *,
     limits: ResourceLimits,
 ) -> Tuple[str, int]:
-    _require_regular_file(path)
-    try:
-        size_bytes = path.stat().st_size
-        if size_bytes > limits.max_input_bytes:
-            raise SchemaError(
-                f"qualification bundle artifact {path.name} exceeds max_input_bytes={limits.max_input_bytes}"
-            )
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            while True:
-                chunk = handle.read(1024 * 1024)
-                if not chunk:
-                    break
-                digest.update(chunk)
-    except SchemaError:
-        raise
-    except OSError as exc:
-        raise CommCanaryIOError(
-            f"cannot hash qualification bundle artifact {path}: {exc}",
-            path=str(path),
-            operation="hash bundle artifact",
-        ) from exc
-    return digest.hexdigest(), size_bytes
+    with VerifiedDirectory(path.parent, label="qualification bundle") as opened:
+        snapshot = opened.read_bytes(path.name, limits=limits)
+    return snapshot.sha256, snapshot.size_bytes
 
 
-__all__ = ["prepare_qualification_request", "verify_qualification_request"]
+__all__ = [
+    "VerifiedQualificationInputs",
+    "load_verified_qualification_inputs",
+    "prepare_qualification_request",
+    "verify_qualification_request",
+]

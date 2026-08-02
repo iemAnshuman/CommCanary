@@ -47,6 +47,7 @@ def verify_canary_fidelity(
         limits=limits,
     )
     expected_compiler = expected.get("compiler", {})
+    source_coverage = "full" if source_events == trace_event_count else "partial"
     source_commitments = _verify_source_commitments(
         trace,
         canary,
@@ -102,10 +103,17 @@ def verify_canary_fidelity(
         source_commitments,
     ]
     passed = all(check["status"] == "pass" for check in checks)
+    if not passed:
+        status = "failed"
+    elif source_coverage == "full":
+        status = "source_verified"
+    else:
+        status = "partial_source_verified"
     return {
         "format": FIDELITY_VERIFICATION_FORMAT,
-        "status": "source_verified" if passed else "failed",
+        "status": status,
         "assurance_state": "source_corresponding" if passed else "internally_consistent",
+        "source_coverage": source_coverage,
         "source_events": source_events,
         "timing_sample_limit": timing_sample_limit,
         "checks": checks,

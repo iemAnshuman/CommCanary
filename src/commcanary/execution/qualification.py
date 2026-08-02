@@ -10,20 +10,13 @@ observation or verdict.
 from __future__ import annotations
 
 import copy
-import hashlib
 import math
 import statistics
 import time
 from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import Path
 from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple
 
-from ..artifacts import (
-    QUALIFICATION_REPLAY_PROGRAM_FILENAME,
-    formatted_json_bytes,
-    load_json_document,
-)
 from ..artifacts.dtypes import (
     dtype_size_bytes,
     require_param_compute_dtype,
@@ -46,7 +39,7 @@ from ..resources import (
     checked_multiply,
     require_within,
 )
-from ..workflows import verify_qualification_materialization
+from ..workflows.qualification import load_verified_qualification_materialization
 
 REFERENCE_EXECUTION_SCHEMA = "commcanary.reference-execution.stdout.v1"
 REFERENCE_EXECUTOR = "commcanary.torch-distributed-reference.v2"
@@ -129,26 +122,17 @@ def preflight_qualification_execution(
             f"{limits.max_execution_timeout_seconds}"
         )
 
-    materialization = verify_qualification_materialization(
+    verified_materialization = load_verified_qualification_materialization(
         request_directory,
         materialization_directory,
         limits=limits,
     )
-    raw_entries = load_json_document(
-        str(Path(materialization_directory) / QUALIFICATION_REPLAY_PROGRAM_FILENAME),
-        limits=limits,
-    )
-    if not isinstance(raw_entries, list) or not raw_entries:
+    materialization = verified_materialization.manifest
+    raw_entries = verified_materialization.program_entries
+    if not raw_entries:
         raise SchemaError("qualification replay program must be a non-empty array")
     if not all(isinstance(entry, Mapping) for entry in raw_entries):
         raise SchemaError("qualification replay program entries must be objects")
-    parsed_program_bytes = formatted_json_bytes(raw_entries, indent=1)
-    program_reference = materialization["program"]
-    if (
-        hashlib.sha256(parsed_program_bytes).hexdigest() != program_reference["sha256"]
-        or len(parsed_program_bytes) != program_reference["size_bytes"]
-    ):
-        raise SchemaError("qualification replay program bytes changed after materialization verification")
     entries = tuple(copy.deepcopy(dict(entry)) for entry in raw_entries)
 
     groups: Dict[int, Tuple[int, ...]] = {}
