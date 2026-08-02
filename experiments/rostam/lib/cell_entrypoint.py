@@ -933,9 +933,7 @@ def _runtime_fingerprint(
     )
     node_name = hostname.split(".", 1)[0]
     node_state = _observed_text(
-        _run_bounded_probe(("scontrol", "show", "node", "--oneliner", node_name))
-        .replace("\r\n", "\n")
-        .rstrip("\n"),
+        _run_bounded_probe(("scontrol", "show", "node", "--oneliner", node_name)).replace("\r\n", "\n").rstrip("\n"),
         "node_state",
         maximum=_PROBE_OUTPUT_BYTES,
     )

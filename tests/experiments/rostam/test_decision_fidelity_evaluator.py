@@ -18,6 +18,7 @@ from experiments.rostam.analysis.decision_fidelity import (
 )
 from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA
+from experiments.rostam.evaluate_decision_gate import _verdict_summary
 from experiments.rostam.harness import canonical_json_bytes, canonical_sha256
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -140,6 +141,7 @@ def test_decision_fidelity_evaluator_passes_a_decisive_superior_candidate() -> N
     assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is True
     assert verdict["product_interpretation"]["kill_or_reframe_triggered"] is False
     assert verdict_id == canonical_sha256(identity_projection)
+    assert _verdict_summary(verdict, Path("verdict.json"))["reframe"] is False
 
 
 def test_policy_metric_names_map_explicitly_to_verdict_fields() -> None:

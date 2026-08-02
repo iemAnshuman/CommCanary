@@ -193,9 +193,7 @@ def test_replicated_decision_gate_binds_block_schedule_and_positive_control() ->
 
     assert scalar.physical is not None
     assert scalar.physical.attributes["execution"]["allocation_block"] == 2
-    assert scalar.physical.attributes["representations"]["exact_work"]["category"] == (
-        "positive_conformance_control"
-    )
+    assert scalar.physical.attributes["representations"]["exact_work"]["category"] == ("positive_conformance_control")
 
 
 def test_replicated_decision_gate_rejects_cross_block_substitution() -> None:

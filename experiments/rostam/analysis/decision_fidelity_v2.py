@@ -318,9 +318,7 @@ def _nested_median_vector(
 ) -> MedianVector:
     return {
         configuration: {
-            representation: _median(
-                [_median(samples[block][configuration][representation]) for block in blocks]
-            )
+            representation: _median([_median(samples[block][configuration][representation]) for block in blocks])
             for representation in _REPRESENTATIONS
         }
         for configuration in configurations
@@ -388,9 +386,7 @@ def _metrics(
     pair_rows: Sequence[Mapping[str, Any]],
 ) -> Dict[str, Any]:
     singleton_samples = {
-        configuration: {
-            representation: (vector[configuration][representation],) for representation in _REPRESENTATIONS
-        }
+        configuration: {representation: (vector[configuration][representation],) for representation in _REPRESENTATIONS}
         for configuration in configurations
     }
     return {
@@ -489,8 +485,7 @@ def _bootstrap_vector(
 ) -> MedianVector:
     selected_blocks = [blocks[rng.randrange(len(blocks))] for _ in blocks]
     block_medians: Dict[str, Dict[str, List[float]]] = {
-        configuration: {representation: [] for representation in _REPRESENTATIONS}
-        for configuration in configurations
+        configuration: {representation: [] for representation in _REPRESENTATIONS} for configuration in configurations
     }
     for block in selected_blocks:
         for configuration in configurations:
@@ -500,8 +495,7 @@ def _bootstrap_vector(
                 block_medians[configuration][representation].append(_median([values[index] for index in indices]))
     return {
         configuration: {
-            representation: _median(block_medians[configuration][representation])
-            for representation in _REPRESENTATIONS
+            representation: _median(block_medians[configuration][representation]) for representation in _REPRESENTATIONS
         }
         for configuration in configurations
     }
@@ -518,10 +512,7 @@ def _simultaneous_intervals(
         values = [row[key] for row in bootstrap]
         scale = statistics.stdev(values) if len(values) > 1 else 0.0
         scales[key] = scale if scale > 0.0 and math.isfinite(scale) else 1.0
-    maxima = [
-        max(abs((row[key] - observed[key]) / scales[key]) for key in observed)
-        for row in bootstrap
-    ]
+    maxima = [max(abs((row[key] - observed[key]) / scales[key]) for key in observed) for row in bootstrap]
     critical_value = _percentile(maxima, confidence)
     intervals = {
         key: (
@@ -727,9 +718,7 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
                 targets=observed_targets,
             )
             metrics = _metrics(vector, configurations=configurations, pair_rows=pairs)
-            bootstrap_statistics.append(
-                _statistics(pair_rows=pairs, metrics=metrics, criteria=policy["pass_criteria"])
-            )
+            bootstrap_statistics.append(_statistics(pair_rows=pairs, metrics=metrics, criteria=policy["pass_criteria"]))
         intervals, critical_value = _simultaneous_intervals(
             observed_statistics,
             bootstrap_statistics,
@@ -775,7 +764,9 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
                     "observed_margin": _criterion_margin(observed, operator, required),
                     "simultaneous_margin_interval": list(margin_interval),
                     "status": (
-                        "pass" if margin_interval[0] >= 0.0 else ("fail" if margin_interval[1] < 0.0 else "inconclusive")
+                        "pass"
+                        if margin_interval[0] >= 0.0
+                        else ("fail" if margin_interval[1] < 0.0 else "inconclusive")
                     ),
                 }
             )

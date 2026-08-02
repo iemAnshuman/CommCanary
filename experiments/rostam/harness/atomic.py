@@ -131,8 +131,8 @@ def _reserved_directory_install(
     try:
         os.mkdir(destination, mode=stat.S_IMODE(source_status.st_mode))
         reservation_status = os.lstat(destination)
-        token_payload = (
-            f"commcanary-reservation-v1 {reservation_status.st_dev} {reservation_status.st_ino}\n".encode("ascii")
+        token_payload = f"commcanary-reservation-v1 {reservation_status.st_dev} {reservation_status.st_ino}\n".encode(
+            "ascii"
         )
         _write_all(token_descriptor, token_payload)
         os.fsync(token_descriptor)
@@ -200,8 +200,7 @@ def _cleanup_owned_reservation(
             if (
                 stat.S_ISLNK(installed_status.st_mode)
                 or not stat.S_ISREG(installed_status.st_mode)
-                or (source_status.st_dev, source_status.st_ino)
-                != (installed_status.st_dev, installed_status.st_ino)
+                or (source_status.st_dev, source_status.st_ino) != (installed_status.st_dev, installed_status.st_ino)
             ):
                 return
         for installed_path in installed.values():

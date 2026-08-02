@@ -352,9 +352,7 @@ def result_payload(
         "warmup": warmup,
         "timing_semantics": DECISION_GATE_TIMING_SEMANTICS,
         "order_method": (
-            DECISION_GATE_ORDER_METHOD
-            if allocation_block is None
-            else DECISION_GATE_REPLICATED_ORDER_METHOD
+            DECISION_GATE_ORDER_METHOD if allocation_block is None else DECISION_GATE_REPLICATED_ORDER_METHOD
         ),
         "representation_order_by_iteration": [
             list(representation_order(index, allocation_block=allocation_block or 0)) for index in range(iterations)
@@ -366,11 +364,7 @@ def result_payload(
     if allocation_block is not None:
         execution["allocation_block"] = allocation_block
     return {
-        "schema": (
-            DECISION_GATE_STDOUT_SCHEMA
-            if allocation_block is None
-            else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
-        ),
+        "schema": (DECISION_GATE_STDOUT_SCHEMA if allocation_block is None else DECISION_GATE_REPLICATED_STDOUT_SCHEMA),
         "request": {
             "format": request["format"],
             "request_id": request["request_id"],
@@ -660,9 +654,7 @@ def run(args: argparse.Namespace) -> int:
         maximum=3600,
     )
     allocation_block = args.allocation_block
-    if allocation_block is not None and (
-        isinstance(allocation_block, bool) or not 0 <= allocation_block <= 999
-    ):
+    if allocation_block is not None and (isinstance(allocation_block, bool) or not 0 <= allocation_block <= 999):
         raise SystemExit("allocation-block must be an integer in [0, 999]")
     rank, world_size, local_rank = distributed_execution_environment(os.environ)
     sources = {

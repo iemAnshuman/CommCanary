@@ -16,6 +16,7 @@ from experiments.rostam.analysis.decision_fidelity import (
 )
 from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
+from experiments.rostam.evaluate_decision_gate import _verdict_summary
 from experiments.rostam.harness import canonical_json_bytes, canonical_sha256
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -56,9 +57,7 @@ def _environment(block: int, configuration_index: int) -> Dict[str, Any]:
             "cpu_affinity": [0, 1, 2, 3],
             "cpu_affinity_method": "sched_getaffinity",
         },
-        "observation_sha256": canonical_sha256(
-            {"allocation_block": block, "configuration_index": configuration_index}
-        ),
+        "observation_sha256": canonical_sha256({"allocation_block": block, "configuration_index": configuration_index}),
     }
 
 
@@ -174,6 +173,12 @@ def test_v2_evaluator_uses_complete_blocks_and_simultaneous_intervals() -> None:
     assert verdict["product_interpretation"]["mode"] == "exact_qualification_capsule"
     assert verdict["product_interpretation"]["reduced_canary_claim"] == "not_evaluated"
     assert verdict_id == canonical_sha256(identity_projection)
+    assert _verdict_summary(verdict, Path("verdict.json")) == {
+        "mode": "exact_qualification_capsule",
+        "outcome": "pass",
+        "output": "verdict.json",
+        "verdict_id": verdict["verdict_id"],
+    }
 
 
 def test_v2_pair_margin_recomputes_the_relative_tie_band() -> None:

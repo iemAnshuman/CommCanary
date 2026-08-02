@@ -260,13 +260,9 @@ def _decision_gate_attributes(
     samples: Tuple[float, ...],
 ) -> Dict[str, Any]:
     replicated = schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
-    order_method = (
-        "allocation-block-rotated-latin-cycle.v2" if replicated else "iteration-rotated-latin-cycle.v1"
-    )
+    order_method = "allocation-block-rotated-latin-cycle.v2" if replicated else "iteration-rotated-latin-cycle.v1"
     contracts = (
-        _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS
-        if replicated
-        else _DECISION_GATE_REPRESENTATION_CONTRACTS
+        _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS if replicated else _DECISION_GATE_REPRESENTATION_CONTRACTS
     )
     request = _strict_object(raw["request"], "measurement.request", {"format", "request_id"})
     if request["format"] != "commcanary.qualification_request.v2":

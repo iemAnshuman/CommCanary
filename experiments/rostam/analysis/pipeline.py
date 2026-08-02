@@ -524,7 +524,9 @@ def _replicated_environment_binding(
         or runtime_observation.get("gpu_count") != len(gpus)
         or any(not isinstance(gpu, Mapping) or set(gpu) != required_gpu_fields for gpu in gpus)
     ):
-        raise AnalysisValidationError(f"replicated decision-gate environment evidence is incomplete for cell {cell_id!r}")
+        raise AnalysisValidationError(
+            f"replicated decision-gate environment evidence is incomplete for cell {cell_id!r}"
+        )
     gpu_indices: List[int] = []
     for gpu in gpus:
         index = gpu["index"]
@@ -557,9 +559,7 @@ def _replicated_environment_binding(
             or float(gpu["power_limit_w"]) <= 0.0
             or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in clocks)
         ):
-            raise AnalysisValidationError(
-                f"replicated decision-gate GPU evidence is invalid for cell {cell_id!r}"
-            )
+            raise AnalysisValidationError(f"replicated decision-gate GPU evidence is invalid for cell {cell_id!r}")
         gpu_indices.append(index)
     if sorted(gpu_indices) != list(range(world_size)):
         raise AnalysisValidationError(f"replicated decision-gate GPU inventory is stale for cell {cell_id!r}")
