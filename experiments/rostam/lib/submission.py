@@ -29,6 +29,7 @@ from ..harness import (
     read_bounded_text,
     strict_json_loads,
 )
+from ..harness.atomic import atomic_rename_noreplace
 from .physical_results import validate_physical_layout
 
 PathLike = Union[str, "Path"]
@@ -565,9 +566,9 @@ def freeze_submission_plan(plan: SubmissionPlan) -> Path:
     plan_root = Path(plan.run_directory) / PLAN_DIRNAME
     plan_root.mkdir(exist_ok=True)
     destination = plan_root / plan.plan_id
+    expected = canonical_json_bytes(plan.to_dict())
     if destination.exists() or destination.is_symlink():
         existing = destination / PLAN_FILENAME
-        expected = canonical_json_bytes(plan.to_dict())
         if existing.is_file() and not existing.is_symlink():
             try:
                 observed = read_bounded_bytes(
@@ -588,7 +589,16 @@ def freeze_submission_plan(plan: SubmissionPlan) -> Path:
         checksum_path.write_text(f"{plan.sha256}  {PLAN_FILENAME}\n", encoding="ascii")
         os.chmod(plan_path, 0o444)
         os.chmod(checksum_path, 0o444)
-        os.rename(temporary, destination)
+        try:
+            atomic_rename_noreplace(
+                temporary,
+                destination,
+                commit_name=PLAN_SHA256_FILENAME,
+            )
+        except OSError as exc:
+            if destination.exists() or destination.is_symlink():
+                raise SubmissionPlanError(f"submission plan collision: {destination}") from exc
+            raise SubmissionPlanError(f"cannot freeze submission plan {destination}: {exc}") from exc
     finally:
         if temporary.exists():
             shutil.rmtree(temporary, ignore_errors=True)

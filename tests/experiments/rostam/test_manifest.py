@@ -30,7 +30,9 @@ from experiments.rostam.harness import (
     safe_slug,
     strict_json_loads,
 )
+from experiments.rostam.harness import atomic as atomic_module
 from experiments.rostam.harness import manifest as manifest_module
+from experiments.rostam.harness.atomic import atomic_rename_noreplace
 
 
 def _digest(character: str) -> str:
@@ -323,6 +325,66 @@ def test_freeze_is_deterministic_contained_and_refuses_reuse(tmp_path: Path) -> 
     assert loaded_frozen == frozen
     with pytest.raises(ManifestFreezeError, match="already exists"):
         freeze_run_manifest(manifest, root)
+
+
+def test_exclusive_directory_install_never_replaces_an_existing_empty_directory(tmp_path: Path) -> None:
+    source = tmp_path / "staged"
+    source.mkdir()
+    (source / "payload.json").write_text("{}", encoding="utf-8")
+    (source / "payload.sha256").write_text("commit", encoding="ascii")
+    destination = tmp_path / "reserved"
+    destination.mkdir()
+
+    with pytest.raises(FileExistsError):
+        atomic_rename_noreplace(source, destination, commit_name="payload.sha256")
+
+    assert source.is_dir()
+    assert list(destination.iterdir()) == []
+
+
+def test_portable_directory_install_publishes_checksum_last(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    source = tmp_path / "staged"
+    source.mkdir()
+    (source / "payload.json").write_text("{}", encoding="utf-8")
+    (source / "payload.sha256").write_text("commit", encoding="ascii")
+    destination = tmp_path / "installed"
+    link_order: list[str] = []
+    real_link = atomic_module.os.link
+
+    def recording_link(source_path: Path, destination_path: Path, *, follow_symlinks: bool) -> None:
+        link_order.append(destination_path.name)
+        real_link(source_path, destination_path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(atomic_module.os, "link", recording_link)
+    atomic_module._reserved_directory_install(source, destination, commit_name="payload.sha256")
+
+    assert link_order == ["payload.json", "payload.sha256"]
+    assert not source.exists()
+    assert {path.name for path in destination.iterdir()} == {"payload.json", "payload.sha256"}
+
+
+def test_freeze_refuses_destination_created_between_precheck_and_install(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    manifest = _manifest()
+    root = tmp_path / "results"
+    real_install = atomic_rename_noreplace
+
+    def race_install(source: Path, destination: Path, *, commit_name: str) -> None:
+        destination.mkdir()
+        real_install(source, destination, commit_name=commit_name)
+
+    monkeypatch.setattr(manifest_module, "atomic_rename_noreplace", race_install)
+    with pytest.raises(ManifestFreezeError, match="already exists"):
+        freeze_run_manifest(manifest, root)
+
+    destination = root / manifest.run_id
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
 
 
 def test_frozen_manifest_tamper_and_directory_drift_are_detected(tmp_path: Path) -> None:

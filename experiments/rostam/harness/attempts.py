@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
+from .atomic import atomic_rename_noreplace
 from .canonical import (
     CHECKSUM_MAX_BYTES,
     DEFAULT_JSON_LIMITS,
@@ -767,7 +768,11 @@ def write_attempt_record(run_directory: PathLike, record: AttemptRecord) -> Froz
         os.chmod(checksum_path, 0o444)
         _fsync_directory(temporary)
         try:
-            os.rename(temporary, destination)
+            atomic_rename_noreplace(
+                temporary,
+                destination,
+                commit_name=ATTEMPT_SHA256_FILENAME,
+            )
         except OSError as exc:
             if destination.exists() or destination.is_symlink():
                 raise AttemptStoreError(f"attempt directory already exists: {destination}") from exc

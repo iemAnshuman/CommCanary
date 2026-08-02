@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
+from .atomic import atomic_rename_noreplace
 from .attempts import AttemptValidationError, load_attempt_record
 from .canonical import (
     CHECKSUM_MAX_BYTES,
@@ -317,7 +318,11 @@ def freeze_selection_snapshot(run_directory: PathLike, snapshot: SelectionSnapsh
         os.chmod(checksum_path, 0o444)
         _fsync_directory(temporary)
         try:
-            os.rename(temporary, destination)
+            atomic_rename_noreplace(
+                temporary,
+                destination,
+                commit_name=SELECTION_SHA256_FILENAME,
+            )
         except OSError as exc:
             if destination.exists() or destination.is_symlink():
                 raise SelectionStoreError(f"selection directory already exists: {destination}") from exc

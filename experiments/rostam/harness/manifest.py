@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
+from .atomic import atomic_rename_noreplace
 from .canonical import (
     CHECKSUM_MAX_BYTES,
     DEFAULT_JSON_LIMITS,
@@ -180,7 +181,11 @@ def freeze_run_manifest(manifest: RunManifest, results_root: PathLike) -> Frozen
         os.chmod(checksum_path, 0o444)
         _fsync_directory(temporary)
         try:
-            os.rename(temporary, destination)
+            atomic_rename_noreplace(
+                temporary,
+                destination,
+                commit_name=MANIFEST_SHA256_FILENAME,
+            )
         except OSError as exc:
             if destination.exists() or destination.is_symlink():
                 raise ManifestFreezeError(f"run directory already exists: {destination}") from exc
