@@ -177,30 +177,30 @@ def validate_qualification_request(
 
     target = _mapping(request.get("target_execution"), "qualification request target_execution")
     base_target_fields = {
-            "materialization",
-            "program_encoding",
-            "executor_contract",
-            "execution_adapter",
-            "upstream_param_compatibility",
-            "communication_dtype_source",
-            "communication_dtypes",
-            "communication_reduction_source",
-            "communication_reduction_ops",
-            "communication_message_shape_source",
-            "all_to_all_split_policy",
-            "rank_arrival_timing",
-            "compute_work_source",
-            "compute_recipe_method",
-            "compute_recipe_projection_sha256",
-            "compute_recipe_event_count",
-            "compute_recipe_operation_count",
-            "target_compute_calibration",
-            "source_overlap_observation",
-            "overlap_structure",
-            "inflight_communication_policy",
-            "timestamp_pacing",
-            "privacy_disclosure",
-            "physical_observation",
+        "materialization",
+        "program_encoding",
+        "executor_contract",
+        "execution_adapter",
+        "upstream_param_compatibility",
+        "communication_dtype_source",
+        "communication_dtypes",
+        "communication_reduction_source",
+        "communication_reduction_ops",
+        "communication_message_shape_source",
+        "all_to_all_split_policy",
+        "rank_arrival_timing",
+        "compute_work_source",
+        "compute_recipe_method",
+        "compute_recipe_projection_sha256",
+        "compute_recipe_event_count",
+        "compute_recipe_operation_count",
+        "target_compute_calibration",
+        "source_overlap_observation",
+        "overlap_structure",
+        "inflight_communication_policy",
+        "timestamp_pacing",
+        "privacy_disclosure",
+        "physical_observation",
     }
     inventory_fields = {
         "communication_inventory_source",
@@ -262,9 +262,7 @@ def validate_qualification_request(
         )
     if inventory_fields <= set(target):
         if target.get("communication_inventory_source") != "full-generated-program":
-            raise SchemaError(
-                "qualification request target_execution.communication_inventory_source is unsupported"
-            )
+            raise SchemaError("qualification request target_execution.communication_inventory_source is unsupported")
         raw_operations = target.get("communication_operations")
         supported_operations = {"all_reduce", "all_gather", "reduce_scatter", "all_to_all", "broadcast"}
         if (

@@ -251,9 +251,7 @@ def _require_target_communication_inventory(
     if target["communication_dtypes"] != inventory["communication_dtypes"]:
         raise SchemaError("qualification request communication dtypes do not match its generated program")
     if target["communication_reduction_ops"] != inventory["communication_reduction_ops"]:
-        raise SchemaError(
-            "qualification request communication reduction operators do not match its generated program"
-        )
+        raise SchemaError("qualification request communication reduction operators do not match its generated program")
     if "communication_inventory_source" in target and (
         target["communication_inventory_source"] != "full-generated-program"
         or target["communication_operations"] != inventory["communication_operations"]

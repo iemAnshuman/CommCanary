@@ -91,17 +91,13 @@ class VerifiedDirectory:
             ):
                 raise SchemaError(f"{self.label} artifact changed before it was opened: {name}")
             if before_read.st_size > limits.max_input_bytes:
-                raise SchemaError(
-                    f"{self.label} artifact {name} exceeds max_input_bytes={limits.max_input_bytes}"
-                )
+                raise SchemaError(f"{self.label} artifact {name} exceeds max_input_bytes={limits.max_input_bytes}")
             with os.fdopen(descriptor, "rb") as handle:
                 descriptor = -1
                 raw = handle.read(limits.max_input_bytes + 1)
                 after_read = os.fstat(handle.fileno())
             if len(raw) > limits.max_input_bytes:
-                raise SchemaError(
-                    f"{self.label} artifact {name} exceeds max_input_bytes={limits.max_input_bytes}"
-                )
+                raise SchemaError(f"{self.label} artifact {name} exceeds max_input_bytes={limits.max_input_bytes}")
             before_identity = (
                 before_read.st_dev,
                 before_read.st_ino,
