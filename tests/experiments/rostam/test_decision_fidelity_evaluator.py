@@ -141,6 +141,34 @@ def test_decision_fidelity_evaluator_passes_a_decisive_superior_candidate() -> N
     assert verdict_id == canonical_sha256(identity_projection)
 
 
+def test_kendall_tau_uses_the_policy_tie_relation() -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, hashlib.sha256(policy_bytes).hexdigest(), len(policy_bytes))
+    first, second = aggregate["selected_cells"][:2]
+    first["decision_gate"]["representations"]["source"]["timings_us"] = [100.0] * 20
+    second["decision_gate"]["representations"]["source"]["timings_us"] = [104.0] * 20
+    first["decision_gate"]["representations"]["exact_work"]["timings_us"] = [104.0] * 20
+    second["decision_gate"]["representations"]["exact_work"]["timings_us"] = [100.0] * 20
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["pairwise_comparisons"][0]["representations"]["source"]["observed_label"] == "tie"
+    assert verdict["pairwise_comparisons"][0]["representations"]["exact_work"]["observed_label"] == "tie"
+    assert verdict["representation_metrics"]["exact_work"]["kendall_tau_b"] == 1.0
+
+
+def test_zero_source_median_is_a_controlled_incomparable_verdict() -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, hashlib.sha256(policy_bytes).hexdigest(), len(policy_bytes))
+    aggregate["selected_cells"][0]["decision_gate"]["representations"]["source"]["timings_us"] = [0.0] * 20
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "incomparable"
+    assert verdict["representation_metrics"] == {}
+    assert [issue["code"] for issue in verdict["issues"]] == ["nonpositive_source_timing"]
+
+
 def test_decision_fidelity_evaluator_applies_predeclared_reframe_condition() -> None:
     verdict = _evaluate(stratified_matches_source=True)
 

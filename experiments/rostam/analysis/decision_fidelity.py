@@ -346,18 +346,27 @@ def _bootstrap_pair(
     }
 
 
-def _kendall_tau_b(source: Sequence[float], candidate: Sequence[float]) -> float:
+def _policy_label_tau_b(
+    representation: str,
+    pair_rows: Sequence[Mapping[str, Any]],
+) -> float:
+    """Compute tau-b from the same policy-level pair labels used by the gate."""
+
+    order = {"first_faster": 1, "tie": 0, "second_faster": -1}
     concordant = discordant = source_ties = candidate_ties = 0
-    for first, second in combinations(range(len(source)), 2):
-        source_delta = source[first] - source[second]
-        candidate_delta = candidate[first] - candidate[second]
-        if source_delta == 0.0 and candidate_delta == 0.0:
+    for row in pair_rows:
+        representations = cast(Mapping[str, Any], row["representations"])
+        source_label = cast(Mapping[str, Any], representations["source"])["observed_label"]
+        candidate_label = cast(Mapping[str, Any], representations[representation])["observed_label"]
+        source_relation = order[str(source_label)]
+        candidate_relation = order[str(candidate_label)]
+        if source_relation == 0 and candidate_relation == 0:
             continue
-        if source_delta == 0.0:
+        if source_relation == 0:
             source_ties += 1
-        elif candidate_delta == 0.0:
+        elif candidate_relation == 0:
             candidate_ties += 1
-        elif source_delta * candidate_delta > 0.0:
+        elif source_relation == candidate_relation:
             concordant += 1
         else:
             discordant += 1
@@ -393,7 +402,7 @@ def _representation_metrics(
         "pairwise_agreement_count": agreement_count,
         "pairwise_pair_count": len(pair_rows),
         "pairwise_ranking_agreement": agreement_count / len(pair_rows),
-        "kendall_tau_b": _kendall_tau_b(source_medians, candidate_medians),
+        "kendall_tau_b": _policy_label_tau_b(representation, pair_rows),
         "false_negative_count": false_negatives,
         "false_positive_count": false_positives,
         "median_absolute_relative_error_pct": _median(errors),
