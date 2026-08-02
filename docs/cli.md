@@ -119,14 +119,17 @@ preparation therefore cannot look complete. Historical four-file v1 requests
 remain read/verify compatible, but the current writer never emits them.
 
 Preparation preserves source-bound communication dtype and requires a complete
-per-rank contiguous-GEMM recipe derived between asynchronous collective issue
-and one same-thread explicit wait. It fails before creating the directory if a
-recipe is missing or ambiguous, an operation or dtype is unsupported, an
+full-source canary plus a per-rank contiguous-GEMM recipe derived between
+asynchronous collective issue and one same-thread explicit wait. It fails
+before creating the directory if the canary covers only a prefix, a recipe is
+missing or ambiguous, an operation or dtype is unsupported, an
 `all_reduce` or `reduce_scatter` lacks an explicit source-bound reduction
 operator, a broadcast lacks an explicit source-bound root rank, a communicator
 name has conflicting membership, or message shapes cannot be sized exactly.
 For Kineto inputs it independently verifies exact input/output element counts,
-normalized split lists, and dtype-derived bytes. It never converts elapsed
+normalized split lists, and dtype-derived bytes. The request inventories
+operations, dtypes, reductions, and message shapes from the full generated
+program. It never converts elapsed
 gaps to compute, substitutes SUM, reconstructs a convenient message shape, or
 chooses a broadcast root from group order.
 

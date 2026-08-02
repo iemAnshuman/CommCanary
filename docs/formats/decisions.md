@@ -377,6 +377,7 @@ the canary's six source/execution/calibration/provenance commitments, and a
 canonical request ID. Directory verification rejects missing or extra files,
 symlinks, byte mismatches, semantic invalidity, rehashed source tampering,
 policy substitution, and manifest-to-canary disagreement. Preparation also requires a
+canary whose declared source-event count equals the full trace event count, a
 source-bound canonical dtype on every canary event, a source-bound reduction
 operator on every reduction collective, and proves that the compact program can
 be lowered to the narrow exact-work collective vocabulary without expanding
@@ -389,10 +390,10 @@ The current format has a fixed request-only claim boundary:
 - physical fidelity is unproven;
 - the exact decision policy is bound before execution, but no qualification
   verdict is issued; and
-- deterministic executable materialization is required. The request binds the
-  communication dtype set, source-derived
-  reduction-operator set, source-validated per-event message shapes,
-  equal-split-only `all_to_all` policy, exact per-rank compute-recipe projection
+- deterministic executable materialization is required. The request binds
+  operation, dtype, reduction-operator, and message-shape inventories derived
+  from the full generated program, the equal-split-only `all_to_all` policy,
+  exact per-rank compute-recipe projection
   and counts, single-inflight issue/work/wait structure, timestamp-pacing
   policy, and the disclosure that GEMM shapes and dtypes are shared.
 

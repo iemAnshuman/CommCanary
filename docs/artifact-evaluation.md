@@ -245,6 +245,12 @@ predeclared criteria, and one of `pass`, `fail`, `inconclusive`, or
 complete, comparable, stable evidence; noisy or incomplete evidence cannot
 reframe the project.
 
+Current evaluations compute Kendall tau-b from the same policy-derived pair
+labels used for agreement, including the declared absolute-or-relative tie
+band. The archived 2026-08-01 verdict remains bound to its archived evaluator
+source and is not retroactively rewritten; a replacement campaign must freeze
+the current analyzer before submission.
+
 Even a `pass` supports only the policy's declared single-node, four-A100,
 single-inflight all-reduce/GEMM/wait domain. This reduced-source campaign does
 not establish cost savings, importer generality, privacy acceptability, or

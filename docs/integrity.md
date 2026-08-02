@@ -20,9 +20,12 @@ The verification APIs expose the ladder as follows:
 
 | API | Successful `status` | Successful `assurance_state` |
 | --- | --- | --- |
-| `verify_canary_fidelity` | `source_verified` | `source_corresponding` |
+| `verify_canary_fidelity` | `source_verified` (full) or `partial_source_verified` (prefix) | `source_corresponding` |
 | `verify_report_against_canary` | `model_recomputed` | `model_recomputed` |
 | `verify_canary_behavior` | `model_behavior_preserved` | `source_corresponding` |
+
+Fidelity output records `source_coverage: full | partial`. Qualification
+accepts only `source_verified` with full event coverage.
 
 Behavior verification carries a separate `claims` object. Its successful
 simulator comparison sets `model_behavior_preservation: pass`, while
@@ -98,6 +101,13 @@ issue/work/wait structure, disabled timestamp pacing, and explicit
 shape-and-dtype privacy disclosure. These commitments make materialization
 inputs deterministic.
 
+Request verification opens the real bundle directory once, opens each expected
+artifact relative to that directory descriptor with no-follow semantics where
+available, and checks the opened descriptor with `fstat`. Each bounded file is
+read once; its hash and parsed JSON come from those same bytes. Materialization
+uses the verified in-memory source and canary snapshots, so replacing a nearby
+pathname after verification cannot change the generated program.
+
 Materialization verification then binds and reuses the exact request manifest,
 recomputes the source-work projection, exact per-rank operation counts, source
 kernel observations, mathematical FLOPs, and rederives
@@ -108,18 +118,18 @@ absent. The canonical ID and program digest detect nearby mutation, but an
 executor is still required separately, upstream PARAM compatibility is not
 claimed, and no physical run or verdict is attested.
 
-Reference execution starts from the stronger directory verifier rather than
-trusting a nearby replay file. Every rank independently revalidates the request,
-materialization, program bytes, and exact-work audit before PyTorch import or
-process-group initialization. Pure preflight then validates request/wait
+Reference execution starts from the descriptor-bound directory verifier rather
+than trusting or reopening a nearby replay file. Every rank independently
+revalidates the request, materialization, program bytes, and exact-work audit
+before PyTorch import or process-group initialization. Pure preflight then validates request/wait
 lifetimes, message shapes, process groups, exact rectangular recipes, repeated
 work, retained samples, and tensor allocations. Rank-local operation counts
-must match their encoded recipes and are budgeted before allocation. The union of encoded groups
-must equal the launched dense
-rank domain, and each encoded group gets a distinct runtime identity; extra
-idle ranks and process-group aliasing are rejected. The exact canonical bytes
-of the parsed in-memory program are rehashed against the verified manifest,
-closing mutation between directory verification and execution. After
+must match their encoded recipes and are budgeted before allocation. The union
+of encoded groups must equal the launched dense rank domain, and each encoded
+group gets a distinct runtime identity; extra
+idle ranks and process-group aliasing are rejected. Preflight receives the
+same parsed in-memory program whose single-read bytes matched the manifest.
+After
 initialization, the executor checks the actual rank, world size, and backend
 against the launch contract. Aggregation requires exactly one matching sample
 from every expected participant for each measured operation; duplicates cannot

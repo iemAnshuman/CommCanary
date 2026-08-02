@@ -117,8 +117,10 @@ ceiling. Its PARAM materializability check walks compact stored leaves and uses
 the existing checked entry-count preflight; it does not expand a prospective
 two-million-entry executable. `verify-qualification` applies the active
 default ceiling separately to the manifest, source trace, canary, fidelity
-document, and v2 decision policy before semantic use, and rejects any file
-outside the version-specific fixed inventory. Historical four-file v1 bundles
+document, and v2 decision policy before semantic use. Each file is opened and
+bounded-read once, and the hash and JSON parser consume that same byte snapshot.
+Verification rejects any file outside the version-specific fixed inventory.
+Historical four-file v1 bundles
 remain bounded and verifiable.
 `materialize-qualification` uses the same stored-event, program-entry, and
 total compute-operation ceilings before writing a program. Every rank-local

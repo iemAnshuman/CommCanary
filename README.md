@@ -107,7 +107,7 @@ capture / import-kineto        compile                replay              compar
       (v1)          verified minimization     deterministic sim      CI exit code
                     + sha256 commitments
 
-source + canary + fidelity ──▶ qualification request
+source + canary + fidelity + policy ──▶ qualification request
                                       │ exact per-rank work recipes
                                       ▼
                            verified materialization
@@ -280,7 +280,8 @@ does not predict physical runtime from source kernel durations: target
 measurements are required.
 
 Preparation imports all profiles, requires known overlap, compiles with
-lossless timing by default, recomputes source fidelity, and requires every
+lossless timing by default, requires the canary to cover every source event,
+recomputes source fidelity, and requires every
 collective to carry a complete per-rank contiguous-GEMM recipe derived from the
 same-thread region between collective issue and one explicit wait.
 `all_reduce` and `reduce_scatter` must carry their source-bound reduction
@@ -294,20 +295,21 @@ The fixed inventory is:
 
 - `qualification-request.json`;
 - `source.trace.json`;
-- `canary.json`; and
-- `fidelity.json`.
+- `canary.json`;
+- `fidelity.json`; and
+- `qualification-policy.json`.
 
-The manifest binds the exact bytes of the other three files and the canary's
+The manifest binds the exact bytes of the other four files and the canary's
 source, execution, calibration, and artifact-provenance commitments. Its claim
 boundary is equally explicit: source correspondence is verified, but no
 physical measurement is included, physical fidelity remains unproven, and no
-qualification verdict is issued. The target contract also binds the
-source-derived communication dtype and reduction-operator sets, the canonical
-hash and count of exact per-rank compute work, source-validated per-event
-message shapes, an equal-split-only `all_to_all` policy, issue/work/wait
-structure, and disabled timestamp pacing. GEMM shapes and dtypes are explicitly
-disclosed because they can reveal model structure even though weights and
-prompts are absent.
+qualification verdict is issued. The target contract also binds communication
+operation, dtype, reduction-operator, and message-shape inventories derived
+from the full generated program, together with the canonical
+hash and count of exact per-rank compute work, an equal-split-only `all_to_all`
+policy, issue/work/wait structure, and disabled timestamp pacing. GEMM shapes
+and dtypes are explicitly disclosed because they can reveal model structure
+even though weights and prompts are absent.
 
 Materialization writes exactly `replay-program.json` and
 `materialization.json`, with the manifest installed last into another new,
@@ -446,7 +448,9 @@ preserve measured p99 latency.
 ## Behavioral verification
 
 `verify-fidelity` answers whether a canary's representation-level claims can be
-recomputed from the source trace. `verify-behavior` answers a different,
+recomputed from the source trace. Its `source_coverage` is `full` or `partial`,
+and a verified prefix reports `partial_source_verified` instead of
+`source_verified`. `verify-behavior` answers a different,
 strictly model-relative question: whether the compressed artifact preserves
 workload behavior in CommCanary's deterministic simulator. It replays a
 lossless normalized source canary and the candidate

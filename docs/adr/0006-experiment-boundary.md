@@ -24,6 +24,11 @@ feeds a fail-closed completeness verdict. Aggregates and paper fragments are
 generated only from the validated selected set and identify the manifest and
 raw archive hashes from which they derive.
 
+Immutable evidence directories use an exclusive no-replace rename on Linux and
+macOS. The portable fallback reserves the destination directory exclusively,
+installs content without replacement, and publishes the checksum file last;
+loaders reject a directory whose checksum commit marker is absent.
+
 Repository-local preparation may validate scripts, schemas, manifests,
 selection, analysis, and a miniature non-SLURM campaign. It must not invent
 module versions, partitions, accounts, node topology, tool builds, performance

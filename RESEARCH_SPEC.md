@@ -1,11 +1,12 @@
 # CommCanary research contract
 
-> **Evidence status (2026-07-11):** the paper and legacy Rostam notes report an
-> earlier narrow physical campaign, but its complete raw attempt archive is not
-> tracked in this checkout. The reported values are historical evidence, not a
-> campaign independently regenerable by the current local gate. A new strong
-> claim must use the immutable manifest, attempt ledger, completeness, and
-> hash-verification workflow in `experiments/rostam/`.
+> **Evidence status (2026-08-01):** the tracked Rostam decision gate contains a
+> complete immutable manifest, attempt ledger, selection, completeness verdict,
+> raw archive, publication, and bound evaluator source. Exact-work replay
+> reached 26/28 pair agreement, but the predeclared outcome is `inconclusive`
+> because pair uncertainty crossed decision boundaries and one configuration
+> failed the stability limit. This evidence covers exact-work replay. Reduced
+> canary size, execution cost, and decision fidelity remain unmeasured.
 
 ## Defensible paper claim
 
@@ -128,15 +129,14 @@ injected and naturally occurring regressions.
   a 4x A100-PCIE single-node result now exists via `experiments/rostam/`,
   while multi-node, NVLink-class, and multi-hardware evaluations remain open;
 - importers for Chakra ET, Nsight Systems, or serving-engine traces;
-- a conforming physical executor or verified current Chakra/PARAM replay path
-  for `commcanary.source-bound-compute-recipe.v2`; deterministic
-  materialization alone is not executable interoperability. A bounded
-  in-package torch.distributed reference implementation now covers the five
-  exactly materialized collectives and passes pure/injected-runtime tests, but
-  the exact-work contract remains physically unvalidated;
-- physical validation that the Kineto-derived overlap moves imported-proxy
-  fidelity toward the existing explicit-overlap result; unit tests establish
-  interval/linkage semantics but do not establish hardware fidelity;
+- an official current Chakra/PARAM replay path for
+  `commcanary.source-bound-compute-recipe.v2`. The bounded
+  in-package torch.distributed reference implementation covers the five
+  exactly materialized collectives and has run on the narrow four-A100 gate,
+  but it does not establish current upstream interoperability;
+- independent allocation-level and broader hardware validation. The first
+  exact-work decision gate is `inconclusive`, and it did not execute a reduced
+  canary representation or establish runtime or artifact-size reduction;
 - synthetic compute kernels calibrated to preserve interference;
 - simulator-side compute scheduling: after readiness is normalized,
   `compute_before_us` is descriptive and does not create a compute queue,
