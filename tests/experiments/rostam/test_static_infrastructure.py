@@ -25,6 +25,11 @@ from experiments.rostam.lib.environment_contract import (
     audit_static_contracts,
     verify_ready_for_install,
 )
+from experiments.rostam.lib.executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_BOOTSTRAP_INPUT_ID,
+    prepare_executor_artifact,
+)
 from experiments.rostam.lib.physical_results import (
     FULL_MEASUREMENT_SCHEMA,
     FULL_PRODUCER_SCHEMA,
@@ -761,10 +766,13 @@ def _campaign_inputs(tmp_path: Path, *, reviewed: bool) -> dict[str, Path]:
     )
     wheel = tmp_path / "commcanary.whl"
     wheel.write_bytes(b"reviewed-wheel-fixture")
+    executor = prepare_executor_artifact(EXPERIMENT_DIRECTORY, tmp_path / "executor-artifacts")
     return {
         "commcanary-wheel": wheel,
         "environment-lock": environment,
         "param-patch-contract": patch,
+        EXECUTOR_ARTIFACT_INPUT_ID: executor.path,
+        EXECUTOR_BOOTSTRAP_INPUT_ID: EXPERIMENT_DIRECTORY / "executor_bootstrap.py",
     }
 
 
@@ -891,6 +899,8 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
         "qualification-request-manifest",
         "qualification-source-trace",
         "rostam-catalog",
+        EXECUTOR_ARTIFACT_INPUT_ID,
+        EXECUTOR_BOOTSTRAP_INPUT_ID,
         "source-capture-evidence",
         "source-capture-stdout",
     }
@@ -898,7 +908,9 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
     plan = build_submission_plan(frozen.directory, EXPERIMENT_DIRECTORY, dry_run=True)
     assert len(plan.cells) == 1
     assert plan.cells[0].action == "run"
-    assert plan.cells[0].wrapper_path.endswith("run_qualification.sbatch")
+    assert plan.cells[0].wrapper_path.endswith("run_cell.sbatch")
+    bootstrap_index = plan.cells[0].sbatch_argv.index(str(EXPERIMENT_DIRECTORY / "executor_bootstrap.py"))
+    assert plan.cells[0].sbatch_argv[bootstrap_index + 2] == "qualification"
 
 
 def test_exact_qualification_profile_refuses_unbound_source_capture(tmp_path: Path) -> None:
@@ -952,10 +964,10 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
         *inputs,
         "rostam-catalog",
     }
-    assert {
-        "decision_gate_bootstrap.py",
-        "decision_gate_physical.py",
-    }.issubset(manifest.campaign.policy.to_value()["script_hashes"])
+    policy = manifest.campaign.policy.to_value()
+    assert set(policy["script_hashes"]) == {path.name for path in EXPERIMENT_DIRECTORY.glob("*.sbatch")}
+    assert policy["executor"]["artifact_input_id"] == EXECUTOR_ARTIFACT_INPUT_ID
+    assert policy["executor"]["source_file_count"] > 20
 
 
 def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Path) -> None:
@@ -1121,7 +1133,7 @@ def _object_venv(configuration: dict[str, Any]) -> str:
 
 
 def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> None:
-    wrappers = [
+    legacy_wrappers = [
         "capture_shared_trace.sbatch",
         "run_canary.sbatch",
         "run_full.sbatch",
@@ -1130,7 +1142,7 @@ def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> N
         "run_shared.sbatch",
     ]
     forbidden = ("torchrun", "nvidia-smi", "eval ", "<<", "configs.json", "results/shared", "#SBATCH")
-    for name in wrappers:
+    for name in legacy_wrappers:
         path = EXPERIMENT_DIRECTORY / name
         text = path.read_text(encoding="utf-8")
         # Owner-execute only: git tracks a single executable bit, and checkouts
@@ -1139,6 +1151,14 @@ def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> N
         assert len([line for line in text.splitlines() if line.strip()]) <= 5
         assert "lib/common.sh" in text
         assert all(token not in text for token in forbidden)
+    wrapper = EXPERIMENT_DIRECTORY / "run_cell.sbatch"
+    text = wrapper.read_text(encoding="utf-8")
+    assert wrapper.stat().st_mode & 0o100 == 0o100
+    assert 'exec "$PYTHON_EXECUTABLE" -I -c' in text
+    assert "runpy.run_path" in text
+    assert "O_NOFOLLOW" in text
+    assert "executor bootstrap does not match the frozen campaign" in text
+    assert all(token not in text for token in ("torchrun", "nvidia-smi", "configs.json", "results/shared", "#SBATCH"))
     for name in ("run_matrix.sh", "run_shared_matrix.sh"):
         path = EXPERIMENT_DIRECTORY / name
         text = path.read_text(encoding="utf-8")

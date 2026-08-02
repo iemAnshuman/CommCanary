@@ -13,6 +13,7 @@ from typing import Any, Sequence
 import pytest  # type: ignore[import-not-found]
 
 from experiments.rostam.lib import cell_entrypoint
+from experiments.rostam.lib.executor_artifact import prepare_executor_artifact
 
 
 class _CompletedProcess:
@@ -127,12 +128,12 @@ def test_pipeline_final_check_truncates_direct_log_path_writes(
     assert stdout_path.stat().st_size == 256
 
 
-def test_runtime_environment_exposes_bound_experiment_modules_from_workspace(
+def test_runtime_environment_exposes_only_staged_experiment_modules(
     tmp_path: Path,
     monkeypatch: Any,
 ) -> None:
     experiment_directory = Path(cell_entrypoint.__file__).resolve().parents[1]
-    repository_root = experiment_directory.parent.parent
+    executor = prepare_executor_artifact(experiment_directory, tmp_path / "executors")
     monkeypatch.setenv("PYTHONPATH", "/unreviewed/inherited/path")
     configuration = SimpleNamespace(environment=SimpleNamespace(to_value=lambda: {}))
 
@@ -140,10 +141,11 @@ def test_runtime_environment_exposes_bound_experiment_modules_from_workspace(
         configuration,
         experiment_directory,
         tmp_path / "nccl" / "libnccl.so.2",
+        executor.path,
     )
 
     assert environment["PYTHONPATH"].split(os.pathsep) == [
-        str(repository_root),
+        str(executor.path),
         str(experiment_directory / "third_party"),
         str(experiment_directory / "third_party" / "param"),
     ]

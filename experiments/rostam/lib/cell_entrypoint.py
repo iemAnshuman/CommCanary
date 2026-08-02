@@ -43,6 +43,10 @@ from ..harness import (
     write_attempt_record,
     write_cell_result,
 )
+from .executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+)
 from .physical_results import (
     CAPTURE_MEASUREMENT_SCHEMA,
     PhysicalResultError,
@@ -61,6 +65,8 @@ _INHERITED_ENV = {
     "PATH",
     "TMPDIR",
     "CUDA_VISIBLE_DEVICES",
+    "COMMCANARY_EXECUTOR_PATH",
+    "COMMCANARY_EXECUTOR_SHA256",
     "SLURM_ACCOUNT",
     "SLURM_CLUSTER_NAME",
     "SLURM_JOB_ACCOUNT",
@@ -269,6 +275,36 @@ def _verify_execution_scripts(manifest: Any, experiment_directory: Path) -> None
             raise CellEntrypointError(f"manifest execution script is missing or stale: {relative}")
 
 
+def _verify_running_executor(manifest: Any, experiment_directory: Path) -> Path:
+    """Bind the imported entrypoint to the bootstrap's private executor copy."""
+
+    policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
+    raw_executor = policy.get("executor")
+    if raw_executor is None:
+        _verify_execution_scripts(manifest, experiment_directory)
+        return experiment_directory.parent.parent
+    executor = _object(raw_executor, "campaign.policy.executor")
+    if (
+        executor.get("format") != EXECUTOR_POLICY_FORMAT
+        or executor.get("artifact_input_id") != EXECUTOR_ARTIFACT_INPUT_ID
+    ):
+        raise CellEntrypointError("manifest binds an unsupported Rostam executor")
+    artifacts = {artifact.id: artifact for artifact in manifest.campaign.inputs}
+    reference = artifacts.get(EXECUTOR_ARTIFACT_INPUT_ID)
+    raw_path = os.environ.get("COMMCANARY_EXECUTOR_PATH")
+    raw_sha256 = os.environ.get("COMMCANARY_EXECUTOR_SHA256")
+    if reference is None or raw_sha256 != reference.sha256 or not raw_path:
+        raise CellEntrypointError("running executor identity does not match the frozen campaign")
+    path = Path(raw_path)
+    if path.is_symlink() or not path.is_file() or file_sha256(path) != reference.sha256:
+        raise CellEntrypointError("running executor artifact is missing or stale")
+    module_path = str(Path(__file__))
+    expected_prefix = f"{path}{os.sep}"
+    if not module_path.startswith(expected_prefix):
+        raise CellEntrypointError("cell entrypoint was imported outside the staged executor artifact")
+    return path
+
+
 def _dependency_artifacts(
     manifest: Any,
     run_directory: Path,
@@ -403,17 +439,21 @@ def _find_nccl_library(venv_directory: Path) -> Path:
     raise CellEntrypointError(f"reviewed venv has no NCCL shared library under {library_directory}")
 
 
-def _runtime_environment(configuration: Any, experiment_directory: Path, nccl_library: Path) -> Dict[str, str]:
+def _runtime_environment(
+    configuration: Any,
+    experiment_directory: Path,
+    nccl_library: Path,
+    executor_artifact: Path,
+) -> Dict[str, str]:
     result = {key: value for key, value in os.environ.items() if key in _INHERITED_ENV}
     configuration_environment = _object(configuration.environment.to_value(), "configuration.environment")
     for key, value in configuration_environment.items():
         if not isinstance(key, str) or not isinstance(value, str):
             raise CellEntrypointError("configuration environment must contain strings")
         result[key] = value
-    repository_root = experiment_directory.parent.parent
     third_party = experiment_directory / "third_party"
     result["LD_LIBRARY_PATH"] = str(nccl_library.parent)
-    result["PYTHONPATH"] = os.pathsep.join((str(repository_root), str(third_party), str(third_party / "param")))
+    result["PYTHONPATH"] = os.pathsep.join((str(executor_artifact), str(third_party), str(third_party / "param")))
     return result
 
 
@@ -1054,7 +1094,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     input_paths = _verify_inputs(manifest)
     dependency_paths, dependency_evidence = _dependency_artifacts(manifest, frozen.directory, cell, dependencies)
     experiment_directory = Path(os.environ["COMMCANARY_EXPERIMENT_DIR"]).resolve()
-    _verify_execution_scripts(manifest, experiment_directory)
+    executor_artifact = _verify_running_executor(manifest, experiment_directory)
     _verify_param_postimage(experiment_directory, input_paths)
     repository_root = experiment_directory.parent.parent
     configuration_parameters = _object(configuration.parameters.to_value(), "configuration.parameters")
@@ -1081,7 +1121,12 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         world_size, _ranks = validate_physical_layout(parameters)
         load_and_validate_param_trace(str(trace_path), world_size=world_size)
     nccl_library = _find_nccl_library(venv_directory)
-    environment = _runtime_environment(configuration, experiment_directory, nccl_library)
+    environment = _runtime_environment(
+        configuration,
+        experiment_directory,
+        nccl_library,
+        executor_artifact,
+    )
     execution_plan = {
         "manifest_sha256": frozen.manifest_sha256,
         "cell_id": cell.id,

@@ -21,32 +21,22 @@ from ..harness import (
     strict_json_loads,
 )
 from .catalog import Catalog, CatalogValidationError, load_catalog
+from .executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_BOOTSTRAP_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+    ExecutorArtifactError,
+    prepare_executor_artifact,
+    validate_executor_artifact,
+)
 
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _INPUT_RE = re.compile(r"^([a-z0-9](?:[a-z0-9.-]*[a-z0-9])?)=(.+)$")
-_EXECUTION_FILES = (
-    "capture_shared_trace.sbatch",
-    "decision_gate_bootstrap.py",
-    "decision_gate_physical.py",
-    "lib/campaign.py",
-    "lib/catalog.py",
-    "lib/cell_entrypoint.py",
-    "lib/common.sh",
-    "lib/environment_contract.py",
-    "lib/physical_results.py",
-    "lib/submission.py",
-    "microbench_tp8.py",
-    "overlap_replay.py",
-    "qualification_physical.py",
-    "run_canary.sbatch",
-    "run_full.sbatch",
-    "run_micro.sbatch",
-    "run_qualification.sbatch",
-    "run_shared.sbatch",
-    "setup.sh",
-    "workload_tp8.py",
-)
+_RESERVED_EXECUTOR_INPUT_IDS = {
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_BOOTSTRAP_INPUT_ID,
+}
 
 
 class CampaignPreparationError(ContractError):
@@ -64,6 +54,20 @@ def _artifact(input_id: str, path: Path) -> Dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise CampaignPreparationError(f"input {input_id!r} must be a real regular file: {path}")
     return {"id": input_id, "sha256": file_sha256(path), "size_bytes": path.stat().st_size}
+
+
+def _submission_wrapper_hashes(experiment_directory: Path) -> Dict[str, str]:
+    """Bind every spooled SLURM wrapper without a handwritten inventory."""
+
+    paths = tuple(sorted(experiment_directory.glob("*.sbatch"), key=lambda item: item.name))
+    if not paths:
+        raise CampaignPreparationError("Rostam experiment directory contains no SLURM wrappers")
+    result: Dict[str, str] = {}
+    for path in paths:
+        if path.is_symlink() or not path.is_file():
+            raise CampaignPreparationError(f"submission wrapper is missing or unsafe: {path.name}")
+        result[path.name] = file_sha256(path)
+    return result
 
 
 def _verify_gemm_calibration_binding(*, catalog: Catalog, profile_id: str, inputs: Mapping[str, Path]) -> None:
@@ -147,16 +151,32 @@ def build_campaign(
         raise CampaignPreparationError("repetitions must be an integer in [1, 1000]")
     profile = catalog.profile(profile_id)
     bound_inputs = dict(inputs)
+    if set(bound_inputs) & _RESERVED_EXECUTOR_INPUT_IDS != _RESERVED_EXECUTOR_INPUT_IDS:
+        raise CampaignPreparationError(
+            "campaign must bind the generated Rostam executor artifact and its standard-library bootstrap"
+        )
     if "rostam-catalog" in bound_inputs and bound_inputs["rostam-catalog"].resolve() != catalog_path.resolve():
         raise CampaignPreparationError("rostam-catalog input must name the catalog used to build the campaign")
     bound_inputs["rostam-catalog"] = catalog_path
-    missing = sorted(set(profile.required_input_ids) - set(bound_inputs))
-    unexpected = sorted(set(bound_inputs) - set(profile.required_input_ids))
+    profile_inputs = set(bound_inputs) - _RESERVED_EXECUTOR_INPUT_IDS
+    missing = sorted(set(profile.required_input_ids) - profile_inputs)
+    unexpected = sorted(profile_inputs - set(profile.required_input_ids))
     if missing or unexpected:
         raise CampaignPreparationError(
             f"profile input ownership mismatch: missing={missing!r}, unexpected={unexpected!r}"
         )
     _verify_gemm_calibration_binding(catalog=catalog, profile_id=profile_id, inputs=bound_inputs)
+    experiment_directory = catalog_path.resolve().parent
+    expected_bootstrap = experiment_directory / "executor_bootstrap.py"
+    if bound_inputs[EXECUTOR_BOOTSTRAP_INPUT_ID].resolve() != expected_bootstrap.resolve():
+        raise CampaignPreparationError("executor bootstrap input must name experiments/rostam/executor_bootstrap.py")
+    try:
+        executor = validate_executor_artifact(
+            experiment_directory,
+            bound_inputs[EXECUTOR_ARTIFACT_INPUT_ID],
+        )
+    except ExecutorArtifactError as exc:
+        raise CampaignPreparationError(str(exc)) from exc
     artifacts = [_artifact(input_id, path) for input_id, path in sorted(bound_inputs.items())]
     configurations = []
     for configuration in catalog.selected_configurations(profile):
@@ -189,13 +209,7 @@ def build_campaign(
             }
         )
     input_paths = {input_id: str(path.resolve()) for input_id, path in sorted(bound_inputs.items())}
-    experiment_directory = catalog_path.resolve().parent
-    script_hashes: Dict[str, str] = {}
-    for relative in _EXECUTION_FILES:
-        path = experiment_directory / relative
-        if path.is_symlink() or not path.is_file():
-            raise CampaignPreparationError(f"execution script is missing or unsafe: {relative}")
-        script_hashes[relative] = file_sha256(path)
+    script_hashes = _submission_wrapper_hashes(experiment_directory)
     raw = {
         "schema": CAMPAIGN_SCHEMA,
         "run_id": run_id,
@@ -220,6 +234,13 @@ def build_campaign(
             "exclusion_policy": "explicit-terminal-record-only",
             "input_paths": input_paths,
             "interleave_configurations": True,
+            "executor": {
+                "format": EXECUTOR_POLICY_FORMAT,
+                "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
+                "bootstrap_input_id": EXECUTOR_BOOTSTRAP_INPUT_ID,
+                "inventory_sha256": executor.inventory_sha256,
+                "source_file_count": len(executor.source_files),
+            },
             "planner_schema": "commcanary.rostam.submission-plan.v1",
             "retry_policy": "append-only-explicit",
             "script_hashes": script_hashes,
@@ -266,6 +287,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if len(input_pairs) != len(args.input):
             raise CampaignPreparationError("duplicate --input ownership")
         catalog = load_catalog(args.catalog)
+        experiment_directory = args.catalog.resolve().parent
+        executor = prepare_executor_artifact(
+            experiment_directory,
+            args.results_root / ".executor-artifacts",
+        )
+        input_pairs[EXECUTOR_ARTIFACT_INPUT_ID] = executor.path
+        input_pairs[EXECUTOR_BOOTSTRAP_INPUT_ID] = experiment_directory / "executor_bootstrap.py"
         campaign = build_campaign(
             catalog=catalog,
             catalog_path=args.catalog,
@@ -282,7 +310,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(canonical_json_bytes(campaign.to_dict()).decode("utf-8"), end="")
             return 0
         frozen = freeze_campaign(campaign, args.results_root)
-    except (CampaignPreparationError, CatalogValidationError, OSError, UnicodeError) as exc:
+    except (CampaignPreparationError, CatalogValidationError, ExecutorArtifactError, OSError, UnicodeError) as exc:
         raise SystemExit(f"campaign preparation error: {exc}") from exc
     print(
         json.dumps(

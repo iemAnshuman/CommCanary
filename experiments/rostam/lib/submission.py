@@ -30,6 +30,11 @@ from ..harness import (
     strict_json_loads,
 )
 from ..harness.atomic import atomic_rename_noreplace
+from .executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_BOOTSTRAP_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+)
 from .physical_results import validate_physical_layout
 
 PathLike = Union[str, "Path"]
@@ -40,12 +45,12 @@ PLAN_FILENAME = "plan.json"
 PLAN_SHA256_FILENAME = "plan.sha256"
 
 _WRAPPERS = {
-    "micro": "run_micro.sbatch",
-    "full": "run_full.sbatch",
-    "canary": "run_canary.sbatch",
-    "qualification": "run_qualification.sbatch",
-    "shared-capture": "capture_shared_trace.sbatch",
-    "shared": "run_shared.sbatch",
+    "micro": "run_cell.sbatch",
+    "full": "run_cell.sbatch",
+    "canary": "run_cell.sbatch",
+    "qualification": "run_cell.sbatch",
+    "shared-capture": "run_cell.sbatch",
+    "shared": "run_cell.sbatch",
 }
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _JOB_ID_RE = re.compile(r"^[0-9]+$")
@@ -353,6 +358,24 @@ def _configuration_venv(repository_root: Path, configuration: Any) -> Path:
     return path
 
 
+def _executor_bootstrap_binding(manifest: Any) -> Tuple[Path, str]:
+    policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
+    executor = _object(policy.get("executor"), "campaign.policy.executor")
+    if (
+        executor.get("format") != EXECUTOR_POLICY_FORMAT
+        or executor.get("artifact_input_id") != EXECUTOR_ARTIFACT_INPUT_ID
+        or executor.get("bootstrap_input_id") != EXECUTOR_BOOTSTRAP_INPUT_ID
+    ):
+        raise SubmissionPlanError("campaign does not bind the supported Rostam executor")
+    paths = _object(policy.get("input_paths"), "campaign.policy.input_paths")
+    artifacts = {artifact.id: artifact for artifact in manifest.campaign.inputs}
+    bootstrap = artifacts.get(EXECUTOR_BOOTSTRAP_INPUT_ID)
+    raw_path = paths.get(EXECUTOR_BOOTSTRAP_INPUT_ID)
+    if bootstrap is None or not isinstance(raw_path, str) or not raw_path:
+        raise SubmissionPlanError("campaign executor bootstrap binding is incomplete")
+    return Path(raw_path), bootstrap.sha256
+
+
 def _build_sbatch_argv(
     *,
     manifest: Any,
@@ -374,6 +397,7 @@ def _build_sbatch_argv(
     timeout = timeout_raw
     repository_root = experiment_directory.parent.parent
     venv_python = _configuration_venv(repository_root, configuration) / "bin" / "python"
+    bootstrap_path, bootstrap_sha256 = _executor_bootstrap_binding(manifest)
     wrapper_path = experiment_directory / _WRAPPERS[wrapper]
     output_path = run_directory / "scheduler" / "%x-%j.out"
     if "," in str(experiment_directory):
@@ -398,6 +422,9 @@ def _build_sbatch_argv(
         [
             str(wrapper_path),
             str(venv_python),
+            str(bootstrap_path),
+            bootstrap_sha256,
+            wrapper,
             "--run-directory",
             str(run_directory),
             "--cell-id",
