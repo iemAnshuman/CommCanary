@@ -33,6 +33,7 @@ BOUNDARY_PREFIXES: Tuple[Tuple[str, str], ...] = (
 FOUNDATION_MODULES = {
     "commcanary.errors",
     "commcanary.formats",
+    "commcanary.qualification_io",
     "commcanary.resources",
     "commcanary.statistics",
     "commcanary.version",

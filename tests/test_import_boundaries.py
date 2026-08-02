@@ -26,11 +26,16 @@ def _base_tree(tmp_path: Path) -> Path:
 def test_valid_downward_dependency_graph_passes(tmp_path: Path) -> None:
     source = _base_tree(tmp_path)
     _write(source, "commcanary/version.py", "__version__ = '0+test'\n")
+    _write(source, "commcanary/qualification_io.py", "from .errors import CommCanaryError\n")
     _write(source, "commcanary/cli.py", "from .version import __version__\n")
     _write(source, "commcanary/compilation/core.py", "from ..artifacts.wire import JsonDict\n")
     _write(source, "commcanary/verification/check.py", "from ..compilation.core import compile_trace_core\n")
     _write(source, "commcanary/replay/__init__.py", "from ..verification.check import verify\n")
-    _write(source, "commcanary/services/compile.py", "from ..verification.check import verify\n")
+    _write(
+        source,
+        "commcanary/services/compile.py",
+        "from ..qualification_io import VerifiedDirectory\nfrom ..verification.check import verify\n",
+    )
 
     assert check_boundaries(source) == []
 
