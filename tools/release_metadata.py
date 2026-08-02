@@ -28,6 +28,8 @@ from email.policy import default as email_policy
 from pathlib import Path
 from typing import IO, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from experiments.rostam.harness.atomic import atomic_rename_noreplace
+
 INVENTORY_NAME = "release-inventory.json"
 CHECKSUMS_NAME = "SHA256SUMS"
 SPDX_SUFFIX = ".spdx.json"
@@ -551,6 +553,7 @@ def _validate_output_destination(destination: Path) -> None:
         raise ReleaseMetadataError(f"cannot inspect metadata output destination {destination}: {exc}") from exc
     if first is not None:
         raise ReleaseMetadataError(f"metadata output destination is not empty: {destination}")
+    raise ReleaseMetadataError(f"metadata output destination already exists: {destination}")
 
 
 def _write_staging_directory(directory: Path, rendered: Mapping[str, bytes]) -> None:
@@ -593,9 +596,9 @@ def _install_staging_directory(staging: Path, destination: Path) -> None:
     try:
         os.close(descriptor)
         _validate_output_destination(destination)
-        if destination.exists():
-            destination.rmdir()
-        os.rename(staging, destination)
+        atomic_rename_noreplace(staging, destination, commit_name=CHECKSUMS_NAME)
+    except FileExistsError as exc:
+        raise ReleaseMetadataError(f"metadata output destination already exists: {destination}") from exc
     except OSError as exc:
         raise ReleaseMetadataError(f"cannot atomically install metadata output {destination}: {exc}") from exc
     finally:

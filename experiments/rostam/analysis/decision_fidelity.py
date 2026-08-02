@@ -30,6 +30,15 @@ _REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated", "no_overla
 _EVALUATED_REPRESENTATIONS = ("exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
 _STABILITY_REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated")
 _SHA256_CHARACTERS = frozenset("0123456789abcdef")
+REPORTED_METRIC_TO_VERDICT_FIELD = {
+    "pairwise_ranking_agreement": "pairwise_ranking_agreement",
+    "kendall_tau_b": "kendall_tau_b",
+    "false_negative_count": "false_negative_count",
+    "false_positive_count": "false_positive_count",
+    "median_absolute_relative_error_pct": "median_absolute_relative_error_pct",
+    "p95_absolute_relative_error_pct": "p95_absolute_relative_error_pct",
+    "execution_time_ratio_to_source": "median_execution_time_ratio_to_source",
+}
 
 
 class DecisionFidelityError(ContractError):
@@ -210,15 +219,7 @@ def validate_decision_fidelity_policy(raw: Any) -> Dict[str, Any]:
     _integer(uncertainty.get("resamples"), "bootstrap resamples", minimum=100, maximum=100_000)
     _integer(uncertainty.get("seed"), "bootstrap seed", maximum=2**63 - 1)
     reported_metrics = comparison.get("reported_metrics")
-    expected_reported_metrics = [
-        "pairwise_ranking_agreement",
-        "kendall_tau_b",
-        "false_negative_count",
-        "false_positive_count",
-        "median_absolute_relative_error_pct",
-        "p95_absolute_relative_error_pct",
-        "execution_time_ratio_to_source",
-    ]
+    expected_reported_metrics = list(REPORTED_METRIC_TO_VERDICT_FIELD)
     if reported_metrics != expected_reported_metrics:
         raise DecisionFidelityError("decision fidelity reported metric inventory is unsupported")
     criteria = _object(policy["pass_criteria"], "decision fidelity policy.pass_criteria")

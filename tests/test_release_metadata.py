@@ -229,6 +229,12 @@ def test_release_metadata_rejects_symlinks_and_special_archive_members(tmp_path:
 
 def test_release_metadata_rejects_nonempty_output_and_active_writer(tmp_path: Path) -> None:
     artifacts = _distributions(tmp_path)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(release_metadata.ReleaseMetadataError, match="already exists"):
+        _write(artifacts, empty)
+    assert list(empty.iterdir()) == []
+
     nonempty = tmp_path / "nonempty"
     nonempty.mkdir()
     (nonempty / "keep.txt").write_text("keep", encoding="utf-8")
@@ -242,6 +248,27 @@ def test_release_metadata_rejects_nonempty_output_and_active_writer(tmp_path: Pa
     with pytest.raises(release_metadata.ReleaseMetadataError, match="already being created"):
         _write(artifacts, destination)
     assert not destination.exists()
+
+
+def test_release_metadata_refuses_destination_created_during_install(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = _distributions(tmp_path)
+    output = tmp_path / "metadata"
+    real_install = release_metadata.atomic_rename_noreplace
+
+    def race_install(source: Path, destination: Path, *, commit_name: str) -> None:
+        destination.mkdir()
+        real_install(source, destination, commit_name=commit_name)
+
+    monkeypatch.setattr(release_metadata, "atomic_rename_noreplace", race_install)
+    with pytest.raises(release_metadata.ReleaseMetadataError, match="already exists"):
+        _write(artifacts, output)
+
+    assert output.is_dir()
+    assert list(output.iterdir()) == []
+    assert not list(tmp_path.glob(".metadata.staging-*"))
 
 
 def test_release_metadata_fails_closed_on_nondeterministic_render(

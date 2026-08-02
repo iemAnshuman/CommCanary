@@ -10,6 +10,7 @@ import jsonschema
 import pytest
 
 from experiments.rostam.analysis.decision_fidelity import (
+    REPORTED_METRIC_TO_VERDICT_FIELD,
     DecisionFidelityError,
     evaluate_decision_fidelity,
     validate_decision_fidelity_policy,
@@ -139,6 +140,15 @@ def test_decision_fidelity_evaluator_passes_a_decisive_superior_candidate() -> N
     assert verdict["product_interpretation"]["kill_or_reframe_evaluated"] is True
     assert verdict["product_interpretation"]["kill_or_reframe_triggered"] is False
     assert verdict_id == canonical_sha256(identity_projection)
+
+
+def test_policy_metric_names_map_explicitly_to_verdict_fields() -> None:
+    policy, _ = _policy()
+
+    assert list(REPORTED_METRIC_TO_VERDICT_FIELD) == policy["comparison"]["reported_metrics"]
+    assert REPORTED_METRIC_TO_VERDICT_FIELD["execution_time_ratio_to_source"] == (
+        "median_execution_time_ratio_to_source"
+    )
 
 
 def test_kendall_tau_uses_the_policy_tie_relation() -> None:

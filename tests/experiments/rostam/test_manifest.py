@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -364,6 +365,65 @@ def test_portable_directory_install_publishes_checksum_last(
     assert link_order == ["payload.json", "payload.sha256"]
     assert not source.exists()
     assert {path.name for path in destination.iterdir()} == {"payload.json", "payload.sha256"}
+
+
+def test_portable_directory_install_cleans_its_uncommitted_reservation(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    source = tmp_path / "staged"
+    source.mkdir()
+    (source / "first.json").write_text("one", encoding="utf-8")
+    (source / "second.json").write_text("two", encoding="utf-8")
+    (source / "payload.sha256").write_text("commit", encoding="ascii")
+    destination = tmp_path / "installed"
+    real_link = atomic_module.os.link
+    calls = 0
+
+    def failing_link(source_path: Path, destination_path: Path, *, follow_symlinks: bool) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError(errno.EIO, "simulated link failure")
+        real_link(source_path, destination_path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(atomic_module.os, "link", failing_link)
+    with pytest.raises(OSError, match="simulated link failure"):
+        atomic_module._reserved_directory_install(source, destination, commit_name="payload.sha256")
+
+    assert source.is_dir()
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".installed.reservation-*"))
+
+
+def test_portable_directory_install_never_cleans_external_interference(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    source = tmp_path / "staged"
+    source.mkdir()
+    (source / "first.json").write_text("one", encoding="utf-8")
+    (source / "second.json").write_text("two", encoding="utf-8")
+    (source / "payload.sha256").write_text("commit", encoding="ascii")
+    destination = tmp_path / "installed"
+    real_link = atomic_module.os.link
+    calls = 0
+
+    def interfered_link(source_path: Path, destination_path: Path, *, follow_symlinks: bool) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            (destination / "external.txt").write_text("keep", encoding="utf-8")
+            raise OSError(errno.EIO, "simulated link failure")
+        real_link(source_path, destination_path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(atomic_module.os, "link", interfered_link)
+    with pytest.raises(OSError, match="simulated link failure"):
+        atomic_module._reserved_directory_install(source, destination, commit_name="payload.sha256")
+
+    assert source.is_dir()
+    assert (destination / "external.txt").read_text(encoding="utf-8") == "keep"
+    assert not list(tmp_path.glob(".installed.reservation-*"))
 
 
 def test_freeze_refuses_destination_created_between_precheck_and_install(
