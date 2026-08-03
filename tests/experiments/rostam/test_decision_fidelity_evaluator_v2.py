@@ -272,8 +272,7 @@ def test_v2_constant_statistics_keep_exact_intervals_when_timings_are_noisy() ->
         repetition = row["repetition"]
         source = float((index + 1) * 100)
         source_timings = [
-            source * (1.0 + ((iteration + repetition + index) % 5 - 2) / 1000.0)
-            for iteration in range(24)
+            source * (1.0 + ((iteration + repetition + index) % 5 - 2) / 1000.0) for iteration in range(24)
         ]
         exact_timings = [
             value * (1.01 + ((iteration + 2 * repetition + index) % 7 - 3) / 2000.0)
@@ -306,10 +305,7 @@ def test_v2_zero_variance_bootstrap_must_match_the_observation() -> None:
 def test_v2_bootstrap_resamples_repetitions_independently_and_keeps_williams_cycles() -> None:
     samples = {
         repetition: {
-            configuration: {
-                representation: (base,) * 6 + (base + 100.0,) * 6
-                for representation in REPRESENTATIONS
-            }
+            configuration: {representation: (base,) * 6 + (base + 100.0,) * 6 for representation in REPRESENTATIONS}
             for configuration, base in (
                 ("configuration-a", 10.0 + 10.0 * repetition),
                 ("configuration-b", 30.0 + 10.0 * repetition),
@@ -367,9 +363,7 @@ def test_v2_evaluator_requires_every_configuration_repetition() -> None:
     verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
 
     assert verdict["outcome"] == "incomparable"
-    assert [issue["code"] for issue in verdict["issues"]] == [
-        "incomplete_configuration_repetition_inventory"
-    ]
+    assert [issue["code"] for issue in verdict["issues"]] == ["incomplete_configuration_repetition_inventory"]
 
 
 def test_v2_evaluator_requires_bound_environment_evidence() -> None:
@@ -384,11 +378,7 @@ def test_v2_evaluator_rejects_platform_drift_between_repetitions() -> None:
     _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
     environment = aggregate["selected_cells"][0]["decision_gate_environment"]
     environment["invariants"]["gpus"][0]["uuid"] = "GPU-replaced"
-    platform = {
-        key: value
-        for key, value in environment["invariants"].items()
-        if key != "nccl_library_sha256"
-    }
+    platform = {key: value for key, value in environment["invariants"].items() if key != "nccl_library_sha256"}
     environment["platform_sha256"] = canonical_sha256(platform)
 
     verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
@@ -432,9 +422,7 @@ def test_v2_verdict_requires_and_records_the_aggregate_frozen_analyzer(tmp_path:
         }
     )
     aggregate["provenance"]["trusted_join_sha256"] = canonical_sha256([campaign])
-    aggregate["provenance"]["analysis_implementation"] = artifact.analyzer_record(
-        "experiments.rostam.analyze:main"
-    )
+    aggregate["provenance"]["analysis_implementation"] = artifact.analyzer_record("experiments.rostam.analyze:main")
 
     with pytest.raises(DecisionFidelityError, match="frozen evaluator artifact"):
         evaluate_decision_fidelity(aggregate, policy_bytes)

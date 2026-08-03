@@ -975,9 +975,9 @@ def test_maximum_rank_reduction_probes_are_bounded_and_operator_distinguishing(
     candidates = execution_module._reduction_probe_candidates(dtype, 65_536, reduction_op)
 
     assert 1 <= len(candidates) <= execution_module._REDUCTION_PROBE_TEMPLATE_COUNT
-    assert len({probe.outcomes[execution_module._REDUCTION_OUTCOME_INDEX[reduction_op]] for probe in candidates}) == len(
-        candidates
-    )
+    assert len(
+        {probe.outcomes[execution_module._REDUCTION_OUTCOME_INDEX[reduction_op]] for probe in candidates}
+    ) == len(candidates)
     for probe in candidates:
         assert len(set(probe.outcomes)) == len(execution_module._REDUCTION_OUTCOME_INDEX)
         assert probe.value_at(65_535) in {probe.tail_even, probe.tail_odd}

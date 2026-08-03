@@ -181,10 +181,7 @@ def test_isolated_child_ignores_pth_sitecustomize_and_third_party_shadowing(
     executor = prepare_executor_artifact(experiment_directory, tmp_path / "executors")
     venv_directory = tmp_path / "venv"
     site_packages = (
-        venv_directory
-        / "lib"
-        / f"python{sys.version_info.major}.{sys.version_info.minor}"
-        / "site-packages"
+        venv_directory / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
     )
     safe_torch = site_packages / "torch"
     safe_torch.mkdir(parents=True)

@@ -1115,12 +1115,10 @@ def _replicated_runtime_observation(
         return {name: raw[name] for name in fields}
 
     pre_invariants = [
-        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"pre.gpus[{index}]")
-        for index, gpu in enumerate(pre_gpus)
+        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"pre.gpus[{index}]") for index, gpu in enumerate(pre_gpus)
     ]
     post_invariants = [
-        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"post.gpus[{index}]")
-        for index, gpu in enumerate(post_gpus)
+        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"post.gpus[{index}]") for index, gpu in enumerate(post_gpus)
     ]
     invariants = {
         "driver_version": pre.get("driver_version"),
@@ -1148,8 +1146,7 @@ def _replicated_runtime_observation(
         return {
             "captured_at": _observed_text(captured_at, f"{field}.captured_at", maximum=128),
             "gpus": [
-                gpu_projection(gpu, _GPU_TELEMETRY_FIELDS, f"{field}.gpus[{index}]")
-                for index, gpu in enumerate(gpus)
+                gpu_projection(gpu, _GPU_TELEMETRY_FIELDS, f"{field}.gpus[{index}]") for index, gpu in enumerate(gpus)
             ],
             "node_state": dict(node_state),
         }

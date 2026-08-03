@@ -253,7 +253,10 @@ def prepare_executor_artifact(experiment_directory: Path, artifact_directory: Pa
             os.fsync(handle.fileno())
         os.chmod(destination, 0o444)
     except FileExistsError:
-        if _read_regular_bytes(destination, maximum=_MAX_EXECUTOR_BYTES, field="existing executor artifact") != rendered:
+        if (
+            _read_regular_bytes(destination, maximum=_MAX_EXECUTOR_BYTES, field="existing executor artifact")
+            != rendered
+        ):
             raise ExecutorArtifactError(f"executor artifact collision: {destination}")
     return ExecutorArtifact(
         path=destination,
@@ -309,12 +312,16 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
             }
             if set(inventory) != expected_fields:
                 raise ExecutorArtifactError("Rostam executor inventory fields are not closed")
-            if inventory["entrypoints"] != {
-                "analyze": EXECUTOR_ANALYZE_ENTRY_POINT,
-                "evaluate-decision-gate": EXECUTOR_EVALUATE_ENTRY_POINT,
-                "execute-cell": EXECUTOR_CELL_ENTRY_POINT,
-                "run-python": EXECUTOR_RUN_PYTHON_ENTRY_POINT,
-            } or inventory["analysis_version"] != EXECUTOR_ANALYSIS_VERSION:
+            if (
+                inventory["entrypoints"]
+                != {
+                    "analyze": EXECUTOR_ANALYZE_ENTRY_POINT,
+                    "evaluate-decision-gate": EXECUTOR_EVALUATE_ENTRY_POINT,
+                    "execute-cell": EXECUTOR_CELL_ENTRY_POINT,
+                    "run-python": EXECUTOR_RUN_PYTHON_ENTRY_POINT,
+                }
+                or inventory["analysis_version"] != EXECUTOR_ANALYSIS_VERSION
+            ):
                 raise ExecutorArtifactError("Rostam executor entry-point inventory is unsupported")
             for collection, digest_field in (
                 ("source_files", "source_inventory_sha256"),

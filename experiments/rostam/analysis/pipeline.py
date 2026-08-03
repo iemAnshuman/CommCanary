@@ -648,9 +648,7 @@ def _replicated_environment_binding(
             or not isinstance(node_state.get("text"), str)
             or not node_state["text"]
         ):
-            raise AnalysisValidationError(
-                f"replicated decision-gate {phase} telemetry is invalid for cell {cell_id!r}"
-            )
+            raise AnalysisValidationError(f"replicated decision-gate {phase} telemetry is invalid for cell {cell_id!r}")
         try:
             captured_at_by_phase[phase] = datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%S.%fZ")
         except ValueError as exc:
@@ -1212,7 +1210,7 @@ def _frozen_analyzer_record(
     evidences: Sequence[_LoadedEvidence],
     executor_artifact: Optional[ExecutorArtifact],
 ) -> Optional[Dict[str, Any]]:
-    declarations = []
+    declarations: List[Optional[Mapping[Any, Any]]] = []
     for evidence in evidences:
         policy = evidence.manifest.campaign.policy.to_value()
         executor = policy.get("executor") if isinstance(policy, Mapping) else None

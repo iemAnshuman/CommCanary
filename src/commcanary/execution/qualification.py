@@ -1239,7 +1239,8 @@ def _reduction_probe(
         modulus=len(candidates),
     )
     digit = (destination_index // (len(candidates) ** lane)) % len(candidates)
-    return candidates[(offset + digit) % len(candidates)]
+    selected: _ReductionProbe = candidates[(offset + digit) % len(candidates)]
+    return selected
 
 
 def _routing_value(
@@ -1260,7 +1261,7 @@ def _routing_value(
     route_id = source_index if destination_index is None else source_index * group_size + destination_index
     digit = (route_id // (modulus**lane)) % modulus
     mask = _stable_validation_offset(request_id, request, lane, modulus=modulus)
-    return (digit + mask) % modulus
+    return int((digit + mask) % modulus)
 
 
 def _routing_modulus(dtype: str) -> int:
@@ -1303,9 +1304,7 @@ def _validate_correctness_probe_support(
             lane_count = min(_VALIDATION_LANE_PERIOD, segment_length)
             routes = len(group_ranks) if comms == "all_gather" else len(group_ranks) ** 2
             if lane_count < 1 or capacity**lane_count < routes:
-                raise SchemaError(
-                    f"replay program entry {index} exceeds the {dtype} routing-signature capacity"
-                )
+                raise SchemaError(f"replay program entry {index} exceeds the {dtype} routing-signature capacity")
         if comms not in _REDUCTION_COLLECTIVES:
             continue
         probe_work = _checked_add(
@@ -1393,12 +1392,12 @@ def _initialize_validation_buffers(
         if comms == "all_to_all":
             segment_length = as_int(entry["in_msg_size"]) // len(group_ranks)
             source_index = group_ranks.index(rank)
-            for destination_index, _destination in enumerate(group_ranks):
-                segment = input_tensor.narrow(0, destination_index * segment_length, segment_length)
+            for destination_position, _destination in enumerate(group_ranks):
+                segment = input_tensor.narrow(0, destination_position * segment_length, segment_length)
                 _fill_tensor_pattern(
                     segment,
                     length=segment_length,
-                    value_for_lane=lambda lane, destination=destination_index: _routing_value(
+                    value_for_lane=lambda lane, destination=destination_position: _routing_value(
                         request_id=plan.request_id,
                         request=request,
                         source_index=source_index,
@@ -1426,7 +1425,7 @@ def _initialize_validation_buffers(
             raise CommCanaryError(f"correctness initialization reached unsupported operation {comms!r}")
         length = as_int(entry["in_msg_size"])
         source_index = group_ranks.index(source_rank)
-        destination_index = None if destination_rank is None else group_ranks.index(destination_rank)
+        routing_destination_index = None if destination_rank is None else group_ranks.index(destination_rank)
         _fill_tensor_pattern(
             input_tensor,
             length=length,
@@ -1434,7 +1433,7 @@ def _initialize_validation_buffers(
                 request_id=plan.request_id,
                 request=request,
                 source_index=source_index,
-                destination_index=destination_index,
+                destination_index=routing_destination_index,
                 group_size=len(group_ranks),
                 lane=lane,
                 dtype=dtype,

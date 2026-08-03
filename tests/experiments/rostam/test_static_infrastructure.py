@@ -382,9 +382,10 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     decision_parameters = decision_workload.parameters.to_value()
     decision_command = decision_parameters["command"]
     assert decision_workload.wrapper == "qualification"
-    assert decision_command[
-        decision_command.index("--no_python") + 2 : decision_command.index("--no_python") + 4
-    ] == ["-m", "experiments.rostam.decision_gate_bootstrap"]
+    assert decision_command[decision_command.index("--no_python") + 2 : decision_command.index("--no_python") + 4] == [
+        "-m",
+        "experiments.rostam.decision_gate_bootstrap",
+    ]
     assert decision_command[decision_command.index("--wheel") + 1] == "{input:decision-gate-wheel}"
     assert decision_parameters["expected_stratified_source_event_indices"] == [0, 1]
     assert decision_parameters["decision_fidelity_policy_id"] == (
@@ -1165,10 +1166,7 @@ def test_submission_spools_verified_wrapper_bytes_without_a_path_race(
     )
     plan = replace(
         plan,
-        flags=tuple(
-            (key, False if key == "dry_run" else value)
-            for key, value in plan.flags
-        ),
+        flags=tuple((key, False if key == "dry_run" else value) for key, value in plan.flags),
     )
     cell = next(item for item in plan.cells if item.action == "run")
     wrapper = Path(cell.wrapper_path)

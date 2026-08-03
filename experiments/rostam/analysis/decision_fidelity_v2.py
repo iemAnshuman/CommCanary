@@ -134,8 +134,7 @@ def _environment_identity(
         not isinstance(binding_environment, Mapping)
         or set(binding_environment) != _BINDING_ENVIRONMENT_FIELDS
         or any(
-            value is not None and (not isinstance(value, str) or not value)
-            for value in binding_environment.values()
+            value is not None and (not isinstance(value, str) or not value) for value in binding_environment.values()
         )
         or binding["cpu_affinity"] != sorted(set(binding["cpu_affinity"]))
     ):
@@ -691,8 +690,7 @@ def _bootstrap_vector(
     }
     for configuration in configurations:
         selected_repetitions = [
-            configuration_repetitions[rng.randrange(len(configuration_repetitions))]
-            for _ in configuration_repetitions
+            configuration_repetitions[rng.randrange(len(configuration_repetitions))] for _ in configuration_repetitions
         ]
         for repetition in selected_repetitions:
             selected_cycles = [rng.randrange(cycle_count) for _ in range(cycle_count)]
@@ -703,9 +701,7 @@ def _bootstrap_vector(
             ]
             for representation in _REPRESENTATIONS:
                 values = samples[repetition][configuration][representation]
-                repetition_medians[configuration][representation].append(
-                    _median([values[index] for index in indices])
-                )
+                repetition_medians[configuration][representation].append(_median([values[index] for index in indices]))
     return {
         configuration: {
             representation: _median(repetition_medians[configuration][representation])
@@ -737,10 +733,9 @@ def _simultaneous_intervals(
                 f"bootstrap statistic {key!r} has zero variance but disagrees with its observation"
             )
         scales[key] = scale
-    maxima = [
-        max(abs((row[key] - observed[key]) / scales[key]) for key in scales)
-        for row in bootstrap
-    ] if scales else [0.0]
+    maxima = (
+        [max(abs((row[key] - observed[key]) / scales[key]) for key in scales) for row in bootstrap] if scales else [0.0]
+    )
     critical_value = _percentile(maxima, confidence)
     intervals: Dict[str, Tuple[float, float]] = {}
     for key, value in observed.items():
@@ -823,9 +818,7 @@ def evaluate_decision_fidelity_v2(
             raise DecisionFidelityError("aggregate selected cell is outside the replicated decision gate")
         rows[(repetition, configuration)] = row
     expected_cells = {
-        (repetition, configuration)
-        for repetition in configuration_repetitions
-        for configuration in configurations
+        (repetition, configuration) for repetition in configuration_repetitions for configuration in configurations
     }
     if set(rows) != expected_cells:
         issues.append(
@@ -954,9 +947,7 @@ def evaluate_decision_fidelity_v2(
                 for representation in _STABILITY_REPRESENTATIONS:
                     relative_iqr = _relative_iqr(samples[repetition][configuration][representation])
                     if relative_iqr > maximum_iqr:
-                        stability_issues.append(
-                            f"{repetition}|{configuration}|{representation}|{relative_iqr}"
-                        )
+                        stability_issues.append(f"{repetition}|{configuration}|{representation}|{relative_iqr}")
 
         comparison = cast(Mapping[str, Any], policy["comparison"])
         observed_vector = _nested_median_vector(

@@ -41,9 +41,7 @@ def run_python(arguments: Sequence[str]) -> int:
     if len(import_paths) != len(set(import_paths)):
         raise ExecutorArtifactError("child import path inventory contains duplicates")
     standard_library_paths = [
-        item
-        for item in sys.path
-        if item and Path(item).resolve() != artifact.path and item not in import_paths
+        item for item in sys.path if item and Path(item).resolve() != artifact.path and item not in import_paths
     ]
     sys.path[:] = [str(artifact.path), *standard_library_paths, *import_paths]
     if len(arguments) >= 2 and arguments[0] == "-m":

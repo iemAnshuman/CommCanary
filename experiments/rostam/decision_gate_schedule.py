@@ -79,12 +79,7 @@ def frozen_schedule_inventory(
     replicated_schedule(0, iterations=iterations)
     row_indices: List[List[int]] = []
     for repetition in range(configuration_repetitions):
-        row_indices.append(
-            [
-                (repetition + iteration) % WILLIAMS_CYCLE_LENGTH
-                for iteration in range(iterations)
-            ]
-        )
+        row_indices.append([(repetition + iteration) % WILLIAMS_CYCLE_LENGTH for iteration in range(iterations)])
     return {
         "rows": [list(row) for row in WILLIAMS_ROWS],
         "row_index_by_configuration_repetition": row_indices,

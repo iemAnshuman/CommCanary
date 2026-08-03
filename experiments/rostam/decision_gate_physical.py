@@ -315,11 +315,7 @@ def result_payload(
         maxima = [max(by_rank[rank][iteration] for rank in range(world_size)) for iteration in range(iterations)]
         rounded_by_rank = [[round(value, 3) for value in values] for values in by_rank]
         rounded_maxima = [round(value, 3) for value in maxima]
-        metadata = (
-            REPRESENTATION_METADATA
-            if configuration_repetition is None
-            else REPLICATED_REPRESENTATION_METADATA
-        )
+        metadata = REPRESENTATION_METADATA if configuration_repetition is None else REPLICATED_REPRESENTATION_METADATA
         category, semantics = metadata[representation]
         if representation == "stratified":
             executed_events = len(selected_indices)
@@ -348,9 +344,7 @@ def result_payload(
         "warmup": warmup,
         "timing_semantics": DECISION_GATE_TIMING_SEMANTICS,
         "order_method": (
-            DECISION_GATE_ORDER_METHOD
-            if configuration_repetition is None
-            else DECISION_GATE_REPLICATED_ORDER_METHOD
+            DECISION_GATE_ORDER_METHOD if configuration_repetition is None else DECISION_GATE_REPLICATED_ORDER_METHOD
         ),
         "representation_order_by_iteration": [
             list(
@@ -369,9 +363,7 @@ def result_payload(
         execution["configuration_repetition"] = configuration_repetition
     return {
         "schema": (
-            DECISION_GATE_STDOUT_SCHEMA
-            if configuration_repetition is None
-            else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
+            DECISION_GATE_STDOUT_SCHEMA if configuration_repetition is None else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
         ),
         "request": {
             "format": request["format"],
@@ -666,8 +658,7 @@ def run(args: argparse.Namespace) -> int:
     )
     configuration_repetition = args.configuration_repetition
     if configuration_repetition is not None and (
-        isinstance(configuration_repetition, bool)
-        or not 0 <= configuration_repetition <= 999
+        isinstance(configuration_repetition, bool) or not 0 <= configuration_repetition <= 999
     ):
         raise SystemExit("configuration-repetition must be an integer in [0, 999]")
     rank, world_size, local_rank = distributed_execution_environment(os.environ)
