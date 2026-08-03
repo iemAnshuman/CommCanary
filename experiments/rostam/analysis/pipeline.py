@@ -8,6 +8,7 @@ import math
 import os
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -82,6 +83,7 @@ _SHA256_CHARACTERS = frozenset("0123456789abcdef")
 _PER_CAMPAIGN_POLICY_FIELDS = frozenset({"catalog_profile", "input_paths"})
 _RUNTIME_OBSERVATION_SCHEMA_V1 = "commcanary.rostam.runtime-observation.v1"
 _RUNTIME_OBSERVATION_SCHEMA_V2 = "commcanary.rostam.runtime-observation.v2"
+_RUNTIME_OBSERVATION_SCHEMA_V3 = "commcanary.rostam.runtime-observation.v3"
 _BINDING_ENVIRONMENT_FIELDS = {
     "CUDA_VISIBLE_DEVICES",
     "OMP_NUM_THREADS",
@@ -496,44 +498,50 @@ def _replicated_environment_binding(
     required_observation_fields = {
         "schema",
         "runtime",
-        "nccl_library_sha256",
+        "invariants",
+        "telemetry",
+        "probe_policy",
+    }
+    required_invariant_fields = {
         "driver_version",
+        "nccl_library_sha256",
         "gpu_count",
         "gpus",
         "topology",
-        "node_state",
         "binding",
-        "probe_policy",
     }
-    required_gpu_fields = {
+    required_invariant_gpu_fields = {
         "index",
         "uuid",
         "name",
         "driver_version",
         "pci_bus_id",
         "persistence_mode",
-        "performance_state",
-        "temperature_c",
-        "power_draw_w",
         "power_limit_w",
-        "sm_clock_mhz",
-        "memory_clock_mhz",
     }
-    driver_version = runtime_observation.get("driver_version")
-    nccl_library_sha256 = runtime_observation.get("nccl_library_sha256")
-    gpus = runtime_observation.get("gpus")
+    invariants = runtime_observation.get("invariants")
     if (
-        runtime_observation.get("schema") != _RUNTIME_OBSERVATION_SCHEMA_V2
+        runtime_observation.get("schema") != _RUNTIME_OBSERVATION_SCHEMA_V3
         or set(runtime_observation) != required_observation_fields
-        or not isinstance(driver_version, str)
+        or not isinstance(invariants, Mapping)
+        or set(invariants) != required_invariant_fields
+    ):
+        raise AnalysisValidationError(
+            f"replicated decision-gate environment evidence is incomplete for cell {cell_id!r}"
+        )
+    driver_version = invariants.get("driver_version")
+    nccl_library_sha256 = invariants.get("nccl_library_sha256")
+    gpus = invariants.get("gpus")
+    if (
+        not isinstance(driver_version, str)
         or not driver_version
         or not isinstance(nccl_library_sha256, str)
         or len(nccl_library_sha256) != 64
         or any(character not in _SHA256_CHARACTERS for character in nccl_library_sha256)
         or not isinstance(gpus, list)
         or len(gpus) != world_size
-        or runtime_observation.get("gpu_count") != len(gpus)
-        or any(not isinstance(gpu, Mapping) or set(gpu) != required_gpu_fields for gpu in gpus)
+        or invariants.get("gpu_count") != len(gpus)
+        or any(not isinstance(gpu, Mapping) or set(gpu) != required_invariant_gpu_fields for gpu in gpus)
     ):
         raise AnalysisValidationError(
             f"replicated decision-gate environment evidence is incomplete for cell {cell_id!r}"
@@ -547,37 +555,25 @@ def _replicated_environment_binding(
             "driver_version",
             "pci_bus_id",
             "persistence_mode",
-            "performance_state",
         )
-        temperature = gpu["temperature_c"]
-        powers = (gpu["power_draw_w"], gpu["power_limit_w"])
-        clocks = (gpu["sm_clock_mhz"], gpu["memory_clock_mhz"])
+        power_limit = gpu["power_limit_w"]
         if (
             isinstance(index, bool)
             or not isinstance(index, int)
             or any(not isinstance(gpu[field], str) or not gpu[field] for field in text_fields)
             or gpu["driver_version"] != driver_version
-            or isinstance(temperature, bool)
-            or not isinstance(temperature, int)
-            or not -50 <= temperature <= 200
-            or any(
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                or float(value) < 0.0
-                for value in powers
-            )
-            or float(gpu["power_limit_w"]) <= 0.0
-            or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in clocks)
+            or isinstance(power_limit, bool)
+            or not isinstance(power_limit, (int, float))
+            or not math.isfinite(float(power_limit))
+            or float(power_limit) <= 0.0
         ):
             raise AnalysisValidationError(f"replicated decision-gate GPU evidence is invalid for cell {cell_id!r}")
         gpu_indices.append(index)
     if sorted(gpu_indices) != list(range(world_size)):
         raise AnalysisValidationError(f"replicated decision-gate GPU inventory is stale for cell {cell_id!r}")
 
-    topology = runtime_observation.get("topology")
-    node_state = runtime_observation.get("node_state")
-    binding = runtime_observation.get("binding")
+    topology = invariants.get("topology")
+    binding = invariants.get("binding")
     probe_policy = runtime_observation.get("probe_policy")
     if (
         not isinstance(topology, Mapping)
@@ -585,11 +581,6 @@ def _replicated_environment_binding(
         or topology.get("method") != "nvidia-smi topo -m"
         or not isinstance(topology.get("text"), str)
         or not topology["text"]
-        or not isinstance(node_state, Mapping)
-        or set(node_state) != {"method", "text"}
-        or node_state.get("method") != "scontrol show node --oneliner HOSTNAME"
-        or not isinstance(node_state.get("text"), str)
-        or not node_state["text"]
         or not isinstance(binding, Mapping)
         or set(binding) != {"environment", "cpu_affinity", "cpu_affinity_method"}
         or binding.get("cpu_affinity_method") != "sched_getaffinity"
@@ -619,14 +610,106 @@ def _replicated_environment_binding(
         raise AnalysisValidationError(
             f"replicated decision-gate process binding evidence is incomplete for cell {cell_id!r}"
         )
+
+    telemetry = runtime_observation.get("telemetry")
+    telemetry_gpu_fields = {
+        "index",
+        "performance_state",
+        "temperature_c",
+        "power_draw_w",
+        "sm_clock_mhz",
+        "memory_clock_mhz",
+    }
+    normalized_telemetry: Dict[str, Any] = {"method": "bounded-pre-post-nvidia-smi.v1"}
+    captured_at_by_phase: Dict[str, datetime] = {}
+    if (
+        not isinstance(telemetry, Mapping)
+        or set(telemetry) != {"method", "pre", "post"}
+        or telemetry.get("method") != normalized_telemetry["method"]
+    ):
+        raise AnalysisValidationError(f"replicated decision-gate telemetry is incomplete for cell {cell_id!r}")
+    for phase in ("pre", "post"):
+        snapshot = telemetry.get(phase)
+        if not isinstance(snapshot, Mapping) or set(snapshot) != {"captured_at", "gpus", "node_state"}:
+            raise AnalysisValidationError(
+                f"replicated decision-gate {phase} telemetry is incomplete for cell {cell_id!r}"
+            )
+        captured_at = snapshot.get("captured_at")
+        telemetry_gpus = snapshot.get("gpus")
+        node_state = snapshot.get("node_state")
+        if (
+            not isinstance(captured_at, str)
+            or not isinstance(telemetry_gpus, list)
+            or len(telemetry_gpus) != world_size
+            or any(not isinstance(gpu, Mapping) or set(gpu) != telemetry_gpu_fields for gpu in telemetry_gpus)
+            or not isinstance(node_state, Mapping)
+            or set(node_state) != {"method", "text"}
+            or node_state.get("method") != "scontrol show node --oneliner HOSTNAME"
+            or not isinstance(node_state.get("text"), str)
+            or not node_state["text"]
+        ):
+            raise AnalysisValidationError(
+                f"replicated decision-gate {phase} telemetry is invalid for cell {cell_id!r}"
+            )
+        try:
+            captured_at_by_phase[phase] = datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError as exc:
+            raise AnalysisValidationError(
+                f"replicated decision-gate {phase} timestamp is invalid for cell {cell_id!r}"
+            ) from exc
+        observed_telemetry_indices: List[int] = []
+        for gpu in telemetry_gpus:
+            index = gpu["index"]
+            temperature = gpu["temperature_c"]
+            power_draw = gpu["power_draw_w"]
+            clocks = (gpu["sm_clock_mhz"], gpu["memory_clock_mhz"])
+            if (
+                isinstance(index, bool)
+                or not isinstance(index, int)
+                or not isinstance(gpu["performance_state"], str)
+                or not gpu["performance_state"]
+                or isinstance(temperature, bool)
+                or not isinstance(temperature, int)
+                or not -50 <= temperature <= 200
+                or isinstance(power_draw, bool)
+                or not isinstance(power_draw, (int, float))
+                or not math.isfinite(float(power_draw))
+                or float(power_draw) < 0.0
+                or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in clocks)
+            ):
+                raise AnalysisValidationError(
+                    f"replicated decision-gate {phase} GPU telemetry is invalid for cell {cell_id!r}"
+                )
+            observed_telemetry_indices.append(index)
+        if sorted(observed_telemetry_indices) != list(range(world_size)):
+            raise AnalysisValidationError(
+                f"replicated decision-gate {phase} GPU telemetry inventory is stale for cell {cell_id!r}"
+            )
+        normalized_telemetry[phase] = {
+            "captured_at": captured_at,
+            "gpus": [dict(gpu) for gpu in telemetry_gpus],
+            "node_state": dict(node_state),
+        }
+    if captured_at_by_phase["post"] <= captured_at_by_phase["pre"]:
+        raise AnalysisValidationError(
+            f"replicated decision-gate telemetry timestamps are not ordered for cell {cell_id!r}"
+        )
+    platform = {
+        "driver_version": driver_version,
+        "gpu_count": len(gpus),
+        "gpus": [dict(gpu) for gpu in gpus],
+        "topology": dict(topology),
+        "binding": dict(binding),
+    }
     return {
         "schema": runtime_observation["schema"],
-        "driver_version": driver_version,
-        "nccl_library_sha256": nccl_library_sha256,
-        "gpus": list(gpus),
-        "topology": dict(topology),
-        "node_state": dict(node_state),
-        "binding": dict(binding),
+        "invariants": {
+            **platform,
+            "nccl_library_sha256": nccl_library_sha256,
+        },
+        "telemetry": normalized_telemetry,
+        "probe_policy": dict(probe_policy),
+        "platform_sha256": canonical_sha256(platform),
         "observation_sha256": canonical_sha256(runtime_observation),
     }
 
@@ -666,7 +749,12 @@ def _physical_binding(
     runtime_observation = metadata.get("runtime_observation")
     if (
         not isinstance(runtime_observation, Mapping)
-        or runtime_observation.get("schema") not in {_RUNTIME_OBSERVATION_SCHEMA_V1, _RUNTIME_OBSERVATION_SCHEMA_V2}
+        or runtime_observation.get("schema")
+        not in {
+            _RUNTIME_OBSERVATION_SCHEMA_V1,
+            _RUNTIME_OBSERVATION_SCHEMA_V2,
+            _RUNTIME_OBSERVATION_SCHEMA_V3,
+        }
         or runtime_observation.get("runtime") != observed_runtime
     ):
         raise AnalysisValidationError(f"physical runtime observation is stale for cell {cell.id!r}")

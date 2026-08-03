@@ -59,6 +59,7 @@ from .param_artifact import (
 )
 from .physical_results import (
     CAPTURE_MEASUREMENT_SCHEMA,
+    DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA,
     PhysicalResultError,
     adapt_physical_measurement,
     load_and_validate_param_trace,
@@ -102,6 +103,24 @@ _WHEEL_MARKER_FILENAME = "commcanary-wheel.sha256"
 _WHEEL_MARKER_MAX_BYTES = 256
 _PARAM_CONTRACT_INPUT_ID = "param-patch-contract"
 _PARAM_CONTRACT_MAX_BYTES = 1_048_576
+_REPLICATED_RUNTIME_OBSERVATION_SCHEMA = "commcanary.rostam.runtime-observation.v3"
+_GPU_INVARIANT_FIELDS = (
+    "index",
+    "uuid",
+    "name",
+    "driver_version",
+    "pci_bus_id",
+    "persistence_mode",
+    "power_limit_w",
+)
+_GPU_TELEMETRY_FIELDS = (
+    "index",
+    "performance_state",
+    "temperature_c",
+    "power_draw_w",
+    "sm_clock_mhz",
+    "memory_clock_mhz",
+)
 
 
 class CellEntrypointError(ContractError):
@@ -1072,6 +1091,82 @@ def _runtime_fingerprint(
     return runtime, evidence
 
 
+def _replicated_runtime_observation(
+    pre: Mapping[str, Any],
+    post: Mapping[str, Any],
+    *,
+    pre_captured_at: str,
+    post_captured_at: str,
+) -> Dict[str, Any]:
+    """Bind stable execution identity and retain time-varying pre/post telemetry."""
+
+    if pre.get("schema") != "commcanary.rostam.runtime-observation.v2" or post.get("schema") != pre.get("schema"):
+        raise CellEntrypointError("replicated runtime snapshots use an unsupported schema")
+    if pre.get("runtime") != post.get("runtime"):
+        raise CellEntrypointError("replicated runtime identity changed during execution")
+    pre_gpus = pre.get("gpus")
+    post_gpus = post.get("gpus")
+    if not isinstance(pre_gpus, list) or not isinstance(post_gpus, list) or len(pre_gpus) != len(post_gpus):
+        raise CellEntrypointError("replicated runtime GPU inventory changed during execution")
+
+    def gpu_projection(raw: Any, fields: Sequence[str], field: str) -> Dict[str, Any]:
+        if not isinstance(raw, Mapping) or any(name not in raw for name in fields):
+            raise CellEntrypointError(f"replicated runtime {field} is incomplete")
+        return {name: raw[name] for name in fields}
+
+    pre_invariants = [
+        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"pre.gpus[{index}]")
+        for index, gpu in enumerate(pre_gpus)
+    ]
+    post_invariants = [
+        gpu_projection(gpu, _GPU_INVARIANT_FIELDS, f"post.gpus[{index}]")
+        for index, gpu in enumerate(post_gpus)
+    ]
+    invariants = {
+        "driver_version": pre.get("driver_version"),
+        "nccl_library_sha256": pre.get("nccl_library_sha256"),
+        "gpu_count": pre.get("gpu_count"),
+        "gpus": pre_invariants,
+        "topology": pre.get("topology"),
+        "binding": pre.get("binding"),
+    }
+    post_invariant_projection = {
+        "driver_version": post.get("driver_version"),
+        "nccl_library_sha256": post.get("nccl_library_sha256"),
+        "gpu_count": post.get("gpu_count"),
+        "gpus": post_invariants,
+        "topology": post.get("topology"),
+        "binding": post.get("binding"),
+    }
+    if invariants != post_invariant_projection or pre.get("probe_policy") != post.get("probe_policy"):
+        raise CellEntrypointError("replicated runtime invariants changed during execution")
+
+    def telemetry(snapshot: Mapping[str, Any], gpus: Sequence[Any], captured_at: str, field: str) -> Dict[str, Any]:
+        node_state = snapshot.get("node_state")
+        if not isinstance(node_state, Mapping):
+            raise CellEntrypointError(f"replicated runtime {field}.node_state is incomplete")
+        return {
+            "captured_at": _observed_text(captured_at, f"{field}.captured_at", maximum=128),
+            "gpus": [
+                gpu_projection(gpu, _GPU_TELEMETRY_FIELDS, f"{field}.gpus[{index}]")
+                for index, gpu in enumerate(gpus)
+            ],
+            "node_state": dict(node_state),
+        }
+
+    return {
+        "schema": _REPLICATED_RUNTIME_OBSERVATION_SCHEMA,
+        "runtime": dict(_object(pre["runtime"], "replicated runtime identity")),
+        "invariants": invariants,
+        "telemetry": {
+            "method": "bounded-pre-post-nvidia-smi.v1",
+            "pre": telemetry(pre, pre_gpus, pre_captured_at, "pre"),
+            "post": telemetry(post, post_gpus, post_captured_at, "post"),
+        },
+        "probe_policy": dict(_object(pre["probe_policy"], "replicated runtime probe policy")),
+    }
+
+
 def _run_pipeline(
     commands: Sequence[Sequence[str]],
     *,
@@ -1441,6 +1536,16 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     execution_plan_sha256 = canonical_sha256(execution_plan)
     _write_exclusive(workspace / "execution_plan.json", canonical_json_bytes(execution_plan))
     started_at = utc_timestamp()
+    replicated_pre_observation: Optional[Tuple[Dict[str, Any], Dict[str, Any], str]] = None
+    if workload.measurement_schema == DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA:
+        pre_captured_at = utc_timestamp()
+        pre_runtime, pre_observation = _runtime_fingerprint(
+            nccl_library,
+            site,
+            site_packages=_site_packages(venv_directory),
+        )
+        validate_expected_runtime(pre_runtime, configuration.expected_runtime.to_value())
+        replicated_pre_observation = (pre_runtime, pre_observation, pre_captured_at)
     return_code, wall_time_s, execution_reason, output_exceeded = _run_pipeline(
         commands,
         workspace=workspace,
@@ -1451,7 +1556,6 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         max_output_bytes=max_output_bytes,
         command_environments=command_environments,
     )
-    finished_at = utc_timestamp()
     for path in (stdout_path, stderr_path):
         os.chmod(path, 0o444)
     result: Optional[CellResult] = None
@@ -1463,12 +1567,28 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     reason = execution_reason
     if execution_succeeded:
         try:
-            runtime, runtime_observation = _runtime_fingerprint(
-                nccl_library,
-                site,
-                site_packages=_site_packages(venv_directory),
-            )
-            validate_expected_runtime(runtime, configuration.expected_runtime.to_value())
+            if replicated_pre_observation is None:
+                runtime, runtime_observation = _runtime_fingerprint(
+                    nccl_library,
+                    site,
+                    site_packages=_site_packages(venv_directory),
+                )
+                validate_expected_runtime(runtime, configuration.expected_runtime.to_value())
+            else:
+                runtime, pre_observation, pre_captured_at = replicated_pre_observation
+                post_captured_at = utc_timestamp()
+                post_runtime, post_observation = _runtime_fingerprint(
+                    nccl_library,
+                    site,
+                    site_packages=_site_packages(venv_directory),
+                )
+                validate_expected_runtime(post_runtime, configuration.expected_runtime.to_value())
+                runtime_observation = _replicated_runtime_observation(
+                    pre_observation,
+                    post_observation,
+                    pre_captured_at=pre_captured_at,
+                    post_captured_at=post_captured_at,
+                )
             capture_artifacts: Optional[Dict[str, Any]] = None
             if workload.measurement_schema == CAPTURE_MEASUREMENT_SCHEMA:
                 capture_artifacts, partial_outputs = _capture_artifacts(
@@ -1529,6 +1649,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
                 )
     elif execution_reason == "execution interrupted" or output_exceeded or "exceeded" in (execution_reason or ""):
         status = "cancelled"
+    finished_at = utc_timestamp()
     reason = None if reason is None else reason.replace("\x00", "\\0")[:4096]
     stdout_reference = _artifact_reference(frozen.directory, stdout_path)
     stderr_reference = _artifact_reference(frozen.directory, stderr_path)

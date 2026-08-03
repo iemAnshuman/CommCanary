@@ -40,10 +40,10 @@ class _FixedRandom:
 
 
 def _environment(repetition: int, configuration_index: int) -> Dict[str, Any]:
-    return {
-        "schema": "commcanary.rostam.runtime-observation.v2",
+    invariants = {
         "driver_version": "550.54.15",
         "nccl_library_sha256": "9" * 64,
+        "gpu_count": 4,
         "gpus": [
             {
                 "index": index,
@@ -52,25 +52,58 @@ def _environment(repetition: int, configuration_index: int) -> Dict[str, Any]:
                 "driver_version": "550.54.15",
                 "pci_bus_id": f"00000000:0{index + 1}:00.0",
                 "persistence_mode": "Enabled",
-                "performance_state": "P0",
-                "temperature_c": 50 + index,
-                "power_draw_w": 120.0 + index,
                 "power_limit_w": 250.0,
-                "sm_clock_mhz": 1410,
-                "memory_clock_mhz": 1215,
             }
             for index in range(4)
         ],
         "topology": {"method": "nvidia-smi topo -m", "text": "four-GPU topology"},
-        "node_state": {
-            "method": "scontrol show node --oneliner HOSTNAME",
-            "text": "NodeName=toranj State=ALLOCATED",
-        },
         "binding": {
-            "environment": {},
+            "environment": {
+                "CUDA_VISIBLE_DEVICES": None,
+                "OMP_NUM_THREADS": None,
+                "SLURM_CPUS_PER_TASK": None,
+                "SLURM_JOB_GPUS": None,
+                "SLURM_LOCALID": None,
+                "SLURM_NODEID": None,
+                "SLURM_PROCID": None,
+                "SLURM_STEP_GPUS": None,
+            },
             "cpu_affinity": [0, 1, 2, 3],
             "cpu_affinity_method": "sched_getaffinity",
         },
+    }
+    platform = {key: value for key, value in invariants.items() if key != "nccl_library_sha256"}
+
+    def telemetry(phase: str, offset: int) -> Dict[str, Any]:
+        return {
+            "captured_at": f"2026-08-04T00:{repetition:02d}:{configuration_index:02d}.{offset:06d}Z",
+            "gpus": [
+                {
+                    "index": index,
+                    "performance_state": "P0",
+                    "temperature_c": 50 + index + offset,
+                    "power_draw_w": 120.0 + index,
+                    "sm_clock_mhz": 1410,
+                    "memory_clock_mhz": 1215,
+                }
+                for index in range(4)
+            ],
+            "node_state": {
+                "method": "scontrol show node --oneliner HOSTNAME",
+                "text": f"NodeName=toranj State=ALLOCATED Phase={phase}",
+            },
+        }
+
+    return {
+        "schema": "commcanary.rostam.runtime-observation.v3",
+        "invariants": invariants,
+        "telemetry": {
+            "method": "bounded-pre-post-nvidia-smi.v1",
+            "pre": telemetry("pre", 0),
+            "post": telemetry("post", 2),
+        },
+        "probe_policy": {"timeout_seconds": 10, "max_output_bytes_per_stream": 65_536},
+        "platform_sha256": canonical_sha256(platform),
         "observation_sha256": canonical_sha256(
             {"configuration_repetition": repetition, "configuration_index": configuration_index}
         ),
@@ -344,6 +377,33 @@ def test_v2_evaluator_requires_bound_environment_evidence() -> None:
     aggregate["selected_cells"][0].pop("decision_gate_environment")
 
     with pytest.raises(DecisionFidelityError, match="decision_gate_environment"):
+        evaluate_decision_fidelity(aggregate, policy_bytes)
+
+
+def test_v2_evaluator_rejects_platform_drift_between_repetitions() -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    environment = aggregate["selected_cells"][0]["decision_gate_environment"]
+    environment["invariants"]["gpus"][0]["uuid"] = "GPU-replaced"
+    platform = {
+        key: value
+        for key, value in environment["invariants"].items()
+        if key != "nccl_library_sha256"
+    }
+    environment["platform_sha256"] = canonical_sha256(platform)
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "incomparable"
+    assert [issue["code"] for issue in verdict["issues"]] == ["environment_invariant_mismatch"]
+    assert verdict["evidence"]["platform_sha256"] is None
+
+
+def test_v2_evaluator_enforces_predeclared_telemetry_ranges() -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    environment = aggregate["selected_cells"][0]["decision_gate_environment"]
+    environment["telemetry"]["post"]["gpus"][0]["temperature_c"] = 96
+
+    with pytest.raises(DecisionFidelityError, match="temperature_c"):
         evaluate_decision_fidelity(aggregate, policy_bytes)
 
 

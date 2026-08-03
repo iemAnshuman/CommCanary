@@ -154,8 +154,9 @@ injected and naturally occurring regressions.
 - a separately versioned, not-yet-executed exact-capsule follow-up design with
   eight independent repetitions per configuration, 24 carryover-balanced
   Williams passes, complete-cycle inner resampling, unpaired outer resampling,
-  dynamic policy-margin bootstrap draws, and simultaneous uncertainty over
-  all pair margins and reported criteria.
+  pre/post telemetry with a cross-cell platform invariant, dynamic
+  policy-margin bootstrap draws, and simultaneous uncertainty over all pair
+  margins and reported criteria.
 
 ## Not implemented—and required before a strong systems-paper claim
 

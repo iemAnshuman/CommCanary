@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import ctypes
 import hashlib
 import importlib
@@ -13,6 +14,7 @@ from typing import Any, Sequence
 
 import pytest  # type: ignore[import-not-found]
 
+from experiments.rostam.analysis import pipeline
 from experiments.rostam.lib import cell_entrypoint
 from experiments.rostam.lib.executor_artifact import prepare_executor_artifact
 
@@ -344,6 +346,43 @@ def test_runtime_fingerprint_records_driver_gpu_topology_binding_and_clocks(
     assert evidence["binding"]["environment"]["CUDA_VISIBLE_DEVICES"] == "0,1"
     assert evidence["binding"]["cpu_affinity"] == [0, 2, 4]
     assert len(observed_commands) == 3
+
+    post = copy.deepcopy(evidence)
+    post["gpus"][0]["performance_state"] = "P2"
+    post["gpus"][0]["temperature_c"] = 61
+    post["gpus"][0]["power_draw_w"] = 180.0
+    post["gpus"][0]["sm_clock_mhz"] = 1395
+    post["node_state"]["text"] = "NodeName=toranj0 State=ALLOCATED CPULoad=2.00"
+    replicated = cell_entrypoint._replicated_runtime_observation(
+        evidence,
+        post,
+        pre_captured_at="2026-08-04T00:00:00.000000Z",
+        post_captured_at="2026-08-04T00:01:00.000000Z",
+    )
+
+    assert replicated["schema"] == "commcanary.rostam.runtime-observation.v3"
+    assert replicated["invariants"]["gpus"][0]["uuid"] == "GPU-a"
+    assert "temperature_c" not in replicated["invariants"]["gpus"][0]
+    assert replicated["telemetry"]["pre"]["gpus"][0]["temperature_c"] == 55
+    assert replicated["telemetry"]["post"]["gpus"][0]["temperature_c"] == 61
+    bound = pipeline._replicated_environment_binding(
+        replicated,
+        world_size=2,
+        cell_id="test-cell",
+    )
+    assert bound["schema"] == "commcanary.rostam.runtime-observation.v3"
+    assert len(bound["platform_sha256"]) == 64
+    assert bound["telemetry"]["post"]["gpus"][0]["power_draw_w"] == 180.0
+
+    changed = copy.deepcopy(post)
+    changed["gpus"][0]["uuid"] = "GPU-replaced"
+    with pytest.raises(cell_entrypoint.CellEntrypointError, match="invariants changed"):
+        cell_entrypoint._replicated_runtime_observation(
+            evidence,
+            changed,
+            pre_captured_at="2026-08-04T00:00:00.000000Z",
+            post_captured_at="2026-08-04T00:01:00.000000Z",
+        )
 
 
 def test_runtime_fingerprint_rejects_malformed_probe_rows_without_running_a_probe(

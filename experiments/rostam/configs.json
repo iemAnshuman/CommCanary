@@ -623,7 +623,7 @@
           "--distributed-timeout-seconds",
           "300"
         ],
-        "decision_fidelity_policy_id": "8a77f9c967c980959ee070c1feb64480f2b9467d7920a2c6ceddc5e96430381a",
+        "decision_fidelity_policy_id": "9b9e85be6717edbf7b1dd104d8bb15d4086c65492693115f36ec86d55847d8ac",
         "distributed_timeout_seconds": 300,
         "expected_correctness_checks_per_rank": [2, 2, 2, 2],
         "expected_materialization_id": "e3db603d13fd8699a15af3a5d59c69d5301a97c22b0f8830d5b9b71e04b21f37",

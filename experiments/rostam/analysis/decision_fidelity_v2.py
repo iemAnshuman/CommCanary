@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import random
 import statistics
+from datetime import datetime
 from itertools import combinations
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, cast
 
@@ -43,33 +44,52 @@ _REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated", "no_overla
 _EVALUATED_REPRESENTATIONS = ("exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
 _UNCERTAINTY_REPRESENTATIONS = ("source", "exact_work")
 _STABILITY_REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated")
+_BINDING_ENVIRONMENT_FIELDS = {
+    "CUDA_VISIBLE_DEVICES",
+    "OMP_NUM_THREADS",
+    "SLURM_CPUS_PER_TASK",
+    "SLURM_JOB_GPUS",
+    "SLURM_LOCALID",
+    "SLURM_NODEID",
+    "SLURM_PROCID",
+    "SLURM_STEP_GPUS",
+}
 
 RepetitionSamples = Dict[int, Dict[str, Dict[str, Tuple[float, ...]]]]
 MedianVector = Dict[str, Dict[str, float]]
 
 
-def _environment_identity(raw: Any, field: str) -> str:
+def _environment_identity(
+    raw: Any,
+    field: str,
+    *,
+    comparability: Mapping[str, Any],
+) -> Tuple[str, str]:
     environment = _object(
         raw,
         field,
         {
             "schema",
-            "driver_version",
-            "nccl_library_sha256",
-            "gpus",
-            "topology",
-            "node_state",
-            "binding",
+            "invariants",
+            "telemetry",
+            "probe_policy",
+            "platform_sha256",
             "observation_sha256",
         },
     )
-    if environment["schema"] != "commcanary.rostam.runtime-observation.v2":
+    if environment["schema"] != "commcanary.rostam.runtime-observation.v3":
         raise DecisionFidelityError(f"{field}.schema is unsupported")
-    _sha256(environment["observation_sha256"], f"{field}.observation_sha256")
-    _sha256(environment["nccl_library_sha256"], f"{field}.nccl_library_sha256")
-    if not isinstance(environment["driver_version"], str) or not environment["driver_version"]:
-        raise DecisionFidelityError(f"{field}.driver_version is invalid")
-    gpus = environment["gpus"]
+    observation_sha256 = _sha256(environment["observation_sha256"], f"{field}.observation_sha256")
+    platform_sha256 = _sha256(environment["platform_sha256"], f"{field}.platform_sha256")
+    invariants = _object(
+        environment["invariants"],
+        f"{field}.invariants",
+        {"driver_version", "nccl_library_sha256", "gpu_count", "gpus", "topology", "binding"},
+    )
+    _sha256(invariants["nccl_library_sha256"], f"{field}.invariants.nccl_library_sha256")
+    if not isinstance(invariants["driver_version"], str) or not invariants["driver_version"]:
+        raise DecisionFidelityError(f"{field}.invariants.driver_version is invalid")
+    gpus = invariants["gpus"]
     required_gpu_fields = {
         "index",
         "uuid",
@@ -77,49 +97,151 @@ def _environment_identity(raw: Any, field: str) -> str:
         "driver_version",
         "pci_bus_id",
         "persistence_mode",
-        "performance_state",
-        "temperature_c",
-        "power_draw_w",
         "power_limit_w",
-        "sm_clock_mhz",
-        "memory_clock_mhz",
     }
-    if not isinstance(gpus, list) or len(gpus) != 4:
-        raise DecisionFidelityError(f"{field}.gpus must contain the four-GPU inventory")
+    if not isinstance(gpus, list) or len(gpus) != 4 or invariants["gpu_count"] != len(gpus):
+        raise DecisionFidelityError(f"{field}.invariants.gpus must contain the four-GPU inventory")
+    power_limits: Dict[int, float] = {}
     for index, raw_gpu in enumerate(gpus):
-        gpu = _object(raw_gpu, f"{field}.gpus[{index}]", required_gpu_fields)
-        if gpu["index"] != index or gpu["driver_version"] != environment["driver_version"]:
-            raise DecisionFidelityError(f"{field}.gpus[{index}] identity is invalid")
-        for text_field in ("uuid", "name", "pci_bus_id", "persistence_mode", "performance_state"):
+        gpu = _object(raw_gpu, f"{field}.invariants.gpus[{index}]", required_gpu_fields)
+        if gpu["index"] != index or gpu["driver_version"] != invariants["driver_version"]:
+            raise DecisionFidelityError(f"{field}.invariants.gpus[{index}] identity is invalid")
+        for text_field in ("uuid", "name", "pci_bus_id", "persistence_mode"):
             if not isinstance(gpu[text_field], str) or not gpu[text_field]:
-                raise DecisionFidelityError(f"{field}.gpus[{index}].{text_field} is invalid")
-        _integer(gpu["temperature_c"], f"{field}.gpus[{index}].temperature_c", minimum=-50, maximum=200)
-        _number(gpu["power_draw_w"], f"{field}.gpus[{index}].power_draw_w", minimum=0.0)
-        _number(gpu["power_limit_w"], f"{field}.gpus[{index}].power_limit_w", minimum=0.000001)
-        _integer(gpu["sm_clock_mhz"], f"{field}.gpus[{index}].sm_clock_mhz", maximum=100_000)
-        _integer(gpu["memory_clock_mhz"], f"{field}.gpus[{index}].memory_clock_mhz", maximum=100_000)
-    topology = _object(environment["topology"], f"{field}.topology", {"method", "text"})
-    node_state = _object(environment["node_state"], f"{field}.node_state", {"method", "text"})
+                raise DecisionFidelityError(f"{field}.invariants.gpus[{index}].{text_field} is invalid")
+        power_limits[index] = _number(
+            gpu["power_limit_w"],
+            f"{field}.invariants.gpus[{index}].power_limit_w",
+            minimum=0.000001,
+        )
+    topology = _object(invariants["topology"], f"{field}.invariants.topology", {"method", "text"})
     binding = _object(
-        environment["binding"],
-        f"{field}.binding",
+        invariants["binding"],
+        f"{field}.invariants.binding",
         {"environment", "cpu_affinity", "cpu_affinity_method"},
     )
     if (
         topology["method"] != "nvidia-smi topo -m"
         or not isinstance(topology["text"], str)
         or not topology["text"]
-        or node_state["method"] != "scontrol show node --oneliner HOSTNAME"
-        or not isinstance(node_state["text"], str)
-        or not node_state["text"]
         or binding["cpu_affinity_method"] != "sched_getaffinity"
         or not isinstance(binding["cpu_affinity"], list)
         or not binding["cpu_affinity"]
     ):
-        raise DecisionFidelityError(f"{field} lacks required topology, node-state, or affinity evidence")
+        raise DecisionFidelityError(f"{field} lacks required topology or affinity evidence")
+    binding_environment = binding["environment"]
+    if (
+        not isinstance(binding_environment, Mapping)
+        or set(binding_environment) != _BINDING_ENVIRONMENT_FIELDS
+        or any(
+            value is not None and (not isinstance(value, str) or not value)
+            for value in binding_environment.values()
+        )
+        or binding["cpu_affinity"] != sorted(set(binding["cpu_affinity"]))
+    ):
+        raise DecisionFidelityError(f"{field}.invariants.binding is invalid")
     for cpu in binding["cpu_affinity"]:
         _integer(cpu, f"{field}.binding.cpu_affinity[]", maximum=1_000_000)
-    return str(environment["observation_sha256"])
+    probe_policy = _object(
+        environment["probe_policy"],
+        f"{field}.probe_policy",
+        {"timeout_seconds", "max_output_bytes_per_stream"},
+    )
+    _integer(probe_policy["timeout_seconds"], f"{field}.probe_policy.timeout_seconds", minimum=1)
+    _integer(
+        probe_policy["max_output_bytes_per_stream"],
+        f"{field}.probe_policy.max_output_bytes_per_stream",
+        minimum=1,
+    )
+    platform = {
+        "driver_version": invariants["driver_version"],
+        "gpu_count": invariants["gpu_count"],
+        "gpus": list(gpus),
+        "topology": dict(topology),
+        "binding": dict(binding),
+    }
+    if canonical_sha256(platform) != platform_sha256:
+        raise DecisionFidelityError(f"{field}.platform_sha256 does not recompute")
+
+    telemetry = _object(environment["telemetry"], f"{field}.telemetry", {"method", "pre", "post"})
+    if telemetry["method"] != "bounded-pre-post-nvidia-smi.v1":
+        raise DecisionFidelityError(f"{field}.telemetry method is unsupported")
+    temperatures: Dict[str, List[int]] = {}
+    captured_at: Dict[str, datetime] = {}
+    for phase in ("pre", "post"):
+        snapshot = _object(
+            telemetry[phase],
+            f"{field}.telemetry.{phase}",
+            {"captured_at", "gpus", "node_state"},
+        )
+        if not isinstance(snapshot["captured_at"], str):
+            raise DecisionFidelityError(f"{field}.telemetry.{phase}.captured_at is invalid")
+        try:
+            captured_at[phase] = datetime.strptime(snapshot["captured_at"], "%Y-%m-%dT%H:%M:%S.%fZ")
+        except ValueError as exc:
+            raise DecisionFidelityError(f"{field}.telemetry.{phase}.captured_at is invalid") from exc
+        node_state = _object(
+            snapshot["node_state"],
+            f"{field}.telemetry.{phase}.node_state",
+            {"method", "text"},
+        )
+        if (
+            node_state["method"] != "scontrol show node --oneliner HOSTNAME"
+            or not isinstance(node_state["text"], str)
+            or not node_state["text"]
+        ):
+            raise DecisionFidelityError(f"{field}.telemetry.{phase}.node_state is invalid")
+        telemetry_gpus = snapshot["gpus"]
+        if not isinstance(telemetry_gpus, list) or len(telemetry_gpus) != len(gpus):
+            raise DecisionFidelityError(f"{field}.telemetry.{phase}.gpus is incomplete")
+        temperatures[phase] = []
+        for index, raw_gpu in enumerate(telemetry_gpus):
+            gpu = _object(
+                raw_gpu,
+                f"{field}.telemetry.{phase}.gpus[{index}]",
+                {
+                    "index",
+                    "performance_state",
+                    "temperature_c",
+                    "power_draw_w",
+                    "sm_clock_mhz",
+                    "memory_clock_mhz",
+                },
+            )
+            if gpu["index"] != index or not isinstance(gpu["performance_state"], str) or not gpu["performance_state"]:
+                raise DecisionFidelityError(f"{field}.telemetry.{phase}.gpus[{index}] identity is invalid")
+            temperature = _integer(
+                gpu["temperature_c"],
+                f"{field}.telemetry.{phase}.gpus[{index}].temperature_c",
+                minimum=int(comparability["minimum_temperature_c"]),
+                maximum=int(comparability["maximum_temperature_c"]),
+            )
+            temperatures[phase].append(temperature)
+            power_draw = _number(
+                gpu["power_draw_w"],
+                f"{field}.telemetry.{phase}.gpus[{index}].power_draw_w",
+                minimum=0.0,
+            )
+            if power_draw / power_limits[index] > float(comparability["maximum_power_draw_to_limit_ratio"]):
+                raise DecisionFidelityError(f"{field}.telemetry.{phase}.gpus[{index}] exceeds its power range")
+            _integer(
+                gpu["sm_clock_mhz"],
+                f"{field}.telemetry.{phase}.gpus[{index}].sm_clock_mhz",
+                maximum=int(comparability["maximum_sm_clock_mhz"]),
+            )
+            _integer(
+                gpu["memory_clock_mhz"],
+                f"{field}.telemetry.{phase}.gpus[{index}].memory_clock_mhz",
+                maximum=int(comparability["maximum_memory_clock_mhz"]),
+            )
+    if any(
+        abs(pre - post) > int(comparability["maximum_pre_post_temperature_delta_c"])
+        for pre, post in zip(temperatures["pre"], temperatures["post"])
+    ):
+        raise DecisionFidelityError(f"{field}.telemetry temperature delta exceeds policy")
+    if captured_at["post"] <= captured_at["pre"]:
+        raise DecisionFidelityError(f"{field}.telemetry timestamps are not ordered")
+    return observation_sha256, platform_sha256
 
 
 def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
@@ -176,6 +298,7 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
             "measured_repetitions",
             "required_correctness",
             "required_environment_evidence",
+            "environment_comparability",
             "max_relative_iqr_pct",
             "require_distinct_job_ids",
             "retry_policy",
@@ -190,11 +313,13 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         "required_correctness": "passed",
         "required_environment_evidence": [
             "cpu_affinity",
-            "gpu_clocks",
+            "gpu_identity",
             "gpu_persistence_mode",
-            "gpu_power",
-            "gpu_temperature",
-            "node_state",
+            "gpu_power_limit",
+            "gpu_topology",
+            "nccl_library_digest",
+            "pre_post_gpu_telemetry",
+            "pre_post_node_state",
         ],
         "require_distinct_job_ids": True,
         "retry_policy": "infrastructure-failure-only-never-retry-for-noise",
@@ -209,6 +334,48 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
     )
     _integer(measurement["warmup"], "warmup", maximum=100)
     _number(measurement["max_relative_iqr_pct"], "max_relative_iqr_pct", minimum=0.0, maximum=1000.0)
+    environment_comparability = _object(
+        measurement["environment_comparability"],
+        "decision fidelity policy v2.measurement.environment_comparability",
+        {
+            "require_identical_platform_fingerprint",
+            "minimum_temperature_c",
+            "maximum_temperature_c",
+            "maximum_pre_post_temperature_delta_c",
+            "maximum_power_draw_to_limit_ratio",
+            "maximum_sm_clock_mhz",
+            "maximum_memory_clock_mhz",
+        },
+    )
+    if environment_comparability["require_identical_platform_fingerprint"] is not True:
+        raise DecisionFidelityError("decision fidelity policy v2 must require one platform fingerprint")
+    minimum_temperature = _integer(
+        environment_comparability["minimum_temperature_c"],
+        "minimum_temperature_c",
+        minimum=-100,
+        maximum=200,
+    )
+    maximum_temperature = _integer(
+        environment_comparability["maximum_temperature_c"],
+        "maximum_temperature_c",
+        minimum=-100,
+        maximum=200,
+    )
+    if minimum_temperature > maximum_temperature:
+        raise DecisionFidelityError("decision fidelity policy v2 temperature range is inverted")
+    _integer(
+        environment_comparability["maximum_pre_post_temperature_delta_c"],
+        "maximum_pre_post_temperature_delta_c",
+        maximum=200,
+    )
+    _number(
+        environment_comparability["maximum_power_draw_to_limit_ratio"],
+        "maximum_power_draw_to_limit_ratio",
+        minimum=0.000001,
+        maximum=10.0,
+    )
+    _integer(environment_comparability["maximum_sm_clock_mhz"], "maximum_sm_clock_mhz", minimum=1)
+    _integer(environment_comparability["maximum_memory_clock_mhz"], "maximum_memory_clock_mhz", minimum=1)
     expected_schedule = frozen_schedule_inventory(
         configuration_repetitions=configuration_repetitions,
         iterations=int(measurement["measured_repetitions"]),
@@ -671,6 +838,7 @@ def evaluate_decision_fidelity_v2(
     samples: RepetitionSamples = {}
     identities: Set[Tuple[str, str, str]] = set()
     environment_observations: Set[str] = set()
+    platform_fingerprints: Set[str] = set()
     jobs: List[str] = []
     nodes: Set[str] = set()
     measured_repetitions = int(policy["measurement"]["measured_repetitions"])
@@ -731,12 +899,16 @@ def evaluate_decision_fidelity_v2(
                     raise DecisionFidelityError("replicated decision-gate job and hostname are required")
                 jobs.append(job_id)
                 nodes.add(hostname.split(".", 1)[0])
-                environment_observations.add(
-                    _environment_identity(
-                        row.get("decision_gate_environment"),
-                        f"configuration repetition {repetition}, {configuration}.decision_gate_environment",
-                    )
+                observation_sha256, platform_sha256 = _environment_identity(
+                    row.get("decision_gate_environment"),
+                    f"configuration repetition {repetition}, {configuration}.decision_gate_environment",
+                    comparability=cast(
+                        Mapping[str, Any],
+                        policy["measurement"]["environment_comparability"],
+                    ),
                 )
+                environment_observations.add(observation_sha256)
+                platform_fingerprints.add(platform_sha256)
                 identities.add(
                     (
                         canonical_sha256(gate["request"]),
@@ -758,6 +930,13 @@ def evaluate_decision_fidelity_v2(
                 {
                     "code": "environment_observation_reuse",
                     "detail": "every configuration repetition must bind a distinct runtime observation",
+                }
+            )
+        if len(platform_fingerprints) != 1:
+            issues.append(
+                {
+                    "code": "environment_invariant_mismatch",
+                    "detail": "configuration repetitions do not share one platform fingerprint",
                 }
             )
 
@@ -914,6 +1093,7 @@ def evaluate_decision_fidelity_v2(
             "configuration_pair_count": len(observed_pair_rows),
             "distinct_job_count": len(set(jobs)),
             "environment_observation_count": len(environment_observations),
+            "platform_sha256": next(iter(platform_fingerprints)) if len(platform_fingerprints) == 1 else None,
             "nodes": sorted(nodes),
         },
         "issues": issues,

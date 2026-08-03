@@ -39,6 +39,20 @@
         "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-repetition"},
         "configuration_repetitions": {"maximum": 10, "minimum": 5, "type": "integer"},
         "cross_configuration_pairing": {"const": "none-independent-scheduler-allocations"},
+        "environment_comparability": {
+          "additionalProperties": false,
+          "properties": {
+            "maximum_memory_clock_mhz": {"minimum": 1, "type": "integer"},
+            "maximum_power_draw_to_limit_ratio": {"exclusiveMinimum": 0, "maximum": 10, "type": "number"},
+            "maximum_pre_post_temperature_delta_c": {"maximum": 200, "minimum": 0, "type": "integer"},
+            "maximum_sm_clock_mhz": {"minimum": 1, "type": "integer"},
+            "maximum_temperature_c": {"maximum": 200, "minimum": -100, "type": "integer"},
+            "minimum_temperature_c": {"maximum": 200, "minimum": -100, "type": "integer"},
+            "require_identical_platform_fingerprint": {"const": true}
+          },
+          "required": ["maximum_memory_clock_mhz", "maximum_power_draw_to_limit_ratio", "maximum_pre_post_temperature_delta_c", "maximum_sm_clock_mhz", "maximum_temperature_c", "minimum_temperature_c", "require_identical_platform_fingerprint"],
+          "type": "object"
+        },
         "max_relative_iqr_pct": {"maximum": 1000, "minimum": 0, "type": "number"},
         "measured_repetitions": {"const": 24},
         "order_method": {"const": "configuration-repetition-williams-design.v3"},
@@ -74,13 +88,13 @@
           "type": "object"
         },
         "required_correctness": {"const": "passed"},
-        "required_environment_evidence": {"const": ["cpu_affinity", "gpu_clocks", "gpu_persistence_mode", "gpu_power", "gpu_temperature", "node_state"]},
+        "required_environment_evidence": {"const": ["cpu_affinity", "gpu_identity", "gpu_persistence_mode", "gpu_power_limit", "gpu_topology", "nccl_library_digest", "pre_post_gpu_telemetry", "pre_post_node_state"]},
         "require_distinct_job_ids": {"const": true},
         "retry_policy": {"const": "infrastructure-failure-only-never-retry-for-noise"},
         "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
         "warmup": {"maximum": 100, "minimum": 0, "type": "integer"}
       },
-      "required": ["allocation_policy", "configuration_repetitions", "cross_configuration_pairing", "max_relative_iqr_pct", "measured_repetitions", "order_method", "representation_schedule", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
+      "required": ["allocation_policy", "configuration_repetitions", "cross_configuration_pairing", "environment_comparability", "max_relative_iqr_pct", "measured_repetitions", "order_method", "representation_schedule", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
       "type": "object"
     },
     "comparison": {

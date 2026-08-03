@@ -273,12 +273,16 @@ Each cell uses five warmups and 24 measured passes. The policy freezes all six
 Williams rows and the row used by every pass in every repetition. Within each
 cell, every representation occupies every position four times and every
 ordered predecessor/successor pair occurs four times. The opening row rotates
-across configuration repetitions. Runtime
-evidence includes CPU affinity, GPU persistence and performance state,
-temperature, power draw and limit, current SM and memory clocks, topology, and
-the scheduler's node-state record. Retries may replace infrastructure failures
-only; a noisy successful attempt remains evidence and cannot be replaced by a
-quieter run.
+across configuration repetitions. Before execution, the harness records GPU
+identity, driver, topology, persistence mode, power limit, CPU affinity, and
+the selected NCCL digest. It captures performance state, temperature, power
+draw, clocks, and scheduler node state both before and after measurement, and
+refuses the cell if an invariant changes. The evaluator requires one exact
+platform fingerprint across all cells and enforces the policy's temperature,
+power, clock, and pre/post-delta ranges. Bounded in-pass telemetry remains
+deferred because an external sampler could perturb this timing experiment.
+Retries may replace infrastructure failures only; a noisy successful attempt
+remains evidence and cannot be replaced by a quieter run.
 
 The v2 evaluator independently resamples configuration repetitions for each
 configuration as its outer bootstrap. Its inner bootstrap resamples complete

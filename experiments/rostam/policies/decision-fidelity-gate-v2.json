@@ -1,6 +1,6 @@
 {
   "schema": "commcanary.rostam.decision-fidelity-policy.v2",
-  "policy_id": "8a77f9c967c980959ee070c1feb64480f2b9467d7920a2c6ceddc5e96430381a",
+  "policy_id": "9b9e85be6717edbf7b1dd104d8bb15d4086c65492693115f36ec86d55847d8ac",
   "scope": {
     "workload_id": "decision-gate-exact-replicated",
     "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
@@ -52,15 +52,26 @@
     "warmup": 5,
     "measured_repetitions": 24,
     "required_correctness": "passed",
+    "environment_comparability": {
+      "require_identical_platform_fingerprint": true,
+      "minimum_temperature_c": -20,
+      "maximum_temperature_c": 95,
+      "maximum_pre_post_temperature_delta_c": 30,
+      "maximum_power_draw_to_limit_ratio": 1.1,
+      "maximum_sm_clock_mhz": 3000,
+      "maximum_memory_clock_mhz": 5000
+    },
     "max_relative_iqr_pct": 20.0,
     "require_distinct_job_ids": true,
     "required_environment_evidence": [
       "cpu_affinity",
-      "gpu_clocks",
+      "gpu_identity",
       "gpu_persistence_mode",
-      "gpu_power",
-      "gpu_temperature",
-      "node_state"
+      "gpu_power_limit",
+      "gpu_topology",
+      "nccl_library_digest",
+      "pre_post_gpu_telemetry",
+      "pre_post_node_state"
     ],
     "retry_policy": "infrastructure-failure-only-never-retry-for-noise"
   },

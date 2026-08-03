@@ -30,10 +30,11 @@
         "environment_observation_count": {"minimum": 0, "type": "integer"},
         "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "nodes": {"items": {"minLength": 1, "type": "string"}, "type": "array", "uniqueItems": true},
+        "platform_sha256": {"pattern": "^[0-9a-f]{64}$", "type": ["string", "null"]},
         "run_id": {"minLength": 1, "type": "string"},
         "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
       },
-      "required": ["aggregate_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "configuration_repetition_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "run_id", "selection_sha256"],
+      "required": ["aggregate_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "configuration_repetition_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "platform_sha256", "run_id", "selection_sha256"],
       "type": "object"
     },
     "issues": {
