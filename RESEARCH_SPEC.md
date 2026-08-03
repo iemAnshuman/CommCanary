@@ -160,6 +160,12 @@ injected and naturally occurring regressions.
 
 ## Not implemented—and required before a strong systems-paper claim
 
+- a content-addressed execution image binding the Python interpreter,
+  standard library, installed Torch/CUDA userland, executor, and workload
+  inputs as one process image. Isolated `-I -S` startup closes project-level
+  startup hooks and mutable checkout imports, but it is not whole-image
+  attestation. The replicated v2 profile is freeze-blocked until this image is
+  implemented and manifest-bound;
 - broader physical CUDA/NCCL evidence beyond the first Rostam decomposition:
   a 4x A100-PCIE single-node result now exists via `experiments/rostam/`,
   while multi-node, NVLink-class, and multi-hardware evaluations remain open;

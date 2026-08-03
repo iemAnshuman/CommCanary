@@ -635,6 +635,7 @@
         "global_ranks": [0, 1, 2, 3],
         "iterations": 24,
         "operation": "all_reduce",
+        "readiness": "blocked-content-addressed-runtime-image",
         "warmup": 5,
         "world_size": 4
       },

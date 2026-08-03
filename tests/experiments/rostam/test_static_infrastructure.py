@@ -401,6 +401,7 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert replicated_workload.measurement_schema.endswith("decision-gate-measurement.v2")
     assert replicated_parameters["configuration_repetitions"] == 8
     assert replicated_parameters["iterations"] == 24
+    assert replicated_parameters["readiness"] == "blocked-content-addressed-runtime-image"
     assert replicated_command[replicated_command.index("--configuration-repetition") + 1] == "{repetition}"
     assert replicated_parameters["decision_fidelity_policy_id"] == (
         "9b9e85be6717edbf7b1dd104d8bb15d4086c65492693115f36ec86d55847d8ac"
@@ -1009,7 +1010,7 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
     assert policy["executor"]["source_file_count"] > 20
 
 
-def test_replicated_decision_gate_profile_expands_configuration_repetitions(tmp_path: Path) -> None:
+def test_replicated_decision_gate_profile_refuses_unbound_runtime_image(tmp_path: Path) -> None:
     inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate-exact-replicated")
     for input_id in (
         "decision-fidelity-policy",
@@ -1028,24 +1029,19 @@ def test_replicated_decision_gate_profile_expands_configuration_repetitions(tmp_
         else:
             path.write_bytes(b"reviewed-replicated-decision-input")
         inputs[input_id] = path
-    campaign = build_campaign(
-        catalog=load_catalog(CATALOG_PATH),
-        catalog_path=CATALOG_PATH,
-        profile_id="decision-gate-exact-replicated",
-        run_id="rostam-decision-gate-replicated-static-fixture",
-        repetitions=8,
-        repository_commit="1" * 40,
-        repository_dirty=False,
-        repository_patch_sha256=None,
-        source_archive_sha256="2" * 64,
-        inputs=inputs,
-    )
-    manifest = build_run_manifest(campaign)
-
-    assert len(manifest.cells) == 64
-    assert {cell.repetition for cell in manifest.cells} == set(range(8))
-    for repetition in range(8):
-        assert len([cell for cell in manifest.cells if cell.repetition == repetition]) == 8
+    with pytest.raises(CampaignPreparationError, match="blocked-content-addressed-runtime-image"):
+        build_campaign(
+            catalog=load_catalog(CATALOG_PATH),
+            catalog_path=CATALOG_PATH,
+            profile_id="decision-gate-exact-replicated",
+            run_id="rostam-decision-gate-replicated-static-fixture",
+            repetitions=8,
+            repository_commit="1" * 40,
+            repository_dirty=False,
+            repository_patch_sha256=None,
+            source_archive_sha256="2" * 64,
+            inputs=inputs,
+        )
 
 
 def test_replicated_decision_gate_profile_refuses_wrong_repetition_count(tmp_path: Path) -> None:

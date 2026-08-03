@@ -150,12 +150,15 @@ def _verify_decision_fidelity_binding(
             or not 5 <= configuration_repetitions <= 10
         ):
             raise CampaignPreparationError(f"workload {workload.id!r} configuration repetition count is invalid")
-        declarations.append((workload.id, policy_id, configuration_repetitions))
+        readiness = parameters.get("readiness", "ready")
+        if not isinstance(readiness, str) or not readiness:
+            raise CampaignPreparationError(f"workload {workload.id!r} readiness is invalid")
+        declarations.append((workload.id, policy_id, configuration_repetitions, readiness))
     if not declarations:
         return
     if len(declarations) != 1:
         raise CampaignPreparationError("a campaign profile must select exactly one decision-fidelity workload")
-    workload_id, expected_policy_id, configuration_repetitions = declarations[0]
+    workload_id, expected_policy_id, configuration_repetitions, readiness = declarations[0]
     path = inputs.get("decision-fidelity-policy")
     if path is None or path.is_symlink() or not path.is_file():
         raise CampaignPreparationError("decision-fidelity campaign requires a real policy input")
@@ -192,6 +195,8 @@ def _verify_decision_fidelity_binding(
             "replicated decision-fidelity campaign requires exactly "
             f"{configuration_repetitions} configuration repetitions"
         )
+    if configuration_repetitions is not None and readiness != "ready":
+        raise CampaignPreparationError(f"replicated decision-fidelity campaign is not freeze-ready: {readiness}")
 
 
 def build_campaign(

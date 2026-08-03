@@ -66,12 +66,13 @@ campaign identities, hashes, and reproduction contract.
 
 1. **Replicated exact-capsule follow-up.** The first complete predeclared
    matrix is `inconclusive`, not failed and not passed. The versioned v2 design
-   freezes eight independent repetitions per configuration, 24
+   predeclares eight independent repetitions per configuration, 24
    carryover-balanced Williams passes, pre/post telemetry with a shared
    platform invariant, unpaired hierarchical resampling, and simultaneous
-   uncertainty. It has
-   not run; do not select a quieter successful attempt or tune its policy to an
-   observed answer.
+   uncertainty. It has not run and is freeze-blocked until a
+   content-addressed Python/Torch runtime image is manifest-bound. Do not
+   select a quieter successful attempt or tune its policy to an observed
+   answer.
 2. **Reduced decision canary.** Add and physically execute a genuinely reduced
    representation. Compare it with exact replay, stratified and random
    sampling, and ddmin on decision fidelity, false positives and negatives,

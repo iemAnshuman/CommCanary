@@ -335,12 +335,21 @@ directories are absent from `PYTHONPATH`. Workloads that require PARAM receive
 only a privately extracted, complete `param-runtime-artifact`; every cell uses
 the manifest-bound NCCL library bytes for its selected configuration.
 
+This isolates project-controlled code and payloads, not the base interpreter,
+standard library, dynamic loader, installed Torch/CUDA userland, or host
+driver as one immutable process image. `frozen executor` therefore means the
+executor zipapp and analyzer bytes, not whole-environment attestation. The v2
+profile is marked `blocked-content-addressed-runtime-image`; campaign freezing
+and submission must remain fail-closed until an actual content-addressed
+runtime image is added to the manifest and launch path.
+
 In v2, `exact_work` is explicitly a positive conformance control for the exact
 qualification capsule. The policy records reduced-canary and cost claims as
 `not_evaluated`. No v2 campaign has been frozen on Rostam, submitted, selected,
-or analyzed, so this section describes executable design rather than physical
-evidence. An authorized operator must freeze new executor, input, environment,
-and plan hashes before any submission.
+or analyzed, so this section describes a blocked design rather than physical
+evidence. After the runtime-image blocker is implemented, an authorized
+operator must freeze new executor, input, environment, and plan hashes before
+any submission.
 
 ### Decision-fidelity gate result (2026-08-01)
 

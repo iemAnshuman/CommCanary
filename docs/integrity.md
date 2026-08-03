@@ -176,9 +176,14 @@ path. Harness verification returns an immutable byte snapshot. Loaders hash
 and parse those same bytes instead of reopening the original pathname.
 Analysis therefore cannot observe a same-size replacement after verification.
 
-These controls establish byte identity relative to the frozen campaign. They
-do not authenticate the campaign owner or lab, and they do not upgrade an
-`inconclusive` physical verdict.
+These controls establish project-code and payload identity relative to the
+frozen campaign. They do not bind the base interpreter, standard library,
+dynamic loader, installed Torch/CUDA userland, or host driver into one process
+image. The term `frozen executor` binds the executor zipapp and analyzer bytes;
+it is not whole-environment attestation. The replicated v2 campaign remains
+freeze-blocked until a content-addressed runtime image is manifest-bound.
+These controls also do not authenticate the campaign owner or lab, or upgrade
+an `inconclusive` physical verdict.
 
 `created_at` is intentionally volatile and excluded. Changing it alone does not
 invalidate a canary.
