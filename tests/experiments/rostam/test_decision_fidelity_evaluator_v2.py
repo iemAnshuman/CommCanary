@@ -19,6 +19,7 @@ from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
 from experiments.rostam.evaluate_decision_gate import _verdict_summary
 from experiments.rostam.harness import canonical_json_bytes, canonical_sha256
+from experiments.rostam.lib.executor_artifact import EXECUTOR_ARTIFACT_INPUT_ID, prepare_executor_artifact
 
 ROOT = Path(__file__).resolve().parents[3]
 POLICY_PATH = ROOT / "experiments" / "rostam" / "policies" / "decision-fidelity-gate-v2.json"
@@ -288,3 +289,35 @@ def test_v2_policy_validator_refuses_silent_method_substitution() -> None:
 
     with pytest.raises(DecisionFidelityError, match="uncertainty semantics"):
         validate_decision_fidelity_policy(substituted)
+
+
+def test_v2_verdict_requires_and_records_the_aggregate_frozen_analyzer(tmp_path: Path) -> None:
+    policy, policy_bytes = _policy()
+    aggregate = _aggregate(policy, policy_bytes)
+    artifact = prepare_executor_artifact(ROOT / "experiments" / "rostam", tmp_path / "executor-artifacts")
+    campaign = aggregate["provenance"]["campaigns"][0]
+    campaign["inputs"].append(
+        {
+            "id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "sha256": artifact.sha256,
+            "size_bytes": artifact.size_bytes,
+        }
+    )
+    aggregate["provenance"]["trusted_join_sha256"] = canonical_sha256([campaign])
+    aggregate["provenance"]["analysis_implementation"] = artifact.analyzer_record(
+        "experiments.rostam.analyze:main"
+    )
+
+    with pytest.raises(DecisionFidelityError, match="frozen evaluator artifact"):
+        evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    verdict = evaluate_decision_fidelity(
+        aggregate,
+        policy_bytes,
+        executor_artifact=artifact,
+    )
+
+    assert verdict["analyzer"] == artifact.analyzer_record(
+        "experiments.rostam.evaluate_decision_gate:main",
+        policy_sha256=hashlib.sha256(policy_bytes).hexdigest(),
+    )

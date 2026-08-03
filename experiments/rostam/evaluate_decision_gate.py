@@ -13,7 +13,8 @@ from .analysis.decision_fidelity import (
     load_decision_fidelity_policy,
     write_decision_fidelity_verdict,
 )
-from .harness import ContractError, JSONResourceLimits, read_bounded_bytes, strict_json_loads
+from .harness import ContractError, JSONResourceLimits, canonical_json_bytes, read_bounded_bytes, strict_json_loads
+from .lib.executor_artifact import ExecutorArtifact
 
 _AGGREGATE_LIMITS = JSONResourceLimits(max_document_bytes=64 * 1024 * 1024, max_items=4_000_000)
 
@@ -43,10 +44,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("aggregate", type=Path)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--verify-against",
+        type=Path,
+        help="require the frozen evaluator to reproduce these existing verdict bytes before writing output",
+    )
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> int:
+def main(
+    argv: Optional[Sequence[str]] = None,
+    *,
+    executor_artifact: Optional[ExecutorArtifact] = None,
+) -> int:
     args = build_parser().parse_args(argv)
     try:
         aggregate_bytes = read_bounded_bytes(
@@ -56,7 +66,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         aggregate = strict_json_loads(aggregate_bytes, limits=_AGGREGATE_LIMITS)
         policy_bytes = load_decision_fidelity_policy(args.policy)
-        verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+        verdict = evaluate_decision_fidelity(
+            aggregate,
+            policy_bytes,
+            executor_artifact=executor_artifact,
+        )
+        if args.verify_against is not None:
+            expected = canonical_json_bytes(verdict)
+            golden = read_bounded_bytes(
+                args.verify_against,
+                max_bytes=len(expected),
+                field="golden decision-gate verdict",
+            )
+            if golden != expected:
+                raise ContractError("frozen evaluator does not reproduce the golden decision-gate verdict")
         write_decision_fidelity_verdict(args.output, verdict)
         summary = _verdict_summary(verdict, args.output)
     except (ContractError, OSError, UnicodeError) as exc:

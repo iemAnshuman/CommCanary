@@ -9,9 +9,11 @@ from itertools import combinations
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, cast
 
 from ..harness import JSONResourceLimits, canonical_sha256, sha256_hex, strict_json_loads
+from ..lib.executor_artifact import ExecutorArtifact
 from .decision_fidelity import (
     REPORTED_METRIC_TO_VERDICT_FIELD,
     DecisionFidelityError,
+    _frozen_evaluator_record,
     _integer,
     _median,
     _number,
@@ -557,7 +559,12 @@ def _relative_iqr(values: Sequence[float]) -> float:
     return math.inf if median == 0.0 and iqr > 0.0 else (0.0 if median == 0.0 else iqr / median * 100.0)
 
 
-def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: bytes) -> Dict[str, Any]:
+def evaluate_decision_fidelity_v2(
+    aggregate: Mapping[str, Any],
+    policy_bytes: bytes,
+    *,
+    executor_artifact: Optional[ExecutorArtifact] = None,
+) -> Dict[str, Any]:
     """Evaluate complete allocation blocks under the immutable v2 method."""
 
     aggregate = _object(aggregate, "aggregate")
@@ -568,6 +575,12 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
     if aggregate.get("schema") != ANALYSIS_SCHEMA:
         raise DecisionFidelityError("decision fidelity v2 requires a trusted validated aggregate")
     campaign = _policy_input_binding(aggregate, policy_sha256=policy_sha256, policy_size_bytes=len(policy_bytes))
+    analyzer_record = _frozen_evaluator_record(
+        aggregate,
+        campaign,
+        executor_artifact=executor_artifact,
+        policy_sha256=policy_sha256,
+    )
     completeness = _object(aggregate.get("completeness"), "aggregate.completeness")
     configurations = list(policy["scope"]["configuration_ids"])
     block_count = int(policy["measurement"]["allocation_blocks"])
@@ -853,6 +866,8 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
             "positioning": positioning,
         },
     }
+    if analyzer_record is not None:
+        result["analyzer"] = analyzer_record
     result["verdict_id"] = canonical_sha256(result)
     return result
 

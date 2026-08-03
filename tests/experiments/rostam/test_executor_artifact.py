@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,9 @@ from experiments.rostam.lib.executor_artifact import (
     EXECUTOR_ARTIFACT_SCHEMA,
     EXECUTOR_INVENTORY_NAME,
     EXECUTOR_POLICY_FORMAT,
+    executor_schema_files,
     executor_source_files,
+    load_executor_artifact,
     prepare_executor_artifact,
     render_executor_artifact,
 )
@@ -28,7 +31,7 @@ EXPERIMENT_DIRECTORY = REPOSITORY_ROOT / "experiments" / "rostam"
 def _copy_executor_sources(tmp_path: Path) -> Path:
     copied_root = tmp_path / "copy"
     copied_experiment = copied_root / "experiments" / "rostam"
-    for source in executor_source_files(EXPERIMENT_DIRECTORY):
+    for source in (*executor_source_files(EXPERIMENT_DIRECTORY), *executor_schema_files(EXPERIMENT_DIRECTORY)):
         destination = copied_root / source.relative_to(REPOSITORY_ROOT)
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
@@ -68,12 +71,18 @@ def test_executor_artifact_is_deterministic_and_inventories_every_package_source
     assert first == second
     assert first.sha256 == hashlib.sha256(first.path.read_bytes()).hexdigest()
     expected = {path.relative_to(REPOSITORY_ROOT).as_posix() for path in executor_source_files(EXPERIMENT_DIRECTORY)}
+    expected_schemas = {
+        path.relative_to(REPOSITORY_ROOT).as_posix() for path in executor_schema_files(EXPERIMENT_DIRECTORY)
+    }
     assert set(first.source_files) == expected
+    assert set(first.schema_files) == expected_schemas
+    assert load_executor_artifact(first.path) == first
     with zipfile.ZipFile(first.path) as archive:
         inventory = json.loads(archive.read(EXECUTOR_INVENTORY_NAME))
         assert inventory["schema"] == EXECUTOR_ARTIFACT_SCHEMA
         assert {item["path"] for item in inventory["source_files"]} == expected
-        assert archive.read("__main__.py").startswith(b"from experiments.rostam.lib.cell_entrypoint")
+        assert {item["path"] for item in inventory["schema_files"]} == expected_schemas
+        assert archive.read("__main__.py").startswith(b"from experiments.rostam.lib.executor_cli")
 
 
 def test_bootstrap_stages_valid_executor_and_isolated_python_imports_it(tmp_path: Path) -> None:
@@ -97,6 +106,27 @@ def test_bootstrap_stages_valid_executor_and_isolated_python_imports_it(tmp_path
         )
         assert completed.returncode == 0
         assert "Execute exactly one manifest-owned physical cell" in completed.stdout
+        environment = dict(os.environ)
+        environment["COMMCANARY_EXECUTOR_PATH"] = str(staged.path)
+        environment["COMMCANARY_EXECUTOR_SHA256"] = staged.sha256
+        analysis_help = subprocess.run(
+            [sys.executable, "-I", "-S", str(staged.path), "analyze", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        assert analysis_help.returncode == 0
+        assert "Validate a frozen manifest" in analysis_help.stdout
+        evaluator_help = subprocess.run(
+            [sys.executable, "-I", "-S", str(staged.path), "evaluate-decision-gate", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        assert evaluator_help.returncode == 0
+        assert "Evaluate one trusted physical decision-gate aggregate" in evaluator_help.stdout
     finally:
         staged.close()
 

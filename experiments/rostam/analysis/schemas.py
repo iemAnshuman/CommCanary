@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
+import pkgutil
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
-from ..harness import CELL_RESULT_SCHEMA, ContractError, file_sha256, strict_json_loads
+from ..harness import CELL_RESULT_SCHEMA, ContractError, strict_json_loads
 
 LOCAL_PREPARE_MEASUREMENT_SCHEMA = "commcanary.experiment.local.prepare-measurement.v1"
 LOCAL_CONSUME_MEASUREMENT_SCHEMA = "commcanary.experiment.local.consume-measurement.v1"
@@ -814,11 +816,12 @@ def validate_schema_documents(schema_ids: Optional[Tuple[str, ...]] = None) -> T
     """Validate and hash the exact committed schema documents used by analysis."""
 
     expected_names = set(_SCHEMA_FILES.values())
-    actual_names = {path.name for path in _SCHEMA_DIRECTORY.glob("*.json")}
-    if actual_names != expected_names:
-        raise MeasurementValidationError(
-            f"schema directory mismatch: expected {sorted(expected_names)!r}, observed {sorted(actual_names)!r}"
-        )
+    if _SCHEMA_DIRECTORY.is_dir():
+        actual_names = {path.name for path in _SCHEMA_DIRECTORY.glob("*.json")}
+        if actual_names != expected_names:
+            raise MeasurementValidationError(
+                f"schema directory mismatch: expected {sorted(expected_names)!r}, observed {sorted(actual_names)!r}"
+            )
     selected = set(_SCHEMA_FILES) if schema_ids is None else set(schema_ids)
     unknown = sorted(selected - set(_SCHEMA_FILES))
     if unknown:
@@ -828,7 +831,10 @@ def validate_schema_documents(schema_ids: Optional[Tuple[str, ...]] = None) -> T
         if schema_id not in selected:
             continue
         path = _SCHEMA_DIRECTORY / filename
-        raw = strict_json_loads(path.read_bytes())
+        encoded = path.read_bytes() if path.is_file() else pkgutil.get_data("experiments.rostam", f"schemas/{filename}")
+        if encoded is None:
+            raise MeasurementValidationError(f"schema document {filename!r} is missing")
+        raw = strict_json_loads(encoded)
         if not isinstance(raw, Mapping) or raw.get("$id") != schema_id:
             raise MeasurementValidationError(f"schema document {filename!r} has the wrong $id")
         if raw.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
@@ -839,7 +845,7 @@ def validate_schema_documents(schema_ids: Optional[Tuple[str, ...]] = None) -> T
             {
                 "schema": schema_id,
                 "path": f"experiments/rostam/schemas/{filename}",
-                "sha256": file_sha256(path),
+                "sha256": hashlib.sha256(encoded).hexdigest(),
             }
         )
     return tuple(rows)

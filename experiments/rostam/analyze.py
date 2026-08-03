@@ -19,6 +19,7 @@ from experiments.rostam.analysis import (
 )
 from experiments.rostam.analysis import legacy as legacy_analysis
 from experiments.rostam.harness import ContractError
+from experiments.rostam.lib.executor_artifact import ExecutorArtifact
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -147,7 +148,7 @@ def _derived_regeneration_command(args: argparse.Namespace) -> str:
     return shlex.join(command)
 
 
-def _verified_main(argv: List[str]) -> int:
+def _verified_main(argv: List[str], *, executor_artifact: Optional[ExecutorArtifact] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     regeneration_command = args.regeneration_command or _derived_regeneration_command(args)
@@ -174,6 +175,7 @@ def _verified_main(argv: List[str]) -> int:
             compatibility_golden_directory=args.compatibility_golden_directory,
             compatibility_archive_descriptor=args.compatibility_archive_descriptor,
             compatibility_raw_archive=args.compatibility_raw_archive,
+            executor_artifact=executor_artifact,
         )
     except (ContractError, OSError) as exc:
         print(f"analysis failed: {exc}", file=sys.stderr)
@@ -185,7 +187,7 @@ def _verified_main(argv: List[str]) -> int:
     return 0
 
 
-def _compatibility_main(argv: List[str]) -> int:
+def _compatibility_main(argv: List[str], *, executor_artifact: Optional[ExecutorArtifact] = None) -> int:
     parser = build_compatibility_parser()
     args = parser.parse_args(argv)
     try:
@@ -208,6 +210,7 @@ def _compatibility_main(argv: List[str]) -> int:
             relative_threshold_pct=args.median_threshold_pct,
             absolute_threshold_us=args.median_absolute_threshold_us,
             reviewed=args.reviewed,
+            executor_artifact=executor_artifact,
         )
     except (ContractError, OSError) as exc:
         print(f"compatibility preparation failed: {exc}", file=sys.stderr)
@@ -218,15 +221,19 @@ def _compatibility_main(argv: List[str]) -> int:
     return 0
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(
+    argv: Optional[List[str]] = None,
+    *,
+    executor_artifact: Optional[ExecutorArtifact] = None,
+) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments and arguments[0] == "legacy":
         return legacy_analysis.main(arguments[1:])
     if arguments and arguments[0] == "prepare-compatibility":
-        return _compatibility_main(arguments[1:])
+        return _compatibility_main(arguments[1:], executor_artifact=executor_artifact)
     if arguments and arguments[0] == "verify":
         arguments = arguments[1:]
-    return _verified_main(arguments)
+    return _verified_main(arguments, executor_artifact=executor_artifact)
 
 
 if __name__ == "__main__":

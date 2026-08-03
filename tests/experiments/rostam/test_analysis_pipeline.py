@@ -7,7 +7,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pytest  # type: ignore[import-not-found]
 
@@ -15,6 +15,7 @@ from experiments.rostam.analysis import (
     AGGREGATE_CSV_FILENAME,
     AGGREGATE_JSON_FILENAME,
     PAPER_FRAGMENT_FILENAME,
+    AnalysisValidationError,
     ArchiveVerificationError,
     MeasurementValidationError,
     PublicationMismatchError,
@@ -47,8 +48,14 @@ from experiments.rostam.harness import (
     write_attempt_record,
     write_cell_result,
 )
+from experiments.rostam.lib.executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+    prepare_executor_artifact,
+)
 
 GOLDEN_DIRECTORY = Path(__file__).parents[2] / "fixtures" / "experiments" / "golden"
+EXPERIMENT_DIRECTORY = Path(__file__).resolve().parents[3] / "experiments" / "rostam"
 REGENERATION_COMMAND = "python -m experiments.rostam.analyze verify --fixture local-analysis-golden"
 MEASUREMENT_SCHEMA = "commcanary.experiment.local.prepare-measurement.v1"
 PRODUCER_SCHEMA = "commcanary.experiment.prepare.v1"
@@ -230,8 +237,8 @@ class AnalysisFixture:
     retry_cell_id: str
 
 
-def _complete_fixture(tmp_path: Path) -> AnalysisFixture:
-    manifest = build_run_manifest(CampaignSpec.from_dict(_campaign_dict()))
+def _complete_fixture(tmp_path: Path, campaign: Optional[CampaignSpec] = None) -> AnalysisFixture:
+    manifest = build_run_manifest(CampaignSpec.from_dict(_campaign_dict()) if campaign is None else campaign)
     frozen = freeze_run_manifest(manifest, tmp_path / "results")
     retry_cell = next(cell for cell in manifest.cells if cell.configuration_id == "config-a" and cell.repetition == 0)
     records = []
@@ -342,6 +349,50 @@ def test_complete_publication_is_deterministic_deduplicated_and_golden(tmp_path:
     assert "## Selected-cell trace" in markdown
     assert retry_rows[0]["environment_sha256"] in markdown
     assert REGENERATION_COMMAND in markdown
+
+
+def test_executor_bound_campaign_requires_and_records_the_frozen_analyzer(tmp_path: Path) -> None:
+    artifact = prepare_executor_artifact(EXPERIMENT_DIRECTORY, tmp_path / "executor-artifacts")
+    campaign = _campaign_dict()
+    campaign["inputs"].append(
+        {
+            "id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "sha256": artifact.sha256,
+            "size_bytes": artifact.size_bytes,
+        }
+    )
+    campaign["policy"]["executor"] = {
+        "format": EXECUTOR_POLICY_FORMAT,
+        "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
+        "inventory_sha256": artifact.inventory_sha256,
+        "source_inventory_sha256": artifact.source_inventory_sha256,
+        "schema_inventory_sha256": artifact.schema_inventory_sha256,
+        "source_file_count": len(artifact.source_files),
+        "schema_file_count": len(artifact.schema_files),
+    }
+    fixture = _complete_fixture(tmp_path, CampaignSpec.from_dict(campaign))
+
+    with pytest.raises(AnalysisValidationError, match="frozen executor artifact"):
+        verify_regenerate_compare(
+            fixture.frozen.directory,
+            fixture.selection.selection_id,
+            fixture.verdict_sha256,
+            tmp_path / "unbound-output",
+            regeneration_command=REGENERATION_COMMAND,
+        )
+
+    publication = verify_regenerate_compare(
+        fixture.frozen.directory,
+        fixture.selection.selection_id,
+        fixture.verdict_sha256,
+        tmp_path / "bound-output",
+        regeneration_command=REGENERATION_COMMAND,
+        executor_artifact=artifact,
+    )
+
+    assert publication.aggregate["provenance"]["analysis_implementation"] == artifact.analyzer_record(
+        "experiments.rostam.analyze:main"
+    )
 
 
 def test_incomplete_failed_selection_requires_explicit_opt_in_and_marks_every_output(

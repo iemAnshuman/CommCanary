@@ -18,6 +18,12 @@ from ..harness import (
     sha256_hex,
     strict_json_loads,
 )
+from ..lib.executor_artifact import (
+    EXECUTOR_ANALYZE_ENTRY_POINT,
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_EVALUATE_ENTRY_POINT,
+    ExecutorArtifact,
+)
 from .pipeline import ANALYSIS_SCHEMA
 from .schemas import (
     DECISION_FIDELITY_POLICY_SCHEMA,
@@ -452,9 +458,42 @@ def _policy_input_binding(
     return campaign
 
 
+def _frozen_evaluator_record(
+    aggregate: Mapping[str, Any],
+    campaign: Mapping[str, Any],
+    *,
+    executor_artifact: Optional[ExecutorArtifact],
+    policy_sha256: str,
+) -> Optional[Dict[str, Any]]:
+    inputs = campaign.get("inputs")
+    if not isinstance(inputs, list):
+        raise DecisionFidelityError("decision gate campaign input inventory is missing")
+    matches = [item for item in inputs if isinstance(item, Mapping) and item.get("id") == EXECUTOR_ARTIFACT_INPUT_ID]
+    provenance = _object(aggregate.get("provenance"), "aggregate.provenance")
+    analysis_record = provenance.get("analysis_implementation")
+    if not matches:
+        if analysis_record is not None or executor_artifact is not None:
+            raise DecisionFidelityError("legacy decision-gate evidence may not acquire an unbound analyzer identity")
+        return None
+    if len(matches) != 1 or executor_artifact is None:
+        raise DecisionFidelityError("executor-bound decision gate requires its frozen evaluator artifact")
+    if (
+        matches[0].get("sha256") != executor_artifact.sha256
+        or matches[0].get("size_bytes") != executor_artifact.size_bytes
+        or analysis_record != executor_artifact.analyzer_record(EXECUTOR_ANALYZE_ENTRY_POINT)
+    ):
+        raise DecisionFidelityError("decision-gate aggregate was not produced by the bound frozen analyzer")
+    return executor_artifact.analyzer_record(
+        EXECUTOR_EVALUATE_ENTRY_POINT,
+        policy_sha256=policy_sha256,
+    )
+
+
 def evaluate_decision_fidelity(
     aggregate: Mapping[str, Any],
     policy_bytes: bytes,
+    *,
+    executor_artifact: Optional[ExecutorArtifact] = None,
 ) -> Dict[str, Any]:
     """Evaluate complete trusted evidence under the predeclared policy."""
 
@@ -465,7 +504,11 @@ def evaluate_decision_fidelity(
     if isinstance(raw_policy, Mapping) and raw_policy.get("schema") == DECISION_FIDELITY_POLICY_SCHEMA_V2:
         from .decision_fidelity_v2 import evaluate_decision_fidelity_v2
 
-        return evaluate_decision_fidelity_v2(aggregate, policy_bytes)
+        return evaluate_decision_fidelity_v2(
+            aggregate,
+            policy_bytes,
+            executor_artifact=executor_artifact,
+        )
     validated_policy = validate_decision_fidelity_policy(raw_policy)
     policy_sha256 = sha256_hex(policy_bytes)
     policy_size_bytes = len(policy_bytes)
@@ -475,6 +518,12 @@ def evaluate_decision_fidelity(
         aggregate,
         policy_sha256=policy_sha256,
         policy_size_bytes=policy_size_bytes,
+    )
+    analyzer_record = _frozen_evaluator_record(
+        aggregate,
+        campaign,
+        executor_artifact=executor_artifact,
+        policy_sha256=policy_sha256,
     )
     completeness = _object(aggregate.get("completeness"), "aggregate.completeness")
     configurations = list(validated_policy["scope"]["configuration_ids"])
@@ -722,6 +771,8 @@ def evaluate_decision_fidelity(
             "independent_operator_claim": validated_policy["kill_or_reframe"]["independent_operator_claim"],
         },
     }
+    if analyzer_record is not None:
+        result["analyzer"] = analyzer_record
     result["verdict_id"] = canonical_sha256(result)
     return result
 

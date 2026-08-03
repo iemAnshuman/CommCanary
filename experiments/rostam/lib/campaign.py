@@ -250,7 +250,18 @@ def build_campaign(
         )
     except ExecutorArtifactError as exc:
         raise CampaignPreparationError(str(exc)) from exc
-    artifacts = [_artifact(input_id, path) for input_id, path in sorted(bound_inputs.items())]
+    artifacts = []
+    for input_id, path in sorted(bound_inputs.items()):
+        if input_id == EXECUTOR_ARTIFACT_INPUT_ID:
+            artifacts.append(
+                {
+                    "id": input_id,
+                    "sha256": executor.sha256,
+                    "size_bytes": executor.size_bytes,
+                }
+            )
+        else:
+            artifacts.append(_artifact(input_id, path))
     configurations = []
     for configuration in catalog.selected_configurations(profile):
         configurations.append(
@@ -312,7 +323,10 @@ def build_campaign(
                 "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
                 "bootstrap_input_id": EXECUTOR_BOOTSTRAP_INPUT_ID,
                 "inventory_sha256": executor.inventory_sha256,
+                "source_inventory_sha256": executor.source_inventory_sha256,
+                "schema_inventory_sha256": executor.schema_inventory_sha256,
                 "source_file_count": len(executor.source_files),
+                "schema_file_count": len(executor.schema_files),
             },
             "planner_schema": "commcanary.rostam.submission-plan.v1",
             "retry_policy": "append-only-explicit",

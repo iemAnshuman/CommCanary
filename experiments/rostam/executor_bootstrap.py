@@ -177,11 +177,18 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-directory", required=True, type=Path)
     parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument(
+        "--executor-command",
+        choices=("analyze", "evaluate-decision-gate", "execute-cell"),
+        default="execute-cell",
+    )
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args, executor_args = _parser().parse_known_args(argv)
+    if executor_args[:1] == ["--"]:
+        executor_args = executor_args[1:]
     staged = stage_executor_artifact(args.run_directory, args.manifest_sha256)
     try:
         environment = dict(os.environ)
@@ -192,7 +199,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         command = [
             sys.executable,
             "-I",
+            "-S",
             str(staged.path),
+            args.executor_command,
             "--run-directory",
             str(args.run_directory),
             "--manifest-sha256",

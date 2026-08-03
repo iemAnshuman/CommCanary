@@ -285,15 +285,36 @@ intervals for source and exact-work pair margins, exact-work metrics, and
 decision criteria. Constant statistics receive exact intervals and do not
 inflate the global critical value. A boundary crossing remains `inconclusive`.
 
-After a complete v2 campaign has selected evidence, the same dispatcher uses
-the policy schema to choose the immutable v2 evaluator:
+After a complete v2 campaign has selected evidence, run both publication steps
+through the manifest-bound executor bootstrap. The bootstrap privately stages
+the exact executor bytes before dispatching either entry point:
 
 ```console
-python -m experiments.rostam.evaluate_decision_gate \
+VENV/bin/python -I -S experiments/rostam/executor_bootstrap.py \
+  --run-directory RUN \
+  --manifest-sha256 MANIFEST_SHA256 \
+  --executor-command analyze -- \
+  --run-directory RUN \
+  --selection-id primary \
+  --verdict-sha256 COMPLETENESS_VERDICT_SHA256 \
+  --output-directory PUBLICATION
+
+VENV/bin/python -I -S experiments/rostam/executor_bootstrap.py \
+  --run-directory RUN \
+  --manifest-sha256 MANIFEST_SHA256 \
+  --executor-command evaluate-decision-gate -- \
   PUBLICATION/aggregate.json \
   --policy experiments/rostam/policies/decision-fidelity-gate-v2.json \
   --output PUBLICATION/decision-fidelity-verdict.json
 ```
+
+The aggregate records the analyzer artifact, complete source inventory, schema
+inventory, entry point, and analyzer version. The verdict requires that record
+to match the campaign-bound artifact and also binds the evaluator entry point
+and exact policy bytes. A checkout-based analyzer cannot produce a verdict for
+an executor-bound campaign. Regeneration uses `--golden-directory` for the
+three publication files and `--verify-against` for the verdict so the frozen
+artifact byte-compares both products before accepting them.
 
 In v2, `exact_work` is explicitly a positive conformance control for the exact
 qualification capsule. The policy records reduced-canary and cost claims as

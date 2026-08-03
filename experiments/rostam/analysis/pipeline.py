@@ -34,6 +34,12 @@ from ..harness import (
     verify_artifact_reference,
 )
 from ..harness.completeness import CompletenessVerdict
+from ..lib.executor_artifact import (
+    EXECUTOR_ANALYZE_ENTRY_POINT,
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+    ExecutorArtifact,
+)
 from .archive import verify_archive_descriptor
 from .claims import build_trusted_claims
 from .compatibility import (
@@ -1108,6 +1114,53 @@ def _evidence_provenance(evidence: _LoadedEvidence) -> Dict[str, Any]:
     }
 
 
+def _frozen_analyzer_record(
+    evidences: Sequence[_LoadedEvidence],
+    executor_artifact: Optional[ExecutorArtifact],
+) -> Optional[Dict[str, Any]]:
+    declarations = []
+    for evidence in evidences:
+        policy = evidence.manifest.campaign.policy.to_value()
+        executor = policy.get("executor") if isinstance(policy, Mapping) else None
+        if executor is None:
+            declarations.append(None)
+            continue
+        if not isinstance(executor, Mapping):
+            raise AnalysisValidationError("campaign executor policy must be an object")
+        declarations.append(executor)
+    if all(declaration is None for declaration in declarations):
+        if executor_artifact is not None:
+            raise AnalysisValidationError("legacy campaigns may not acquire an unbound frozen analyzer identity")
+        return None
+    if any(declaration is None for declaration in declarations):
+        raise AnalysisValidationError("cannot mix executor-bound and legacy campaigns in one analysis")
+    if executor_artifact is None:
+        raise AnalysisValidationError("executor-bound campaigns must be analyzed by their frozen executor artifact")
+    for evidence, declaration in zip(evidences, declarations):
+        assert declaration is not None
+        inputs = {artifact.id: artifact for artifact in evidence.manifest.campaign.inputs}
+        bound = inputs.get(EXECUTOR_ARTIFACT_INPUT_ID)
+        expected = {
+            "format": EXECUTOR_POLICY_FORMAT,
+            "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "inventory_sha256": executor_artifact.inventory_sha256,
+            "source_inventory_sha256": executor_artifact.source_inventory_sha256,
+            "schema_inventory_sha256": executor_artifact.schema_inventory_sha256,
+            "source_file_count": len(executor_artifact.source_files),
+            "schema_file_count": len(executor_artifact.schema_files),
+        }
+        if (
+            bound is None
+            or bound.sha256 != executor_artifact.sha256
+            or bound.size_bytes != executor_artifact.size_bytes
+            or any(declaration.get(key) != value for key, value in expected.items())
+        ):
+            raise AnalysisValidationError(
+                f"campaign {evidence.manifest.run_id!r} does not bind the running frozen analyzer"
+            )
+    return executor_artifact.analyzer_record(EXECUTOR_ANALYZE_ENTRY_POINT)
+
+
 def _compatibility_evidence_binding(evidence: _LoadedEvidence) -> Dict[str, Any]:
     return {
         "manifest_sha256": evidence.frozen.manifest_sha256,
@@ -1144,6 +1197,7 @@ def _build_aggregate(
     relative_threshold_pct: float,
     absolute_threshold_us: float,
     cross_commit_compatibility: Optional[CrossCommitCompatibility] = None,
+    analyzer_record: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     _validate_trusted_join(
         evidences,
@@ -1212,6 +1266,8 @@ def _build_aggregate(
         "raw_archive": dict(raw_archive),
         "regeneration_command": regeneration_command,
     }
+    if analyzer_record is not None:
+        provenance["analysis_implementation"] = dict(analyzer_record)
     if cross_commit_compatibility is not None:
         provenance["cross_commit_compatibility"] = cross_commit_compatibility.provenance_summary()
     return {
@@ -1505,6 +1561,7 @@ def _verify_cross_commit_ground_truth(
     golden_directory: PathLike,
     archive_descriptor: Optional[PathLike],
     raw_archive: Optional[PathLike],
+    analyzer_record: Optional[Mapping[str, Any]],
 ) -> None:
     expected_bindings = sorted(
         (_compatibility_evidence_binding(evidence) for evidence in evidences),
@@ -1537,6 +1594,7 @@ def _verify_cross_commit_ground_truth(
         candidate_config=contract.candidate_config,
         relative_threshold_pct=contract.relative_threshold_pct,
         absolute_threshold_us=contract.absolute_threshold_us,
+        analyzer_record=analyzer_record,
     )
     ground_files = _publication_bytes(ground_aggregate)
     observed_sha256 = {filename: sha256_hex(data) for filename, data in ground_files.items()}
@@ -1561,6 +1619,7 @@ def prepare_cross_commit_compatibility(
     relative_threshold_pct: float = 8.0,
     absolute_threshold_us: float = 1.0,
     reviewed: bool = False,
+    executor_artifact: Optional[ExecutorArtifact] = None,
 ) -> PreparedCrossCommitCompatibility:
     """Prepare an exact, reviewable bridge after reproducing old golden bytes.
 
@@ -1606,6 +1665,7 @@ def prepare_cross_commit_compatibility(
         for source in extension_sources
     )
     combined = (*ground, *extensions)
+    analyzer_record = _frozen_analyzer_record(combined, executor_artifact)
     ground_archive = verify_archive_descriptor(
         _archive_bindings(ground),
         archive_descriptor,
@@ -1619,6 +1679,7 @@ def prepare_cross_commit_compatibility(
         candidate_config=candidate_config,
         relative_threshold_pct=float(relative_threshold_pct),
         absolute_threshold_us=float(absolute_threshold_us),
+        analyzer_record=analyzer_record,
     )
     ground_files = _publication_bytes(ground_aggregate)
     compare_publication_to_golden(ground_files, golden_directory)
@@ -1766,6 +1827,7 @@ def verify_regenerate_campaigns(
     compatibility_golden_directory: Optional[PathLike] = None,
     compatibility_archive_descriptor: Optional[PathLike] = None,
     compatibility_raw_archive: Optional[PathLike] = None,
+    executor_artifact: Optional[ExecutorArtifact] = None,
 ) -> GeneratedPublication:
     """Validate one or more complete campaigns before deriving publication claims."""
 
@@ -1791,6 +1853,7 @@ def verify_regenerate_campaigns(
         )
         for source in evidence_sources
     )
+    analyzer_record = _frozen_analyzer_record(loaded, executor_artifact)
     compatibility: Optional[CrossCommitCompatibility] = None
     compatibility_arguments = (
         compatibility_golden_directory,
@@ -1810,6 +1873,7 @@ def verify_regenerate_campaigns(
             golden_directory=compatibility_golden_directory,
             archive_descriptor=compatibility_archive_descriptor,
             raw_archive=compatibility_raw_archive,
+            analyzer_record=analyzer_record,
         )
     archive = verify_archive_descriptor(_archive_bindings(loaded), archive_descriptor, raw_archive)
     aggregate = _build_aggregate(
@@ -1821,6 +1885,7 @@ def verify_regenerate_campaigns(
         relative_threshold_pct=float(relative_threshold_pct),
         absolute_threshold_us=float(absolute_threshold_us),
         cross_commit_compatibility=compatibility,
+        analyzer_record=analyzer_record,
     )
     for evidence in loaded:
         final_verdict = evaluate_completeness(
@@ -1867,6 +1932,7 @@ def verify_regenerate_compare(
     compatibility_golden_directory: Optional[PathLike] = None,
     compatibility_archive_descriptor: Optional[PathLike] = None,
     compatibility_raw_archive: Optional[PathLike] = None,
+    executor_artifact: Optional[ExecutorArtifact] = None,
 ) -> GeneratedPublication:
     """Compatibility wrapper for one primary campaign plus explicit trusted joins."""
 
@@ -1886,4 +1952,5 @@ def verify_regenerate_compare(
         compatibility_golden_directory=compatibility_golden_directory,
         compatibility_archive_descriptor=compatibility_archive_descriptor,
         compatibility_raw_archive=compatibility_raw_archive,
+        executor_artifact=executor_artifact,
     )

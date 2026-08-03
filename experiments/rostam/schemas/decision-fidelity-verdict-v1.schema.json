@@ -6,6 +6,7 @@
     "schema": {"const": "commcanary.rostam.decision-fidelity-verdict.v1"},
     "verdict_id": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
     "outcome": {"enum": ["fail", "incomparable", "inconclusive", "pass"]},
+    "analyzer": {"$ref": "#/$defs/analyzer"},
     "policy": {
       "additionalProperties": false,
       "properties": {
@@ -122,6 +123,22 @@
   "required": ["schema", "verdict_id", "outcome", "policy", "evidence", "issues", "uncertainty", "pairwise_comparisons", "representation_metrics", "criteria", "product_interpretation"],
   "type": "object",
   "$defs": {
+    "analyzer": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "artifact_size_bytes": {"minimum": 1, "type": "integer"},
+        "entry_point": {"const": "experiments.rostam.evaluate_decision_gate:main"},
+        "inventory_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "policy_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "schema": {"const": "commcanary.rostam.frozen-analysis.v1"},
+        "schema_inventory_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "source_inventory_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        "version": {"const": "commcanary.rostam.frozen-analysis.v1"}
+      },
+      "required": ["artifact_sha256", "artifact_size_bytes", "entry_point", "inventory_sha256", "policy_sha256", "schema", "schema_inventory_sha256", "source_inventory_sha256", "version"],
+      "type": "object"
+    },
     "pair-result": {
       "additionalProperties": false,
       "properties": {
