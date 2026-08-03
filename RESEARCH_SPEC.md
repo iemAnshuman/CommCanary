@@ -149,8 +149,8 @@ injected and naturally occurring regressions.
 - descriptor-to-private-file staging for the manifest-bound CommCanary wheel,
   campaign inputs, dependency artifacts, and selected analysis bytes;
 - operator-distinguishing and route-distinguishing collective correctness
-  probes, with mutation tests and an optional CPU/Gloo multiprocess
-  conformance test;
+  probes, with mutation tests and a mandatory four-process CPU/Gloo
+  conformance test in a dedicated pinned-Torch CI job;
 - a separately versioned, not-yet-executed exact-capsule follow-up design with
   eight complete allocation blocks, 24 balanced representation rotations,
   dynamic policy-margin bootstrap draws, and simultaneous uncertainty over all

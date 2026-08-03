@@ -75,6 +75,8 @@ class BoundedJsonLoaderTests(unittest.TestCase):
             ResourceLimits(max_execution_compute_operations=0)
         with self.assertRaisesRegex(ValueError, "max_execution_observation_samples"):
             ResourceLimits(max_execution_observation_samples=0)
+        with self.assertRaisesRegex(ValueError, "max_execution_correctness_probe_work"):
+            ResourceLimits(max_execution_correctness_probe_work=0)
         with self.assertRaisesRegex(ValueError, "max_execution_timeout_seconds"):
             ResourceLimits(max_execution_timeout_seconds=0)
         with self.assertRaisesRegex(ValueError, "max_behavior_configurations must be at least 2"):

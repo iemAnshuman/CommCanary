@@ -210,7 +210,7 @@ def _qualification_execution_payload() -> dict[str, object]:
         "materialization_id": "b" * 64,
         "program_sha256": "c" * 64,
         "executor": {
-            "name": "commcanary.torch-distributed-reference.v2",
+            "name": "commcanary.torch-distributed-reference.v3",
             "claim": "reference-implementation-not-yet-physically-conformance-validated",
             "device": "cuda",
             "backend": "nccl",

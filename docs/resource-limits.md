@@ -35,6 +35,7 @@ memory and time limits when handling hostile input.
 | `max_execution_total_tensor_bytes` | 17,179,869,184 | Aggregate per-rank tensor bytes planned by qualification execution |
 | `max_execution_compute_operations` | 10,000,000 | Total physical rank-GEMM repetitions across warmup and measured qualification passes |
 | `max_execution_observation_samples` | 2,000,000 | Rank-local communication timings retained by one qualification execution |
+| `max_execution_correctness_probe_work` | 32,000,000 | Fixed-template probe evaluations allowed by one qualification preflight |
 | `max_execution_timeout_seconds` | 3,600 | Maximum accepted process-group initialization and operation timeout |
 | `max_capture_shards` | 65,536 | Shards considered by one capture merge |
 | `max_capture_events` | 1,000,000 | Aggregate events accepted by one capture merge |
@@ -134,7 +135,8 @@ expected program under the same logical-entry and total operation budgets.
 PyTorch import. It bounds GEMM dimensions, one tensor, aggregate tensor bytes
 per rank, compute repetitions across warmup and measured passes,
 communication operations across warmup, measurement, and the fixed untimed
-correctness pass, and retained rank-local timing samples. It accounts
+correctness pass, fixed-template correctness-probe generation work, and
+retained rank-local timing samples. It accounts
 for every request-isolated communication buffer, both GEMM inputs, the
 preallocated reused GEMM output, and every rank-local recipe operation;
 changing `iterations` or `warmup` cannot bypass the one-pass materialization

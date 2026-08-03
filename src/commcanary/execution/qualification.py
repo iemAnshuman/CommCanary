@@ -18,8 +18,7 @@ import time
 from dataclasses import dataclass
 from datetime import timedelta
 from functools import lru_cache
-from itertools import product
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 from ..artifacts.dtypes import (
     dtype_size_bytes,
@@ -46,7 +45,7 @@ from ..resources import (
 from ..workflows.qualification import load_verified_qualification_materialization
 
 REFERENCE_EXECUTION_SCHEMA = "commcanary.reference-execution.stdout.v1"
-REFERENCE_EXECUTOR = "commcanary.torch-distributed-reference.v2"
+REFERENCE_EXECUTOR = "commcanary.torch-distributed-reference.v3"
 DEFAULT_DISTRIBUTED_TIMEOUT_SECONDS = 300
 
 _COLLECTIVES = {
@@ -59,6 +58,7 @@ _COLLECTIVES = {
 _POINT_TO_POINT = {"send", "recv"}
 _REDUCTION_COLLECTIVES = {"all_reduce", "reduce_scatter"}
 _VALIDATION_LANE_PERIOD = 8
+_REDUCTION_PROBE_TEMPLATE_COUNT = 32
 _FLOAT_DTYPES = {"float16", "bfloat16", "float32", "float64"}
 _INTEGER_DTYPES: Mapping[str, Tuple[int, bool]] = {
     "int8": (8, True),
@@ -79,8 +79,21 @@ ValidationNumber = Union[int, float]
 
 @dataclass(frozen=True)
 class _ReductionProbe:
-    values: Tuple[ValidationNumber, ...]
+    first: ValidationNumber
+    second: ValidationNumber
+    tail_even: ValidationNumber
+    tail_odd: ValidationNumber
+    group_size: int
     outcomes: Tuple[ValidationNumber, ...]
+
+    def value_at(self, source_index: int) -> ValidationNumber:
+        if source_index < 0 or source_index >= self.group_size:
+            raise CommCanaryError("reduction probe source index is outside its group")
+        if source_index == 0:
+            return self.first
+        if source_index == 1:
+            return self.second
+        return self.tail_even if (source_index - 2) % 2 == 0 else self.tail_odd
 
 
 @dataclass(frozen=True)
@@ -461,7 +474,7 @@ def preflight_qualification_execution(
     rank_tensor_bytes = tuple(
         _planned_tensor_bytes(specs, limits=limits, rank=rank) for rank, specs in enumerate(tensor_specs)
     )
-    _validate_correctness_probe_support(entries, groups)
+    _validate_correctness_probe_support(entries, groups, limits=limits)
     return QualificationExecutionPlan(
         request_id=str(materialization["request"]["request_id"]),
         materialization_id=str(materialization["materialization_id"]),
@@ -1066,35 +1079,95 @@ def _cast_float(value: float, dtype: str) -> float:
 
 
 def _reduction_outcomes(
-    values: Sequence[ValidationNumber],
+    first: ValidationNumber,
+    second: ValidationNumber,
+    tail_even: ValidationNumber,
+    tail_odd: ValidationNumber,
     *,
     dtype: str,
+    group_size: int,
 ) -> Tuple[ValidationNumber, ...]:
+    if group_size < 2:
+        raise CommCanaryError("a one-rank group cannot distinguish collective reduction operators")
+    tail_count = group_size - 2
+    even_count = (tail_count + 1) // 2
+    odd_count = tail_count // 2
     if dtype in _FLOAT_DTYPES:
-        floating = [float(value) for value in values]
-        total = math.fsum(floating)
-        multiplied = math.prod(floating)
+        floating = tuple(_cast_float(float(value), dtype) for value in (first, second, tail_even, tail_odd))
+        total = math.fsum(
+            (
+                floating[0],
+                floating[1],
+                floating[2] * even_count,
+                floating[3] * odd_count,
+            )
+        )
+        multiplied = floating[0] * floating[1]
+        if even_count:
+            multiplied *= math.pow(floating[2], even_count)
+        if odd_count:
+            multiplied *= math.pow(floating[3], odd_count)
+        present = [floating[0], floating[1]]
+        if even_count:
+            present.append(floating[2])
+        if odd_count:
+            present.append(floating[3])
         return (
             _cast_float(total, dtype),
-            _cast_float(total / len(floating), dtype),
-            _cast_float(min(floating), dtype),
-            _cast_float(max(floating), dtype),
+            _cast_float(total / group_size, dtype),
+            _cast_float(min(present), dtype),
+            _cast_float(max(present), dtype),
             _cast_float(multiplied, dtype),
         )
     if dtype in _INTEGER_DTYPES:
-        integers = [int(value) for value in values]
-        integer_total = sum(integers)
+        integers = tuple(_cast_integer(int(value), dtype) for value in (first, second, tail_even, tail_odd))
+        integer_total = integers[0] + integers[1] + integers[2] * even_count + integers[3] * odd_count
+        bits, _signed = _INTEGER_DTYPES[dtype]
+        modulus = 1 << bits
+        multiplied = (integers[0] % modulus) * (integers[1] % modulus) % modulus
+        if even_count:
+            multiplied = multiplied * pow(integers[2] % modulus, even_count, modulus) % modulus
+        if odd_count:
+            multiplied = multiplied * pow(integers[3] % modulus, odd_count, modulus) % modulus
+        present = [integers[0], integers[1]]
+        if even_count:
+            present.append(integers[2])
+        if odd_count:
+            present.append(integers[3])
         return (
             _cast_integer(integer_total, dtype),
-            _cast_integer(math.trunc(integer_total / len(integers)), dtype),
-            min(integers),
-            max(integers),
-            _cast_integer(math.prod(integers), dtype),
+            _cast_integer(math.trunc(integer_total / group_size), dtype),
+            min(present),
+            max(present),
+            _cast_integer(multiplied, dtype),
         )
     raise CommCanaryError(f"dtype {dtype!r} cannot carry an injective reduction correctness probe")
 
 
-@lru_cache(maxsize=None)
+def _reduction_probe_template(
+    dtype: str,
+    reduction_op: str,
+    tag: int,
+) -> Tuple[ValidationNumber, ValidationNumber, ValidationNumber, ValidationNumber]:
+    if dtype in _FLOAT_DTYPES:
+        if reduction_op == "avg":
+            return (-tag - 1, 2 * tag + 3, 0, 0)
+        return (-tag - 1, 2 * tag + 3, 1, -1)
+    if dtype in _INTEGER_DTYPES:
+        _bits, signed = _INTEGER_DTYPES[dtype]
+        if reduction_op == "avg":
+            return (tag - 1, tag + 2, tag, tag)
+        if signed:
+            return (-tag - 1, 2 * tag + 3, 1, -1)
+        if reduction_op == "min":
+            return (tag, 240, tag + 32, tag + 33)
+        if reduction_op == "max":
+            return (tag, 255 - tag, tag + 16, tag + 17)
+        return (tag + 1, 2 * tag + 3, 1, 255)
+    raise CommCanaryError(f"dtype {dtype!r} cannot carry an injective reduction correctness probe")
+
+
+@lru_cache(maxsize=256)
 def _reduction_probe_candidates(
     dtype: str,
     group_size: int,
@@ -1102,31 +1175,31 @@ def _reduction_probe_candidates(
 ) -> Tuple[_ReductionProbe, ...]:
     if group_size < 2:
         raise CommCanaryError("a one-rank group cannot distinguish collective reduction operators")
+    if reduction_op not in _REDUCTION_OUTCOME_INDEX:
+        raise CommCanaryError(f"unsupported reduction correctness operator {reduction_op!r}")
     outcome_index = _REDUCTION_OUTCOME_INDEX[reduction_op]
     raw_candidates: List[_ReductionProbe] = []
-    if dtype in _FLOAT_DTYPES:
-        for tag in range(32):
-            offset = tag / 64.0
-            raw_values = [0.5 + offset, 1.5 + offset, *([1.0] * (group_size - 2))]
-            values = tuple(_cast_float(value, dtype) for value in raw_values)
-            outcomes = _reduction_outcomes(values, dtype=dtype)
-            if len(set(outcomes)) == len(_REDUCTION_OUTCOME_INDEX):
-                raw_candidates.append(_ReductionProbe(values=values, outcomes=outcomes))
-    elif dtype in _INTEGER_DTYPES:
-        _bits, signed = _INTEGER_DTYPES[dtype]
-        candidate_values = range(-8, 16) if signed else range(0, 24)
-        seen_values = set()
-        for first, second, repeated in product(candidate_values, repeat=3):
-            integer_values = (first, second) if group_size == 2 else (first, second, *([repeated] * (group_size - 2)))
-            values = tuple(_cast_integer(value, dtype) for value in integer_values)
-            if values in seen_values:
-                continue
-            seen_values.add(values)
-            outcomes = _reduction_outcomes(values, dtype=dtype)
-            if len(set(outcomes)) == len(_REDUCTION_OUTCOME_INDEX):
-                raw_candidates.append(_ReductionProbe(values=values, outcomes=outcomes))
-    else:
-        raise CommCanaryError(f"dtype {dtype!r} cannot carry an injective reduction correctness probe")
+    start = 1 if dtype in _FLOAT_DTYPES else 2
+    for tag in range(start, start + _REDUCTION_PROBE_TEMPLATE_COUNT):
+        raw_values = _reduction_probe_template(dtype, reduction_op, tag)
+        if dtype in _FLOAT_DTYPES:
+            values = tuple(_cast_float(float(value), dtype) for value in raw_values)
+        elif dtype in _INTEGER_DTYPES:
+            values = tuple(_cast_integer(int(value), dtype) for value in raw_values)
+        else:
+            raise CommCanaryError(f"dtype {dtype!r} cannot carry an injective reduction correctness probe")
+        outcomes = _reduction_outcomes(*values, dtype=dtype, group_size=group_size)
+        if len(set(outcomes)) == len(_REDUCTION_OUTCOME_INDEX):
+            raw_candidates.append(
+                _ReductionProbe(
+                    first=values[0],
+                    second=values[1],
+                    tail_even=values[2],
+                    tail_odd=values[3],
+                    group_size=group_size,
+                    outcomes=outcomes,
+                )
+            )
     by_expected: Dict[ValidationNumber, _ReductionProbe] = {}
     for candidate in raw_candidates:
         by_expected.setdefault(candidate.outcomes[outcome_index], candidate)
@@ -1145,14 +1218,15 @@ def _reduction_probe(
     group_ranks: Tuple[int, ...],
     destination_rank: Optional[int],
     lane: int,
+    lane_count: int,
     dtype: str,
     reduction_op: str,
 ) -> _ReductionProbe:
     candidates = _reduction_probe_candidates(dtype, len(group_ranks), reduction_op)
     required = len(group_ranks) if destination_rank is not None else 1
-    if len(candidates) < required:
+    if not candidates or len(candidates) ** lane_count < required:
         raise CommCanaryError(
-            f"dtype {dtype!r} has only {len(candidates)} distinguishable {reduction_op} probes "
+            f"dtype {dtype!r} has insufficient {reduction_op} probe capacity "
             f"for a {len(group_ranks)}-rank reduce_scatter"
         )
     destination_index = 0 if destination_rank is None else group_ranks.index(destination_rank)
@@ -1164,22 +1238,29 @@ def _reduction_probe(
         reduction_op,
         modulus=len(candidates),
     )
-    return candidates[(offset + destination_index) % len(candidates)]
+    digit = (destination_index // (len(candidates) ** lane)) % len(candidates)
+    return candidates[(offset + digit) % len(candidates)]
 
 
 def _routing_value(
     *,
     request_id: str,
     request: int,
-    source_rank: int,
-    destination_rank: Optional[int],
+    source_index: int,
+    destination_index: Optional[int],
+    group_size: int,
     lane: int,
     dtype: str,
 ) -> int:
     modulus = _routing_modulus(dtype)
-    destination = -1 if destination_rank is None else destination_rank
-    base = _stable_validation_offset(request_id, request, modulus=modulus)
-    return (base + 17 * source_rank + 31 * destination + 7 * lane) % modulus
+    if not 0 <= source_index < group_size or (
+        destination_index is not None and not 0 <= destination_index < group_size
+    ):
+        raise CommCanaryError("routing signature index is outside its group")
+    route_id = source_index if destination_index is None else source_index * group_size + destination_index
+    digit = (route_id // (modulus**lane)) % modulus
+    mask = _stable_validation_offset(request_id, request, lane, modulus=modulus)
+    return (digit + mask) % modulus
 
 
 def _routing_modulus(dtype: str) -> int:
@@ -1197,7 +1278,10 @@ def _routing_modulus(dtype: str) -> int:
 def _validate_correctness_probe_support(
     entries: Tuple[Mapping[str, Any], ...],
     groups: Mapping[int, Tuple[int, ...]],
+    *,
+    limits: ResourceLimits,
 ) -> None:
+    probe_work = 0
     for index, entry in enumerate(entries):
         comms = entry.get("comms")
         if comms not in _COLLECTIVES and comms not in _POINT_TO_POINT:
@@ -1210,17 +1294,38 @@ def _validate_correctness_probe_support(
                 f"replay program entry {index} cannot be checked by the reference executor: {exc}"
             ) from exc
         group_ranks = groups[as_int(entry["pg_id"])]
-        if comms in {"all_gather", "all_to_all"} and len(group_ranks) > capacity:
-            raise SchemaError(f"replay program entry {index} group size exceeds the {dtype} routing-signature capacity")
+        if comms in {"all_gather", "all_to_all"}:
+            segment_length = (
+                as_int(entry["in_msg_size"])
+                if comms == "all_gather"
+                else as_int(entry["out_msg_size"]) // len(group_ranks)
+            )
+            lane_count = min(_VALIDATION_LANE_PERIOD, segment_length)
+            routes = len(group_ranks) if comms == "all_gather" else len(group_ranks) ** 2
+            if lane_count < 1 or capacity**lane_count < routes:
+                raise SchemaError(
+                    f"replay program entry {index} exceeds the {dtype} routing-signature capacity"
+                )
         if comms not in _REDUCTION_COLLECTIVES:
             continue
+        probe_work = _checked_add(
+            probe_work,
+            _REDUCTION_PROBE_TEMPLATE_COUNT,
+            label="qualification correctness probe work",
+        )
+        _require_within(
+            probe_work,
+            limits.max_execution_correctness_probe_work,
+            label="qualification correctness probe work",
+        )
         reduction_op = str(entry["reduction_op"])
         try:
             candidates = _reduction_probe_candidates(dtype, len(group_ranks), reduction_op)
         except CommCanaryError as exc:
             raise SchemaError(f"replay program entry {index} cannot distinguish its reduction operator: {exc}") from exc
+        lane_count = min(_VALIDATION_LANE_PERIOD, as_int(entry["out_msg_size"]))
         required = len(group_ranks) if comms == "reduce_scatter" else 1
-        if len(candidates) < required:
+        if not candidates or len(candidates) ** lane_count < required:
             raise SchemaError(
                 f"replay program entry {index} dtype {dtype!r} cannot encode {required} "
                 f"distinct {reduction_op} reduce-scatter shard signatures"
@@ -1266,6 +1371,7 @@ def _initialize_validation_buffers(
             source_index = group_ranks.index(rank)
             destinations = (None,) if comms == "all_reduce" else tuple(group_ranks)
             segment_length = as_int(entry["in_msg_size"]) if comms == "all_reduce" else as_int(entry["out_msg_size"])
+            lane_count = min(_VALIDATION_LANE_PERIOD, segment_length)
             for destination_index, destination in enumerate(destinations):
                 segment = input_tensor.narrow(0, destination_index * segment_length, segment_length)
 
@@ -1276,25 +1382,28 @@ def _initialize_validation_buffers(
                         group_ranks=group_ranks,
                         destination_rank=destination_rank,
                         lane=lane,
+                        lane_count=lane_count,
                         dtype=dtype,
                         reduction_op=str(entry["reduction_op"]),
                     )
-                    return probe.values[source_index]
+                    return probe.value_at(source_index)
 
                 _fill_tensor_pattern(segment, length=segment_length, value_for_lane=reduction_value)
             continue
         if comms == "all_to_all":
             segment_length = as_int(entry["in_msg_size"]) // len(group_ranks)
-            for destination_index, destination in enumerate(group_ranks):
+            source_index = group_ranks.index(rank)
+            for destination_index, _destination in enumerate(group_ranks):
                 segment = input_tensor.narrow(0, destination_index * segment_length, segment_length)
                 _fill_tensor_pattern(
                     segment,
                     length=segment_length,
-                    value_for_lane=lambda lane, destination_rank=destination: _routing_value(
+                    value_for_lane=lambda lane, destination=destination_index: _routing_value(
                         request_id=plan.request_id,
                         request=request,
-                        source_rank=rank,
-                        destination_rank=destination_rank,
+                        source_index=source_index,
+                        destination_index=destination,
+                        group_size=len(group_ranks),
                         lane=lane,
                         dtype=dtype,
                     ),
@@ -1316,14 +1425,17 @@ def _initialize_validation_buffers(
         else:
             raise CommCanaryError(f"correctness initialization reached unsupported operation {comms!r}")
         length = as_int(entry["in_msg_size"])
+        source_index = group_ranks.index(source_rank)
+        destination_index = None if destination_rank is None else group_ranks.index(destination_rank)
         _fill_tensor_pattern(
             input_tensor,
             length=length,
             value_for_lane=lambda lane: _routing_value(
                 request_id=plan.request_id,
                 request=request,
-                source_rank=source_rank,
-                destination_rank=destination_rank,
+                source_index=source_index,
+                destination_index=destination_index,
+                group_size=len(group_ranks),
                 lane=lane,
                 dtype=dtype,
             ),
@@ -1426,6 +1538,7 @@ def _validation_output_matches(
     if comms in _REDUCTION_COLLECTIVES:
         destination_rank = None if comms == "all_reduce" else rank
         length = as_int(entry["out_msg_size"])
+        lane_count = min(_VALIDATION_LANE_PERIOD, length)
         outcome_index = _REDUCTION_OUTCOME_INDEX[str(entry["reduction_op"])]
         return _tensor_pattern_matches(
             output_tensor,
@@ -1436,6 +1549,7 @@ def _validation_output_matches(
                 group_ranks=group_ranks,
                 destination_rank=destination_rank,
                 lane=lane,
+                lane_count=lane_count,
                 dtype=dtype,
                 reduction_op=str(entry["reduction_op"]),
             ).outcomes[outcome_index],
@@ -1443,6 +1557,8 @@ def _validation_output_matches(
     if comms in {"broadcast", "recv"}:
         source_rank = as_int(entry["root"] if comms == "broadcast" else entry["src_rank"])
         destination_rank = None if comms == "broadcast" else as_int(entry["dst_rank"])
+        source_index = group_ranks.index(source_rank)
+        destination_index = None if destination_rank is None else group_ranks.index(destination_rank)
         length = as_int(entry["out_msg_size"])
         return _tensor_pattern_matches(
             output_tensor,
@@ -1450,8 +1566,9 @@ def _validation_output_matches(
             value_for_lane=lambda lane: _routing_value(
                 request_id=request_id,
                 request=request,
-                source_rank=source_rank,
-                destination_rank=destination_rank,
+                source_index=source_index,
+                destination_index=destination_index,
+                group_size=len(group_ranks),
                 lane=lane,
                 dtype=dtype,
             ),
@@ -1460,17 +1577,18 @@ def _validation_output_matches(
         segment_length = (
             as_int(entry["in_msg_size"]) if comms == "all_gather" else as_int(entry["out_msg_size"]) // len(group_ranks)
         )
-        destination_rank = None if comms == "all_gather" else rank
-        for source_index, source_rank in enumerate(group_ranks):
+        destination_index = None if comms == "all_gather" else group_ranks.index(rank)
+        for source_index, _source_rank in enumerate(group_ranks):
             segment = output_tensor.narrow(0, source_index * segment_length, segment_length)
             if not _tensor_pattern_matches(
                 segment,
                 length=segment_length,
-                value_for_lane=lambda lane, source=source_rank: _routing_value(
+                value_for_lane=lambda lane, source=source_index: _routing_value(
                     request_id=request_id,
                     request=request,
-                    source_rank=source,
-                    destination_rank=destination_rank,
+                    source_index=source,
+                    destination_index=destination_index,
+                    group_size=len(group_ranks),
                     lane=lane,
                     dtype=dtype,
                 ),
@@ -1497,6 +1615,7 @@ def _validation_expected_output_values(
     if comms in _REDUCTION_COLLECTIVES:
         destination_rank = None if comms == "all_reduce" else rank
         outcome_index = _REDUCTION_OUTCOME_INDEX[str(entry["reduction_op"])]
+        lane_count = min(_VALIDATION_LANE_PERIOD, output_size)
         for index in range(output_size):
             lane = index % min(_VALIDATION_LANE_PERIOD, output_size)
             values.append(
@@ -1506,6 +1625,7 @@ def _validation_expected_output_values(
                     group_ranks=group_ranks,
                     destination_rank=destination_rank,
                     lane=lane,
+                    lane_count=lane_count,
                     dtype=dtype,
                     reduction_op=str(entry["reduction_op"]),
                 ).outcomes[outcome_index]
@@ -1514,14 +1634,17 @@ def _validation_expected_output_values(
     if comms in {"broadcast", "recv"}:
         source_rank = as_int(entry["root"] if comms == "broadcast" else entry["src_rank"])
         destination_rank = None if comms == "broadcast" else as_int(entry["dst_rank"])
+        source_index = group_ranks.index(source_rank)
+        destination_index = None if destination_rank is None else group_ranks.index(destination_rank)
         for index in range(output_size):
             lane = index % min(_VALIDATION_LANE_PERIOD, output_size)
             values.append(
                 _routing_value(
                     request_id=request_id,
                     request=request,
-                    source_rank=source_rank,
-                    destination_rank=destination_rank,
+                    source_index=source_index,
+                    destination_index=destination_index,
+                    group_size=len(group_ranks),
                     lane=lane,
                     dtype=dtype,
                 )
@@ -1529,16 +1652,17 @@ def _validation_expected_output_values(
         return tuple(values)
     if comms in {"all_gather", "all_to_all"}:
         segment_length = as_int(entry["in_msg_size"]) if comms == "all_gather" else output_size // len(group_ranks)
-        destination_rank = None if comms == "all_gather" else rank
-        for source_rank in group_ranks:
+        destination_index = None if comms == "all_gather" else group_ranks.index(rank)
+        for source_index, _source_rank in enumerate(group_ranks):
             for index in range(segment_length):
                 lane = index % min(_VALIDATION_LANE_PERIOD, segment_length)
                 values.append(
                     _routing_value(
                         request_id=request_id,
                         request=request,
-                        source_rank=source_rank,
-                        destination_rank=destination_rank,
+                        source_index=source_index,
+                        destination_index=destination_index,
+                        group_size=len(group_ranks),
                         lane=lane,
                         dtype=dtype,
                     )

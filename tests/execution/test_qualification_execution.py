@@ -780,8 +780,14 @@ class _ContentTensor:
         return int(self.values[self.indices[0]])
 
 
-def _oracle_entry(operation: str, *, reduction_op: str | None = None) -> dict[str, Any]:
-    group_size = 4
+def _oracle_entry(
+    operation: str,
+    *,
+    reduction_op: str | None = None,
+    dtype: str = "float32",
+    group_ranks: tuple[int, ...] = (0, 1, 2, 3),
+) -> dict[str, Any]:
+    group_size = len(group_ranks)
     out_elements = 16
     in_elements = out_elements
     if operation == "all_gather":
@@ -792,24 +798,31 @@ def _oracle_entry(operation: str, *, reduction_op: str | None = None) -> dict[st
         "comms": operation,
         "req": 17,
         "pg_id": 0,
-        "global_ranks": [0, 1, 2, 3],
+        "global_ranks": list(group_ranks),
         "in_msg_size": in_elements,
         "out_msg_size": out_elements,
-        "dtype": "float32",
+        "dtype": dtype,
     }
     if reduction_op is not None:
         entry["reduction_op"] = reduction_op
     return entry
 
 
-def _oracle_matches(entry: dict[str, Any], values: list[float | int], *, rank: int) -> bool:
+def _oracle_matches(
+    entry: dict[str, Any],
+    values: list[float | int],
+    *,
+    rank: int,
+    group_ranks: tuple[int, ...] = (0, 1, 2, 3),
+    request_id: str = "request-oracle-test",
+) -> bool:
     output = _ContentTensor(values)
     key = execution_module._communication_buffer_key(entry)
     return execution_module._validation_output_matches(
         entry,
-        request_id="request-oracle-test",
+        request_id=request_id,
         rank=rank,
-        group_ranks=(0, 1, 2, 3),
+        group_ranks=group_ranks,
         buffers={"communication": {key: (_ContentTensor([0] * int(entry["in_msg_size"])), output)}},
     )
 
@@ -832,6 +845,7 @@ def test_reduction_oracle_rejects_max_executed_for_requested_product() -> None:
             group_ranks=(0, 1, 2, 3),
             destination_rank=None,
             lane=lane,
+            lane_count=execution_module._VALIDATION_LANE_PERIOD,
             dtype="float32",
             reduction_op="product",
         )
@@ -889,6 +903,94 @@ def test_all_to_all_oracle_rejects_destination_chunk_permutation() -> None:
     )
     assert _oracle_matches(entry, list(expected_rank_zero), rank=0)
     assert not _oracle_matches(entry, list(wrong_rank_one), rank=0)
+
+
+@pytest.mark.parametrize("dtype", ("float16", "bfloat16", "int8"))
+def test_low_precision_routing_signatures_are_injective_for_four_rank_all_to_all(dtype: str) -> None:
+    signatures = {
+        (source, destination): tuple(
+            execution_module._routing_value(
+                request_id="low-precision-routing",
+                request=17,
+                source_index=source,
+                destination_index=destination,
+                group_size=4,
+                lane=lane,
+                dtype=dtype,
+            )
+            for lane in range(execution_module._VALIDATION_LANE_PERIOD)
+        )
+        for source in range(4)
+        for destination in range(4)
+    }
+
+    assert len(set(signatures.values())) == 16
+    assert signatures[(0, 0)] != signatures[(2, 3)]
+
+
+@pytest.mark.parametrize("dtype", ("float16", "bfloat16", "int8"))
+def test_sparse_global_ranks_use_group_local_routing_indices(dtype: str) -> None:
+    group_ranks = (0, 127)
+    entry = _oracle_entry("all_gather", dtype=dtype, group_ranks=group_ranks)
+    expected = list(
+        execution_module._validation_expected_output_values(
+            entry,
+            request_id="sparse-rank-routing",
+            rank=0,
+            group_ranks=group_ranks,
+        )
+    )
+    block = int(entry["in_msg_size"])
+    permuted = expected[block:] + expected[:block]
+
+    assert expected[:block] != expected[block:]
+    assert _oracle_matches(
+        entry,
+        expected,
+        rank=0,
+        group_ranks=group_ranks,
+        request_id="sparse-rank-routing",
+    )
+    assert not _oracle_matches(
+        entry,
+        permuted,
+        rank=0,
+        group_ranks=group_ranks,
+        request_id="sparse-rank-routing",
+    )
+
+
+@pytest.mark.parametrize(
+    ("dtype", "reduction_op"),
+    tuple(
+        (dtype, reduction_op)
+        for dtype in ("float16", "bfloat16", "int8", "uint8", "int16", "int32", "int64")
+        for reduction_op in ("sum", "avg", "min", "max", "product")
+    ),
+)
+def test_maximum_rank_reduction_probes_are_bounded_and_operator_distinguishing(
+    dtype: str,
+    reduction_op: str,
+) -> None:
+    candidates = execution_module._reduction_probe_candidates(dtype, 65_536, reduction_op)
+
+    assert 1 <= len(candidates) <= execution_module._REDUCTION_PROBE_TEMPLATE_COUNT
+    assert len({probe.outcomes[execution_module._REDUCTION_OUTCOME_INDEX[reduction_op]] for probe in candidates}) == len(
+        candidates
+    )
+    for probe in candidates:
+        assert len(set(probe.outcomes)) == len(execution_module._REDUCTION_OUTCOME_INDEX)
+        assert probe.value_at(65_535) in {probe.tail_even, probe.tail_odd}
+
+
+def test_correctness_probe_work_is_resource_accounted() -> None:
+    entry = _oracle_entry("all_reduce", reduction_op="sum")
+    with pytest.raises(SchemaError, match="correctness probe work=32 exceeds limit=31"):
+        execution_module._validate_correctness_probe_support(
+            (entry,),
+            {0: (0, 1, 2, 3)},
+            limits=ResourceLimits(max_execution_correctness_probe_work=31),
+        )
 
 
 def test_distributed_environment_is_explicit_and_fail_closed() -> None:

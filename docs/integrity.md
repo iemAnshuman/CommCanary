@@ -137,10 +137,11 @@ mask a missing rank. Before measurement, a separately resource-counted,
 untimed pass uses deterministic rank-dependent patterns to validate every
 collective output under its exact source-bound reduction operator and every
 receive endpoint, exchanges exact check counts across the launched world, and
-fails all ranks if any data result is wrong. Probe values bind request, source,
-destination, and element lane; dtype-aware multiple probes distinguish SUM,
-AVG, MIN, MAX, and PRODUCT and expose rank-block or destination-chunk
-permutations. Measured iterations retain both
+fails all ranks if any data result is wrong. Group-local route identifiers are
+encoded across enough element lanes for a collision-checked capacity bound;
+probe values also bind the request. Dtype-aware, bounded analytical probes
+distinguish SUM, AVG, MIN, MAX, and PRODUCT and expose rank-block,
+reduce-scatter-shard, or destination-chunk permutations. Measured iterations retain both
 per-operation issue-to-wait samples and whole-program wall time per rank; the
 decision-facing makespan is the maximum rank duration, not a median of
 collective calls. The resulting physical envelope binds both artifact IDs and

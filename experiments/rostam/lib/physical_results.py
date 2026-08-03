@@ -803,7 +803,7 @@ def _qualification_payload(
         ),
     )
     expected_executor = {
-        "name": "commcanary.torch-distributed-reference.v2",
+        "name": "commcanary.torch-distributed-reference.v3",
         "claim": "reference-implementation-not-yet-physically-conformance-validated",
         "device": parameters.get("device"),
         "backend": parameters.get("backend"),

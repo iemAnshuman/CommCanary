@@ -51,6 +51,7 @@ class ResourceLimits:
     max_execution_total_tensor_bytes: int = 16 * 1024 * 1024 * 1024
     max_execution_compute_operations: int = 10_000_000
     max_execution_observation_samples: int = 2_000_000
+    max_execution_correctness_probe_work: int = 32_000_000
     max_execution_timeout_seconds: int = 3_600
     max_capture_shards: int = 65_536
     max_capture_events: int = 1_000_000
@@ -89,6 +90,7 @@ class ResourceLimits:
             "max_execution_total_tensor_bytes",
             "max_execution_compute_operations",
             "max_execution_observation_samples",
+            "max_execution_correctness_probe_work",
             "max_execution_timeout_seconds",
             "max_capture_shards",
             "max_capture_events",
