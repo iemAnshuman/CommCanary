@@ -1,6 +1,6 @@
 {
   "schema": "commcanary.rostam.decision-fidelity-policy.v2",
-  "policy_id": "b06aa21be9ce432ba2f76e89ebef19be355fdd3586ca2eb154e3ee776690b291",
+  "policy_id": "1d3d8db489c9b49c8db6e96c0fea6e490d9bdd18390eb549c8485307e55fbf9c",
   "scope": {
     "workload_id": "decision-gate-exact-replicated",
     "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
@@ -57,13 +57,13 @@
       "opposite_direction": "one_false_negative_and_one_false_positive"
     },
     "uncertainty": {
-      "method": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2",
+      "method": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2",
       "confidence": 0.95,
       "resamples": 10000,
       "seed": 8241,
       "outer_unit": "complete-allocation-block",
       "inner_unit": "measured-iteration-vector-within-cell",
-      "simultaneous_scope": "all-pair-margins-and-reported-metrics",
+      "simultaneous_scope": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria",
       "boundary_crossing_outcome": "inconclusive"
     },
     "reported_metrics": [

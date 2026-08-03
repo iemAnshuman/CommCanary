@@ -280,9 +280,10 @@ quieter run.
 The v2 evaluator uses the allocation block as the outer paired bootstrap unit
 and the measured pass vector as the inner unit. Every bootstrap draw recomputes
 the relative tie threshold and policy margin from its sampled medians. One
-predeclared studentized max statistic supplies simultaneous intervals for all
-28 configuration-pair margins, reported metrics, and acceptance-criterion
-margins. A boundary crossing remains `inconclusive`.
+predeclared standardized bootstrap max statistic supplies simultaneous
+intervals for source and exact-work pair margins, exact-work metrics, and
+decision criteria. Constant statistics receive exact intervals and do not
+inflate the global critical value. A boundary crossing remains `inconclusive`.
 
 After a complete v2 campaign has selected evidence, the same dispatcher uses
 the policy schema to choose the immutable v2 evaluator:

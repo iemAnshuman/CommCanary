@@ -80,11 +80,11 @@
             "boundary_crossing_outcome": {"const": "inconclusive"},
             "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
             "inner_unit": {"const": "measured-iteration-vector-within-cell"},
-            "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2"},
+            "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2"},
             "outer_unit": {"const": "complete-allocation-block"},
             "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
             "seed": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"},
-            "simultaneous_scope": {"const": "all-pair-margins-and-reported-metrics"}
+            "simultaneous_scope": {"const": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria"}
           },
           "required": ["boundary_crossing_outcome", "confidence", "inner_unit", "method", "outer_unit", "resamples", "seed", "simultaneous_scope"],
           "type": "object"

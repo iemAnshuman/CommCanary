@@ -52,7 +52,7 @@
       "properties": {
         "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
         "inconclusive_pairs": {"items": {"minLength": 1, "type": "string"}, "type": "array"},
-        "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2"},
+        "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2"},
         "metric_intervals": {
           "additionalProperties": false,
           "properties": {
@@ -65,11 +65,11 @@
           "type": "object"
         },
         "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
-        "status": {"enum": ["decisive", "inconclusive"]},
-        "studentized_max_critical_value": {"type": ["number", "null"]},
+        "standardized_max_critical_value": {"type": ["number", "null"]},
+        "status": {"enum": ["decisive", "inconclusive", "not_evaluated"]},
         "unstable_cells": {"items": {"minLength": 1, "type": "string"}, "type": "array"}
       },
-      "required": ["confidence", "inconclusive_pairs", "method", "metric_intervals", "resamples", "status", "studentized_max_critical_value", "unstable_cells"],
+      "required": ["confidence", "inconclusive_pairs", "method", "metric_intervals", "resamples", "standardized_max_critical_value", "status", "unstable_cells"],
       "type": "object"
     },
     "pairwise_comparisons": {

@@ -14,6 +14,7 @@ from experiments.rostam.analysis.decision_fidelity import (
     evaluate_decision_fidelity,
     validate_decision_fidelity_policy,
 )
+from experiments.rostam.analysis.decision_fidelity_v2 import _simultaneous_intervals
 from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
 from experiments.rostam.evaluate_decision_gate import _verdict_summary
@@ -159,7 +160,7 @@ def test_v2_evaluator_uses_complete_blocks_and_simultaneous_intervals() -> None:
     assert verdict["evidence"]["allocation_block_count"] == 5
     assert verdict["evidence"]["distinct_job_count"] == 40
     assert verdict["evidence"]["environment_observation_count"] == 40
-    assert verdict["uncertainty"]["method"].endswith("max-statistic.v2")
+    assert verdict["uncertainty"]["method"].endswith("standardized-max.v2")
     assert set(verdict["uncertainty"]["metric_intervals"]["exact_work"]) == {
         "pairwise_ranking_agreement",
         "kendall_tau_b",
@@ -204,6 +205,47 @@ def test_v2_pair_margin_recomputes_the_relative_tie_band() -> None:
     assert pair["representations"]["source"]["simultaneous_margin_interval_us"] == [10.0, 10.0]
 
 
+def test_v2_constant_statistics_keep_exact_intervals_when_timings_are_noisy() -> None:
+    _verdict, policy, policy_bytes, aggregate = _evaluate()
+    configuration_indices = {
+        configuration: index for index, configuration in enumerate(policy["scope"]["configuration_ids"])
+    }
+    for row in aggregate["selected_cells"]:
+        index = configuration_indices[row["configuration_id"]]
+        block = row["repetition"]
+        source = float((index + 1) * 100)
+        source_timings = [
+            source * (1.0 + ((iteration + block + index) % 5 - 2) / 1000.0)
+            for iteration in range(24)
+        ]
+        exact_timings = [
+            value * (1.01 + ((iteration + 2 * block + index) % 7 - 3) / 2000.0)
+            for iteration, value in enumerate(source_timings)
+        ]
+        row["decision_gate"]["representations"]["source"]["timings_us"] = source_timings
+        row["decision_gate"]["representations"]["exact_work"]["timings_us"] = exact_timings
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+    intervals = verdict["uncertainty"]["metric_intervals"]["exact_work"]
+
+    assert verdict["uncertainty"]["standardized_max_critical_value"] > 0.0
+    assert intervals["pairwise_ranking_agreement"] == [1.0, 1.0]
+    assert intervals["kendall_tau_b"] == [1.0, 1.0]
+    assert intervals["false_negative_count"] == [0.0, 0.0]
+    assert intervals["false_positive_count"] == [0.0, 0.0]
+    assert verdict["outcome"] == "pass"
+
+
+def test_v2_zero_variance_bootstrap_must_match_the_observation() -> None:
+    with pytest.raises(DecisionFidelityError, match="zero variance but disagrees"):
+        _simultaneous_intervals(
+            {"metric|exact_work|pairwise_ranking_agreement": 1.0},
+            [{"metric|exact_work|pairwise_ranking_agreement": 0.5}] * 100,
+            confidence=0.95,
+            pair_count=28,
+        )
+
+
 def test_v2_evaluator_rejects_reused_allocation_job_ids() -> None:
     _verdict, policy, policy_bytes, aggregate = _evaluate()
     aggregate["selected_cells"][1]["decision_gate_runtime"]["job_id"] = aggregate["selected_cells"][0][
@@ -214,6 +256,8 @@ def test_v2_evaluator_rejects_reused_allocation_job_ids() -> None:
 
     assert verdict["outcome"] == "incomparable"
     assert [issue["code"] for issue in verdict["issues"]] == ["allocation_job_reuse"]
+    assert verdict["uncertainty"]["status"] == "not_evaluated"
+    assert verdict["uncertainty"]["standardized_max_critical_value"] is None
 
 
 def test_v2_evaluator_requires_every_configuration_in_every_block() -> None:

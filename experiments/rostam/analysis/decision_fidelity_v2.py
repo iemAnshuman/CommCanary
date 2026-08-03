@@ -34,8 +34,8 @@ from .schemas import (
 _POLICY_LIMITS = JSONResourceLimits(max_document_bytes=1024 * 1024, max_items=10_000)
 _REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
 _EVALUATED_REPRESENTATIONS = ("exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
-_UNCERTAINTY_REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated")
-_STABILITY_REPRESENTATIONS = _UNCERTAINTY_REPRESENTATIONS
+_UNCERTAINTY_REPRESENTATIONS = ("source", "exact_work")
+_STABILITY_REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated")
 
 BlockSamples = Dict[int, Dict[str, Dict[str, Tuple[float, ...]]]]
 MedianVector = Dict[str, Dict[str, float]]
@@ -237,10 +237,10 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     expected_uncertainty = {
-        "method": "hierarchical-paired-block-bootstrap-policy-margin-max-statistic.v2",
+        "method": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2",
         "outer_unit": "complete-allocation-block",
         "inner_unit": "measured-iteration-vector-within-cell",
-        "simultaneous_scope": "all-pair-margins-and-reported-metrics",
+        "simultaneous_scope": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria",
         "boundary_crossing_outcome": "inconclusive",
     }
     if any(uncertainty.get(field) != expected for field, expected in expected_uncertainty.items()):
@@ -466,10 +466,9 @@ def _statistics(
         for representation in _UNCERTAINTY_REPRESENTATIONS:
             result = cast(Mapping[str, Any], representations[representation])
             values[f"pair|{first}|{second}|{representation}"] = float(result["policy_margin_us"])
-    for representation in _EVALUATED_REPRESENTATIONS:
-        representation_metrics = cast(Mapping[str, Any], metrics[representation])
-        for metric in REPORTED_METRIC_TO_VERDICT_FIELD.values():
-            values[f"metric|{representation}|{metric}"] = float(representation_metrics[metric])
+    exact_metrics = cast(Mapping[str, Any], metrics["exact_work"])
+    for metric in REPORTED_METRIC_TO_VERDICT_FIELD.values():
+        values[f"metric|exact_work|{metric}"] = float(exact_metrics[metric])
     for criterion_id, (observed, operator, required) in _criterion_values(metrics, criteria).items():
         values[f"criterion|{criterion_id}"] = _criterion_margin(observed, operator, required)
     return values
@@ -506,21 +505,45 @@ def _simultaneous_intervals(
     bootstrap: Sequence[Mapping[str, float]],
     *,
     confidence: float,
+    pair_count: int,
 ) -> Tuple[Dict[str, Tuple[float, float]], float]:
+    if not bootstrap:
+        raise DecisionFidelityError("simultaneous bootstrap requires at least one resample")
     scales: Dict[str, float] = {}
+    constant_keys: Set[str] = set()
     for key in observed:
         values = [row[key] for row in bootstrap]
+        if all(value == observed[key] for value in values):
+            constant_keys.add(key)
+            continue
         scale = statistics.stdev(values) if len(values) > 1 else 0.0
-        scales[key] = scale if scale > 0.0 and math.isfinite(scale) else 1.0
-    maxima = [max(abs((row[key] - observed[key]) / scales[key]) for key in observed) for row in bootstrap]
+        if not scale > 0.0 or not math.isfinite(scale):
+            raise DecisionFidelityError(
+                f"bootstrap statistic {key!r} has zero variance but disagrees with its observation"
+            )
+        scales[key] = scale
+    maxima = [
+        max(abs((row[key] - observed[key]) / scales[key]) for key in scales)
+        for row in bootstrap
+    ] if scales else [0.0]
     critical_value = _percentile(maxima, confidence)
-    intervals = {
-        key: (
-            observed[key] - critical_value * scales[key],
-            observed[key] + critical_value * scales[key],
-        )
-        for key in observed
-    }
+    intervals: Dict[str, Tuple[float, float]] = {}
+    for key, value in observed.items():
+        if key in constant_keys:
+            intervals[key] = (value, value)
+            continue
+        lower = value - critical_value * scales[key]
+        upper = value + critical_value * scales[key]
+        if key == "metric|exact_work|pairwise_ranking_agreement":
+            lower, upper = max(0.0, lower), min(1.0, upper)
+        elif key == "metric|exact_work|kendall_tau_b":
+            lower, upper = max(-1.0, lower), min(1.0, upper)
+        elif key in {
+            "metric|exact_work|false_negative_count",
+            "metric|exact_work|false_positive_count",
+        }:
+            lower, upper = max(0.0, lower), min(float(pair_count), upper)
+        intervals[key] = (lower, upper)
     return intervals, critical_value
 
 
@@ -723,6 +746,7 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
             observed_statistics,
             bootstrap_statistics,
             confidence=float(uncertainty["confidence"]),
+            pair_count=len(observed_pair_rows),
         )
 
         for row in observed_pair_rows:
@@ -745,11 +769,10 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
                         f"{first}|{second}|{representation}|observed={pair_result['observed_label']}"
                     )
 
-        for representation in _EVALUATED_REPRESENTATIONS:
-            metric_intervals[representation] = {
-                metric: list(intervals[f"metric|{representation}|{metric}"])
-                for metric in REPORTED_METRIC_TO_VERDICT_FIELD.values()
-            }
+        metric_intervals["exact_work"] = {
+            metric: list(intervals[f"metric|exact_work|{metric}"])
+            for metric in REPORTED_METRIC_TO_VERDICT_FIELD.values()
+        }
         for criterion_id, (observed, operator, required) in _criterion_values(
             observed_metrics,
             policy["pass_criteria"],
@@ -810,12 +833,14 @@ def evaluate_decision_fidelity_v2(aggregate: Mapping[str, Any], policy_bytes: by
         "issues": issues,
         "uncertainty": {
             "status": (
-                "inconclusive" if stability_issues or inconclusive_pairs or criteria_inconclusive else "decisive"
+                "not_evaluated"
+                if issues
+                else ("inconclusive" if stability_issues or inconclusive_pairs or criteria_inconclusive else "decisive")
             ),
             "method": policy["comparison"]["uncertainty"]["method"],
             "confidence": policy["comparison"]["uncertainty"]["confidence"],
             "resamples": policy["comparison"]["uncertainty"]["resamples"],
-            "studentized_max_critical_value": critical_value,
+            "standardized_max_critical_value": critical_value,
             "inconclusive_pairs": inconclusive_pairs,
             "unstable_cells": stability_issues,
             "metric_intervals": metric_intervals,

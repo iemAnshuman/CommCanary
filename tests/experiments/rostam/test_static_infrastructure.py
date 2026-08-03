@@ -398,7 +398,7 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert replicated_parameters["iterations"] == 24
     assert replicated_command[replicated_command.index("--allocation-block") + 1] == "{repetition}"
     assert replicated_parameters["decision_fidelity_policy_id"] == (
-        "b06aa21be9ce432ba2f76e89ebef19be355fdd3586ca2eb154e3ee776690b291"
+        "1d3d8db489c9b49c8db6e96c0fea6e490d9bdd18390eb549c8485307e55fbf9c"
     )
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
