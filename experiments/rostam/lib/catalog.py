@@ -23,7 +23,7 @@ _ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$")
 _ENV_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _SCHEMA_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _PLACEHOLDER_RE = re.compile(
-    r"^(?:\{repetition\}|\{(?:venv_python|venv_bin|experiment_dir|workspace|"
+    r"^(?:\{repetition\}|\{(?:venv_python|venv_bin|safe_python|experiment_dir|workspace|param_runtime|"
     r"dependency:[a-z0-9.-]+:[a-z0-9_-]+|input:[a-z0-9.-]+)\}(?:/[^\x00]*)?)$"
 )
 

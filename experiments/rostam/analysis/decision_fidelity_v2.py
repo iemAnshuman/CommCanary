@@ -47,11 +47,21 @@ def _environment_identity(raw: Any, field: str) -> str:
     environment = _object(
         raw,
         field,
-        {"schema", "driver_version", "gpus", "topology", "node_state", "binding", "observation_sha256"},
+        {
+            "schema",
+            "driver_version",
+            "nccl_library_sha256",
+            "gpus",
+            "topology",
+            "node_state",
+            "binding",
+            "observation_sha256",
+        },
     )
     if environment["schema"] != "commcanary.rostam.runtime-observation.v2":
         raise DecisionFidelityError(f"{field}.schema is unsupported")
     _sha256(environment["observation_sha256"], f"{field}.observation_sha256")
+    _sha256(environment["nccl_library_sha256"], f"{field}.nccl_library_sha256")
     if not isinstance(environment["driver_version"], str) or not environment["driver_version"]:
         raise DecisionFidelityError(f"{field}.driver_version is invalid")
     gpus = environment["gpus"]

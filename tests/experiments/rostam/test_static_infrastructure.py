@@ -4,7 +4,9 @@ import copy
 import hashlib
 import json
 import shutil
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
 import pytest
@@ -367,8 +369,8 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     )
     qualification_command = qualification_parameters["command"]
     assert qualification_command[
-        qualification_command.index("--module") : qualification_command.index("--module") + 2
-    ] == ["--module", "experiments.rostam.qualification_physical"]
+        qualification_command.index("--no_python") + 2 : qualification_command.index("--no_python") + 4
+    ] == ["-m", "experiments.rostam.qualification_physical"]
     assert "{experiment_dir}/qualification_physical.py" not in qualification_command
     assert "{input:qualification-replay-program}" in qualification_command
     assert "source-capture-evidence" in qualification.required_input_ids
@@ -380,7 +382,9 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     decision_parameters = decision_workload.parameters.to_value()
     decision_command = decision_parameters["command"]
     assert decision_workload.wrapper == "qualification"
-    assert decision_command[decision_command.index("--module") + 1] == ("experiments.rostam.decision_gate_bootstrap")
+    assert decision_command[
+        decision_command.index("--no_python") + 2 : decision_command.index("--no_python") + 4
+    ] == ["-m", "experiments.rostam.decision_gate_bootstrap"]
     assert decision_command[decision_command.index("--wheel") + 1] == "{input:decision-gate-wheel}"
     assert decision_parameters["expected_stratified_source_event_indices"] == [0, 1]
     assert decision_parameters["decision_fidelity_policy_id"] == (
@@ -765,7 +769,12 @@ def _write_json(path: Path, value: object) -> Path:
     return path
 
 
-def _campaign_inputs(tmp_path: Path, *, reviewed: bool) -> dict[str, Path]:
+def _campaign_inputs(
+    tmp_path: Path,
+    *,
+    reviewed: bool,
+    profile_id: str = "core",
+) -> dict[str, Path]:
     status = "reviewed" if reviewed else "pending-rostam-resolution"
     environment = _write_json(
         tmp_path / "environment.json",
@@ -781,13 +790,24 @@ def _campaign_inputs(tmp_path: Path, *, reviewed: bool) -> dict[str, Path]:
     wheel = tmp_path / "commcanary.whl"
     wheel.write_bytes(b"reviewed-wheel-fixture")
     executor = prepare_executor_artifact(EXPERIMENT_DIRECTORY, tmp_path / "executor-artifacts")
-    return {
+    inputs = {
         "commcanary-wheel": wheel,
         "environment-lock": environment,
         "param-patch-contract": patch,
         EXECUTOR_ARTIFACT_INPUT_ID: executor.path,
         EXECUTOR_BOOTSTRAP_INPUT_ID: EXPERIMENT_DIRECTORY / "executor_bootstrap.py",
     }
+    profile = load_catalog(CATALOG_PATH).profile(profile_id)
+    for input_id in (
+        "nccl-library-2-19-3",
+        "nccl-library-2-20-5",
+        "param-runtime-artifact",
+    ):
+        if input_id in profile.required_input_ids:
+            path = tmp_path / input_id
+            path.write_bytes(f"reviewed-{input_id}".encode("ascii"))
+            inputs[input_id] = path
+    return inputs
 
 
 def _frozen_core(tmp_path: Path, *, reviewed: bool):
@@ -831,7 +851,7 @@ def test_overlap_capture_profiles_bind_reviewed_calibration_and_are_submittable(
             },
         },
     )
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id=profile_id)
     inputs["gemm-calibration"] = calibration
     campaign = build_campaign(
         catalog=catalog,
@@ -867,14 +887,14 @@ def test_overlap_capture_profiles_refuse_missing_calibration_input(tmp_path: Pat
             repository_dirty=False,
             repository_patch_sha256=None,
             source_archive_sha256="2" * 64,
-            inputs=_campaign_inputs(tmp_path, reviewed=True),
+            inputs=_campaign_inputs(tmp_path, reviewed=True, profile_id=profile_id),
         )
 
 
 def test_exact_qualification_profile_binds_every_portable_input_and_is_submittable(
     tmp_path: Path,
 ) -> None:
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="qualification-exact")
     for input_id in (
         "qualification-canary",
         "qualification-fidelity",
@@ -905,6 +925,7 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
     assert {item.id for item in manifest.campaign.inputs} == {
         "commcanary-wheel",
         "environment-lock",
+        "nccl-library-2-20-5",
         "param-patch-contract",
         "qualification-canary",
         "qualification-fidelity",
@@ -923,8 +944,8 @@ def test_exact_qualification_profile_binds_every_portable_input_and_is_submittab
     assert len(plan.cells) == 1
     assert plan.cells[0].action == "run"
     assert plan.cells[0].wrapper_path.endswith("run_cell.sbatch")
-    bootstrap_index = plan.cells[0].sbatch_argv.index(str(EXPERIMENT_DIRECTORY / "executor_bootstrap.py"))
-    assert plan.cells[0].sbatch_argv[bootstrap_index + 2] == "qualification"
+    bootstrap_index = plan.cells[0].script_arguments.index(str(EXPERIMENT_DIRECTORY / "executor_bootstrap.py"))
+    assert plan.cells[0].script_arguments[bootstrap_index + 2] == "qualification"
 
 
 def test_exact_qualification_profile_refuses_unbound_source_capture(tmp_path: Path) -> None:
@@ -939,12 +960,12 @@ def test_exact_qualification_profile_refuses_unbound_source_capture(tmp_path: Pa
             repository_dirty=False,
             repository_patch_sha256=None,
             source_archive_sha256="2" * 64,
-            inputs=_campaign_inputs(tmp_path, reviewed=True),
+            inputs=_campaign_inputs(tmp_path, reviewed=True, profile_id="qualification-exact"),
         )
 
 
 def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> None:
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate")
     for input_id in (
         "decision-fidelity-policy",
         "decision-gate-canary",
@@ -988,7 +1009,7 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
 
 
 def test_replicated_decision_gate_profile_expands_complete_allocation_blocks(tmp_path: Path) -> None:
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate-exact-replicated")
     for input_id in (
         "decision-fidelity-policy",
         "decision-gate-canary",
@@ -1027,7 +1048,7 @@ def test_replicated_decision_gate_profile_expands_complete_allocation_blocks(tmp
 
 
 def test_replicated_decision_gate_profile_refuses_wrong_allocation_block_count(tmp_path: Path) -> None:
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate-exact-replicated")
     for input_id in (
         "decision-fidelity-policy",
         "decision-gate-canary",
@@ -1074,7 +1095,7 @@ def test_overlap_capture_profile_refuses_calibration_value_mismatch(tmp_path: Pa
             },
         },
     )
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="overlap")
     inputs["gemm-calibration"] = calibration
     with pytest.raises(CampaignPreparationError, match="recommended_us_per_gemm"):
         build_campaign(
@@ -1118,6 +1139,9 @@ def test_submission_plan_precomputes_unique_owners_dependencies_and_exact_argv(t
     assert all("--nodelist=toranj1" in cell.sbatch_argv for cell in plan.cells)
     assert all("--exclusive" in cell.sbatch_argv for cell in plan.cells)
     assert all(not any("*" in argument for argument in cell.sbatch_argv) for cell in plan.cells)
+    assert all(cell.wrapper_path not in cell.sbatch_argv for cell in plan.cells)
+    assert all(cell.wrapper_sha256 and cell.spooled_script_sha256 for cell in plan.cells)
+    assert all(cell.script_arguments for cell in plan.cells)
     canary_cells = [cell for cell in plan.cells if cell.workload_id == "canary-param"]
     assert len(canary_cells) == 8
     assert all(len(cell.dependency_attempts) == 1 for cell in canary_cells)
@@ -1126,8 +1150,48 @@ def test_submission_plan_precomputes_unique_owners_dependencies_and_exact_argv(t
         submit_frozen_plan(plan, execute=False)
 
 
+def test_submission_spools_verified_wrapper_bytes_without_a_path_race(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    frozen = _frozen_core(tmp_path, reviewed=True)
+    experiment = tmp_path / "experiments" / "rostam"
+    _copy_experiment_sources(experiment)
+    plan = build_submission_plan(
+        frozen.directory,
+        experiment,
+        dry_run=True,
+        max_cells=1,
+    )
+    plan = replace(
+        plan,
+        flags=tuple(
+            (key, False if key == "dry_run" else value)
+            for key, value in plan.flags
+        ),
+    )
+    cell = next(item for item in plan.cells if item.action == "run")
+    wrapper = Path(cell.wrapper_path)
+    captured: dict[str, Any] = {}
+
+    def submit(argv: list[str], **kwargs: Any) -> SimpleNamespace:
+        captured["argv"] = tuple(argv)
+        captured["script"] = kwargs["input"]
+        wrapper.write_text("#!/usr/bin/env bash\necho replaced\n", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout=b"123456\n", stderr=b"")
+
+    monkeypatch.setattr("experiments.rostam.lib.submission.subprocess.run", submit)
+    rows = submit_frozen_plan(plan, execute=True)
+
+    assert len(rows) == 1
+    assert cell.wrapper_path not in captured["argv"]
+    assert hashlib.sha256(captured["script"]).hexdigest() == cell.spooled_script_sha256
+    assert b"echo replaced" not in captured["script"]
+    assert rows[0]["spooled_script_sha256"] == cell.spooled_script_sha256
+
+
 def test_submission_plan_shared_input_inventory_survives_canonical_round_trip(tmp_path: Path) -> None:
-    inputs = _campaign_inputs(tmp_path, reviewed=True)
+    inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="shared-replay")
     shared_trace = tmp_path / "shared-param-trace.json"
     shared_trace.write_bytes(b'[{"comms":"init"}]\n')
     inputs["shared-param-trace"] = shared_trace
@@ -1245,7 +1309,7 @@ def test_shell_layer_is_thin_and_contains_no_legacy_execution_scaffolding() -> N
     wrapper = EXPERIMENT_DIRECTORY / "run_cell.sbatch"
     text = wrapper.read_text(encoding="utf-8")
     assert wrapper.stat().st_mode & 0o100 == 0o100
-    assert 'exec "$PYTHON_EXECUTABLE" -I -c' in text
+    assert 'exec "$PYTHON_EXECUTABLE" -I -S -c' in text
     assert "runpy.run_path" in text
     assert "O_NOFOLLOW" in text
     assert "executor bootstrap does not match the frozen campaign" in text

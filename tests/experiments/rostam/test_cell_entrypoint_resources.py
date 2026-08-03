@@ -137,28 +137,31 @@ def test_runtime_environment_exposes_only_staged_experiment_modules(
     executor = prepare_executor_artifact(experiment_directory, tmp_path / "executors")
     monkeypatch.setenv("PYTHONPATH", "/unreviewed/inherited/path")
     configuration = SimpleNamespace(environment=SimpleNamespace(to_value=lambda: {}))
+    venv_directory = tmp_path / "venv"
+    (venv_directory / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages").mkdir(
+        parents=True
+    )
 
     environment = cell_entrypoint._runtime_environment(
         configuration,
-        experiment_directory,
+        venv_directory,
         tmp_path / "nccl" / "libnccl.so.2",
         executor.path,
     )
 
-    assert environment["PYTHONPATH"].split(os.pathsep) == [
-        str(executor.path),
-        str(experiment_directory / "third_party"),
-        str(experiment_directory / "third_party" / "param"),
-    ]
+    assert "PYTHONPATH" not in environment
+    assert "third_party" not in environment["COMMCANARY_CHILD_IMPORT_PATHS"]
+    assert environment["PYTHONNOUSERSITE"] == "1"
     completed = subprocess.run(
         [
             sys.executable,
-            "-c",
-            (
-                "import importlib.util; "
-                "spec = importlib.util.find_spec('experiments.rostam.qualification_physical'); "
-                "raise SystemExit(spec is None)"
-            ),
+            "-I",
+            "-S",
+            str(executor.path),
+            "run-python",
+            "-m",
+            "experiments.rostam.lib.param_artifact",
+            "--help",
         ],
         cwd=tmp_path,
         env=environment,
@@ -167,6 +170,60 @@ def test_runtime_environment_exposes_only_staged_experiment_modules(
         stderr=subprocess.PIPE,
     )
     assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+
+
+def test_isolated_child_ignores_pth_sitecustomize_and_third_party_shadowing(
+    tmp_path: Path,
+) -> None:
+    experiment_directory = Path(cell_entrypoint.__file__).resolve().parents[1]
+    executor = prepare_executor_artifact(experiment_directory, tmp_path / "executors")
+    venv_directory = tmp_path / "venv"
+    site_packages = (
+        venv_directory
+        / "lib"
+        / f"python{sys.version_info.major}.{sys.version_info.minor}"
+        / "site-packages"
+    )
+    safe_torch = site_packages / "torch"
+    safe_torch.mkdir(parents=True)
+    (safe_torch / "__init__.py").write_text("ORIGIN = 'reviewed'\n", encoding="utf-8")
+    (safe_torch / "__main__.py").write_text("print('reviewed-torch')\n", encoding="utf-8")
+    startup_marker = tmp_path / "startup-ran"
+    (site_packages / "hostile.pth").write_text(
+        f"import pathlib; pathlib.Path({str(startup_marker)!r}).write_text('pth')\n",
+        encoding="utf-8",
+    )
+    (site_packages / "sitecustomize.py").write_text(
+        f"import pathlib; pathlib.Path({str(startup_marker)!r}).write_text('sitecustomize')\n",
+        encoding="utf-8",
+    )
+    fake_torch = tmp_path / "third_party" / "torch"
+    fake_torch.mkdir(parents=True)
+    (fake_torch / "__init__.py").write_text("ORIGIN = 'mutable'\n", encoding="utf-8")
+    (fake_torch / "__main__.py").write_text("print('mutable-torch')\n", encoding="utf-8")
+    nccl = tmp_path / "libnccl.so.2"
+    nccl.write_bytes(b"nccl")
+    configuration = SimpleNamespace(environment=SimpleNamespace(to_value=lambda: {}))
+    environment = cell_entrypoint._runtime_environment(
+        configuration,
+        venv_directory,
+        nccl,
+        executor.path,
+    )
+    environment["PYTHONPATH"] = str(tmp_path / "third_party")
+
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", str(executor.path), "run-python", "-m", "torch"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    assert completed.stdout == b"reviewed-torch\n"
+    assert not startup_marker.exists()
 
 
 def test_bound_input_staging_survives_same_size_source_replacement(tmp_path: Path) -> None:
@@ -260,8 +317,10 @@ def test_runtime_fingerprint_records_driver_gpu_topology_binding_and_clocks(
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1")
     monkeypatch.setenv("SLURM_LOCALID", "0")
 
+    nccl_library = tmp_path / "libnccl.so.2"
+    nccl_library.write_bytes(b"reviewed-nccl")
     runtime, evidence = cell_entrypoint._runtime_fingerprint(
-        tmp_path / "libnccl.so.2",
+        nccl_library,
         {"hostname": "toranj0", "job_id": "12345"},
     )
 
@@ -270,6 +329,7 @@ def test_runtime_fingerprint_records_driver_gpu_topology_binding_and_clocks(
     assert runtime["runtime_nccl_version_code"] == 22005
     assert evidence["schema"] == "commcanary.rostam.runtime-observation.v2"
     assert evidence["driver_version"] == "550.54.15"
+    assert evidence["nccl_library_sha256"] == hashlib.sha256(b"reviewed-nccl").hexdigest()
     assert evidence["gpu_count"] == 2
     assert evidence["gpus"][0]["uuid"] == "GPU-a"
     assert evidence["gpus"][0]["sm_clock_mhz"] == 1410

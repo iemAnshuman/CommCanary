@@ -496,6 +496,7 @@ def _replicated_environment_binding(
     required_observation_fields = {
         "schema",
         "runtime",
+        "nccl_library_sha256",
         "driver_version",
         "gpu_count",
         "gpus",
@@ -519,12 +520,16 @@ def _replicated_environment_binding(
         "memory_clock_mhz",
     }
     driver_version = runtime_observation.get("driver_version")
+    nccl_library_sha256 = runtime_observation.get("nccl_library_sha256")
     gpus = runtime_observation.get("gpus")
     if (
         runtime_observation.get("schema") != _RUNTIME_OBSERVATION_SCHEMA_V2
         or set(runtime_observation) != required_observation_fields
         or not isinstance(driver_version, str)
         or not driver_version
+        or not isinstance(nccl_library_sha256, str)
+        or len(nccl_library_sha256) != 64
+        or any(character not in _SHA256_CHARACTERS for character in nccl_library_sha256)
         or not isinstance(gpus, list)
         or len(gpus) != world_size
         or runtime_observation.get("gpu_count") != len(gpus)
@@ -617,6 +622,7 @@ def _replicated_environment_binding(
     return {
         "schema": runtime_observation["schema"],
         "driver_version": driver_version,
+        "nccl_library_sha256": nccl_library_sha256,
         "gpus": list(gpus),
         "topology": dict(topology),
         "node_state": dict(node_state),

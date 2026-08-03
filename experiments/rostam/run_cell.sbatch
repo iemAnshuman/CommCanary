@@ -19,7 +19,7 @@ if [[ ! -x "$PYTHON_EXECUTABLE" ]]; then
   exit 2
 fi
 
-exec "$PYTHON_EXECUTABLE" -I -c '
+exec "$PYTHON_EXECUTABLE" -I -S -c '
 import hashlib
 import os
 import runpy

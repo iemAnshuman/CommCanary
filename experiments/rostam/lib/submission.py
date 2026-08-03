@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -38,7 +40,8 @@ from .executor_artifact import (
 from .physical_results import validate_physical_layout
 
 PathLike = Union[str, "Path"]
-SUBMISSION_PLAN_SCHEMA = "commcanary.rostam.submission-plan.v1"
+SUBMISSION_PLAN_SCHEMA_V1 = "commcanary.rostam.submission-plan.v1"
+SUBMISSION_PLAN_SCHEMA = "commcanary.rostam.submission-plan.v2"
 SUBMISSION_LEDGER_SCHEMA = "commcanary.rostam.submission-ledger-entry.v1"
 PLAN_DIRNAME = "submission-plans"
 PLAN_FILENAME = "plan.json"
@@ -54,6 +57,7 @@ _WRAPPERS = {
 }
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _JOB_ID_RE = re.compile(r"^[0-9]+$")
+_MAX_WRAPPER_BYTES = 1024 * 1024
 
 
 class SubmissionPlanError(ContractError):
@@ -138,10 +142,13 @@ class PlannedCell:
     dependency_attempts: Tuple[Tuple[str, str], ...]
     scheduler_dependency_cells: Tuple[str, ...]
     wrapper_path: str
+    wrapper_sha256: Optional[str]
+    script_arguments: Tuple[str, ...]
+    spooled_script_sha256: Optional[str]
     sbatch_argv: Tuple[str, ...]
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
+    def to_dict(self, *, schema: str) -> Dict[str, Any]:
+        result = {
             "sequence": self.sequence,
             "cell_id": self.cell_id,
             "cell_identity_sha256": self.cell_identity_sha256,
@@ -157,6 +164,17 @@ class PlannedCell:
             "wrapper_path": self.wrapper_path,
             "sbatch_argv": list(self.sbatch_argv),
         }
+        if schema == SUBMISSION_PLAN_SCHEMA:
+            result.update(
+                {
+                    "wrapper_sha256": self.wrapper_sha256,
+                    "script_arguments": list(self.script_arguments),
+                    "spooled_script_sha256": self.spooled_script_sha256,
+                }
+            )
+        elif schema != SUBMISSION_PLAN_SCHEMA_V1:
+            raise SubmissionPlanError(f"unsupported submission plan schema {schema!r}")
+        return result
 
 
 @dataclass(frozen=True)
@@ -177,7 +195,7 @@ class SubmissionPlan:
             "experiment_directory": self.experiment_directory,
             "flags": dict(self.flags),
             "input_hashes": dict(self.input_hashes),
-            "cells": [cell.to_dict() for cell in self.cells],
+            "cells": [cell.to_dict(schema=self.schema) for cell in self.cells],
         }
 
     @property
@@ -376,7 +394,37 @@ def _executor_bootstrap_binding(manifest: Any) -> Tuple[Path, str]:
     return Path(raw_path), bootstrap.sha256
 
 
-def _build_sbatch_argv(
+def _wrapper_snapshot(manifest: Any, experiment_directory: Path, wrapper_path: Path) -> Tuple[bytes, str]:
+    try:
+        relative = wrapper_path.resolve().relative_to(experiment_directory.resolve()).as_posix()
+    except ValueError as exc:
+        raise SubmissionPlanError("planned wrapper escapes the experiment directory") from exc
+    script_hashes = _object(
+        _object(manifest.campaign.policy.to_value(), "campaign.policy").get("script_hashes"),
+        "campaign.policy.script_hashes",
+    )
+    expected = _sha256(script_hashes.get(relative), f"campaign.policy.script_hashes.{relative}")
+    try:
+        raw = read_bounded_bytes(wrapper_path, max_bytes=_MAX_WRAPPER_BYTES, field="SLURM wrapper")
+    except CanonicalJSONError as exc:
+        raise SubmissionPlanError(f"cannot snapshot the SLURM wrapper: {exc}") from exc
+    observed = hashlib.sha256(raw).hexdigest()
+    if observed != expected:
+        raise SubmissionPlanError("SLURM wrapper bytes do not match the frozen campaign")
+    return raw, observed
+
+
+def _render_spooled_script(wrapper: bytes, arguments: Sequence[str]) -> bytes:
+    first_line, separator, remainder = wrapper.partition(b"\n")
+    if not separator or not first_line.startswith(b"#!"):
+        raise SubmissionPlanError("SLURM wrapper must begin with a complete shebang line")
+    if any(not argument or "\x00" in argument or "\n" in argument or "\r" in argument for argument in arguments):
+        raise SubmissionPlanError("SLURM wrapper arguments contain an unsafe value")
+    assignment = "set -- " + " ".join(shlex.quote(argument) for argument in arguments) + "\n"
+    return first_line + b"\n" + assignment.encode("utf-8") + remainder
+
+
+def _build_sbatch_invocation(
     *,
     manifest: Any,
     manifest_sha256: str,
@@ -388,7 +436,7 @@ def _build_sbatch_argv(
     wrapper: str,
     attempt_id: str,
     dependency_attempts: Sequence[Tuple[str, str]],
-) -> Tuple[str, ...]:
+) -> Tuple[Tuple[str, ...], Tuple[str, ...], str, str]:
     site = manifest.campaign.expected_site
     parameters = _object(workload.parameters.to_value(), "workload.parameters")
     timeout_raw = parameters.get("timeout_seconds")
@@ -418,26 +466,25 @@ def _build_sbatch_argv(
         argv.append(f"--nodelist={','.join(site.node_constraints)}")
     if site.account is not None:
         argv.append(f"--account={site.account}")
-    argv.extend(
-        [
-            str(wrapper_path),
-            str(venv_python),
-            str(bootstrap_path),
-            bootstrap_sha256,
-            wrapper,
-            "--run-directory",
-            str(run_directory),
-            "--cell-id",
-            cell.id,
-            "--attempt-id",
-            attempt_id,
-            "--manifest-sha256",
-            manifest_sha256,
-        ]
-    )
+    script_arguments: List[str] = [
+        str(venv_python),
+        str(bootstrap_path),
+        bootstrap_sha256,
+        wrapper,
+        "--run-directory",
+        str(run_directory),
+        "--cell-id",
+        cell.id,
+        "--attempt-id",
+        attempt_id,
+        "--manifest-sha256",
+        manifest_sha256,
+    ]
     for dependency_cell, dependency_attempt in dependency_attempts:
-        argv.extend(["--dependency-attempt", f"{dependency_cell}={dependency_attempt}"])
-    return tuple(argv)
+        script_arguments.extend(["--dependency-attempt", f"{dependency_cell}={dependency_attempt}"])
+    wrapper_bytes, wrapper_sha256 = _wrapper_snapshot(manifest, experiment_directory, wrapper_path)
+    spooled = _render_spooled_script(wrapper_bytes, script_arguments)
+    return tuple(argv), tuple(script_arguments), wrapper_sha256, hashlib.sha256(spooled).hexdigest()
 
 
 def build_submission_plan(
@@ -471,6 +518,9 @@ def build_submission_plan(
     if not experiment_dir.is_dir():
         raise SubmissionPlanError("experiment_directory must exist")
     input_hashes = _verify_bound_inputs(manifest, experiment_dir)
+    policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
+    if policy.get("planner_schema") != SUBMISSION_PLAN_SCHEMA:
+        raise SubmissionPlanError("campaign does not bind the current stdin-spooled submission planner")
     if not dry_run:
         _verify_configuration_venvs(manifest, experiment_dir)
     configurations = {item.id: item for item in manifest.campaign.configurations}
@@ -528,7 +578,7 @@ def build_submission_plan(
         else:
             terminal_status = None
         if action == "run" and attempt_id is not None:
-            sbatch_argv = _build_sbatch_argv(
+            sbatch_argv, script_arguments, wrapper_sha256, spooled_script_sha256 = _build_sbatch_invocation(
                 manifest=manifest,
                 manifest_sha256=frozen.manifest_sha256,
                 run_directory=frozen.directory,
@@ -542,6 +592,9 @@ def build_submission_plan(
             )
         else:
             sbatch_argv = ()
+            script_arguments = ()
+            wrapper_sha256 = None
+            spooled_script_sha256 = None
         if action == "run":
             scheduled += 1
         decision = {
@@ -566,6 +619,9 @@ def build_submission_plan(
                 dependency_attempts=tuple(sorted(dependency_attempts)),
                 scheduler_dependency_cells=tuple(sorted(scheduler_dependencies)),
                 wrapper_path=str(wrapper_path),
+                wrapper_sha256=wrapper_sha256,
+                script_arguments=script_arguments,
+                spooled_script_sha256=spooled_script_sha256,
                 sbatch_argv=sbatch_argv,
             )
         )
@@ -656,8 +712,9 @@ def load_submission_plan(path: PathLike) -> SubmissionPlan:
             "cells",
         ),
     )
-    if raw["schema"] != SUBMISSION_PLAN_SCHEMA:
+    if raw["schema"] not in {SUBMISSION_PLAN_SCHEMA_V1, SUBMISSION_PLAN_SCHEMA}:
         raise SubmissionPlanError(f"unsupported submission plan schema {raw['schema']!r}")
+    schema = str(raw["schema"])
     flags_raw = _object(raw["flags"], "submission plan.flags")
     _fields(flags_raw, "submission plan.flags", required=("resume", "only_missing", "retry_failed", "dry_run"))
     if any(not isinstance(value, bool) for value in flags_raw.values()):
@@ -672,35 +729,54 @@ def load_submission_plan(path: PathLike) -> SubmissionPlan:
     cells: List[PlannedCell] = []
     for index, cell_raw in enumerate(cells_raw):
         data = _object(cell_raw, f"submission plan.cells[{index}]")
+        required_fields = [
+            "sequence",
+            "cell_id",
+            "cell_identity_sha256",
+            "configuration_id",
+            "workload_id",
+            "repetition",
+            "action",
+            "reason",
+            "attempt_id",
+            "reuse_attempt_id",
+            "dependency_attempts",
+            "scheduler_dependency_cells",
+            "wrapper_path",
+            "sbatch_argv",
+        ]
+        if schema == SUBMISSION_PLAN_SCHEMA:
+            required_fields.extend(("wrapper_sha256", "script_arguments", "spooled_script_sha256"))
         _fields(
             data,
             f"submission plan.cells[{index}]",
-            required=(
-                "sequence",
-                "cell_id",
-                "cell_identity_sha256",
-                "configuration_id",
-                "workload_id",
-                "repetition",
-                "action",
-                "reason",
-                "attempt_id",
-                "reuse_attempt_id",
-                "dependency_attempts",
-                "scheduler_dependency_cells",
-                "wrapper_path",
-                "sbatch_argv",
-            ),
+            required=required_fields,
         )
         dependencies_raw = _object(data["dependency_attempts"], "dependency_attempts")
         scheduler_raw = data["scheduler_dependency_cells"]
         argv_raw = data["sbatch_argv"]
+        script_arguments_raw = data.get("script_arguments", [])
         if (
             not isinstance(scheduler_raw, list)
             or not isinstance(argv_raw, list)
+            or not isinstance(script_arguments_raw, list)
             or any(not isinstance(item, str) or not item or "\x00" in item for item in argv_raw)
+            or any(
+                not isinstance(item, str) or not item or "\x00" in item or "\n" in item or "\r" in item
+                for item in script_arguments_raw
+            )
         ):
             raise SubmissionPlanError("submission plan cell scheduler dependencies or argv are invalid")
+        wrapper_sha256 = data.get("wrapper_sha256")
+        spooled_script_sha256 = data.get("spooled_script_sha256")
+        if schema == SUBMISSION_PLAN_SCHEMA:
+            if data["action"] == "run":
+                wrapper_sha256 = _sha256(wrapper_sha256, "wrapper_sha256")
+                spooled_script_sha256 = _sha256(spooled_script_sha256, "spooled_script_sha256")
+                if not script_arguments_raw or not argv_raw:
+                    raise SubmissionPlanError("runnable plan cell lacks its spooled script binding")
+            elif wrapper_sha256 is not None or spooled_script_sha256 is not None or script_arguments_raw or argv_raw:
+                raise SubmissionPlanError("non-runnable plan cell may not bind a spooled script")
         cells.append(
             PlannedCell(
                 sequence=data["sequence"],
@@ -716,11 +792,14 @@ def load_submission_plan(path: PathLike) -> SubmissionPlan:
                 dependency_attempts=tuple(sorted((str(key), str(value)) for key, value in dependencies_raw.items())),
                 scheduler_dependency_cells=tuple(scheduler_raw),
                 wrapper_path=data["wrapper_path"],
+                wrapper_sha256=wrapper_sha256,
+                script_arguments=tuple(script_arguments_raw),
+                spooled_script_sha256=spooled_script_sha256,
                 sbatch_argv=tuple(argv_raw),
             )
         )
     plan = SubmissionPlan(
-        schema=SUBMISSION_PLAN_SCHEMA,
+        schema=schema,
         manifest_sha256=_sha256(raw["manifest_sha256"], "manifest_sha256"),
         run_directory=raw["run_directory"],
         experiment_directory=raw["experiment_directory"],
@@ -770,6 +849,8 @@ def submit_frozen_plan(plan: SubmissionPlan, *, execute: bool) -> Tuple[Dict[str
         raise SubmissionPlanError("submission requires the explicit --execute acknowledgement")
     if dict(plan.flags).get("dry_run"):
         raise SubmissionPlanError("a --dry-run plan cannot be submitted; freeze a submit-ready plan")
+    if plan.schema != SUBMISSION_PLAN_SCHEMA:
+        raise SubmissionPlanError("legacy path-based submission plans are evidence-only and cannot be submitted")
     manifest, frozen = load_frozen_run(plan.run_directory)
     if frozen.manifest_sha256 != plan.manifest_sha256:
         raise SubmissionPlanError("submission plan is stale for the frozen manifest")
@@ -797,23 +878,32 @@ def submit_frozen_plan(plan: SubmissionPlan, *, execute: bool) -> Tuple[Dict[str
             dependency_job_ids.append(jobs[dependency_cell])
         argv = list(cell.sbatch_argv)
         if dependency_job_ids:
-            try:
-                wrapper_index = argv.index(cell.wrapper_path)
-            except ValueError as exc:
-                raise SubmissionPlanError("planned sbatch argv no longer contains its wrapper") from exc
-            argv.insert(wrapper_index, f"--dependency=afterok:{':'.join(dependency_job_ids)}")
+            argv.append(f"--dependency=afterok:{':'.join(dependency_job_ids)}")
+        wrapper_path = _safe_path(Path(cell.wrapper_path), "planned SLURM wrapper", regular_file=True)
+        try:
+            wrapper_path.relative_to(Path(plan.experiment_directory).resolve())
+        except ValueError as exc:
+            raise SubmissionPlanError("planned SLURM wrapper escapes the experiment directory") from exc
+        wrapper_bytes, wrapper_sha256 = _wrapper_snapshot(manifest, Path(plan.experiment_directory), wrapper_path)
+        if wrapper_sha256 != cell.wrapper_sha256:
+            raise SubmissionPlanError("planned SLURM wrapper identity is stale")
+        spooled_script = _render_spooled_script(wrapper_bytes, cell.script_arguments)
+        if hashlib.sha256(spooled_script).hexdigest() != cell.spooled_script_sha256:
+            raise SubmissionPlanError("planned spooled SLURM script identity is stale")
         started_at = _timestamp()
         completed = subprocess.run(
             argv,
             check=False,
-            stdin=subprocess.DEVNULL,
+            input=spooled_script,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            text=False,
             shell=False,
         )
         finished_at = _timestamp()
-        raw_job_id = completed.stdout.strip().split(";", 1)[0]
+        stdout = completed.stdout.decode("utf-8", errors="replace")
+        stderr = completed.stderr.decode("utf-8", errors="replace")
+        raw_job_id = stdout.strip().split(";", 1)[0]
         submitted = completed.returncode == 0 and _JOB_ID_RE.fullmatch(raw_job_id) is not None
         row = {
             "schema": SUBMISSION_LEDGER_SCHEMA,
@@ -824,16 +914,17 @@ def submit_frozen_plan(plan: SubmissionPlan, *, execute: bool) -> Tuple[Dict[str
             "status": "submitted" if submitted else "submission-failed",
             "job_id": raw_job_id if submitted else None,
             "argv": argv,
+            "spooled_script_sha256": cell.spooled_script_sha256,
             "started_at": started_at,
             "finished_at": finished_at,
             "returncode": completed.returncode,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
+            "stdout": stdout,
+            "stderr": stderr,
         }
         _write_ledger(ledger_path, row)
         rows.append(row)
         if not submitted:
-            raise SubmissionPlanError(f"sbatch failed for {cell.cell_id}: {completed.stderr.strip()}")
+            raise SubmissionPlanError(f"sbatch failed for {cell.cell_id}: {stderr.strip()}")
         jobs[cell.cell_id] = raw_job_id
     return tuple(rows)
 

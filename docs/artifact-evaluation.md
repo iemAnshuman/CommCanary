@@ -316,6 +316,16 @@ an executor-bound campaign. Regeneration uses `--golden-directory` for the
 three publication files and `--verify-against` for the verdict so the frozen
 artifact byte-compares both products before accepting them.
 
+New execution plans use the v2 stdin-spooled submission contract. Each plan
+binds the wrapper snapshot, its positional arguments, and the resulting script
+SHA-256. Submission passes those exact bytes to `sbatch` on standard input;
+SLURM does not reopen `run_cell.sbatch` by pathname. The wrapper starts the
+standard-library bootstrap with `-I -S`, and every later Python process uses
+the executor artifact's isolated child dispatcher. Generic `third_party`
+directories are absent from `PYTHONPATH`. Workloads that require PARAM receive
+only a privately extracted, complete `param-runtime-artifact`; every cell uses
+the manifest-bound NCCL library bytes for its selected configuration.
+
 In v2, `exact_work` is explicitly a positive conformance control for the exact
 qualification capsule. The policy records reduced-canary and cost claims as
 `not_evaluated`. No v2 campaign has been frozen on Rostam, submitted, selected,

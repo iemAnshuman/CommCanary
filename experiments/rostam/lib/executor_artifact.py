@@ -21,6 +21,7 @@ EXECUTOR_ANALYSIS_VERSION = "commcanary.rostam.frozen-analysis.v1"
 EXECUTOR_ANALYZE_ENTRY_POINT = "experiments.rostam.analyze:main"
 EXECUTOR_EVALUATE_ENTRY_POINT = "experiments.rostam.evaluate_decision_gate:main"
 EXECUTOR_CELL_ENTRY_POINT = "experiments.rostam.lib.cell_entrypoint:main"
+EXECUTOR_RUN_PYTHON_ENTRY_POINT = "experiments.rostam.lib.executor_cli:run_python"
 EXECUTOR_MAIN = ("from experiments.rostam.lib.executor_cli import main\nraise SystemExit(main())\n").encode("utf-8")
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 _MAX_EXECUTOR_BYTES = 16 * 1024 * 1024
@@ -213,6 +214,7 @@ def render_executor_artifact(experiment_directory: Path) -> Tuple[bytes, Dict[st
             "analyze": EXECUTOR_ANALYZE_ENTRY_POINT,
             "evaluate-decision-gate": EXECUTOR_EVALUATE_ENTRY_POINT,
             "execute-cell": EXECUTOR_CELL_ENTRY_POINT,
+            "run-python": EXECUTOR_RUN_PYTHON_ENTRY_POINT,
         },
         "analysis_version": EXECUTOR_ANALYSIS_VERSION,
         "source_inventory_sha256": _inventory_sha256(source_inventory),
@@ -311,6 +313,7 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
                 "analyze": EXECUTOR_ANALYZE_ENTRY_POINT,
                 "evaluate-decision-gate": EXECUTOR_EVALUATE_ENTRY_POINT,
                 "execute-cell": EXECUTOR_CELL_ENTRY_POINT,
+                "run-python": EXECUTOR_RUN_PYTHON_ENTRY_POINT,
             } or inventory["analysis_version"] != EXECUTOR_ANALYSIS_VERSION:
                 raise ExecutorArtifactError("Rostam executor entry-point inventory is unsupported")
             for collection, digest_field in (
@@ -363,6 +366,7 @@ __all__ = [
     "EXECUTOR_ANALYZE_ENTRY_POINT",
     "EXECUTOR_BOOTSTRAP_INPUT_ID",
     "EXECUTOR_POLICY_FORMAT",
+    "EXECUTOR_RUN_PYTHON_ENTRY_POINT",
     "EXECUTOR_EVALUATE_ENTRY_POINT",
     "ExecutorArtifact",
     "ExecutorArtifactError",

@@ -9,6 +9,7 @@ REPO_ROOT="$(cd "$EXP_DIR/../.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 PARAM_DIR="${PARAM_DIR:-$EXP_DIR/third_party/param}"
 VENVS_DIR="$EXP_DIR/venvs"
+RUNTIME_ARTIFACTS_DIR="$EXP_DIR/runtime-artifacts"
 PATCH_PATH="$EXP_DIR/patches/param-use-triton-default.patch"
 
 : "${COMMCANARY_WHEEL:?set COMMCANARY_WHEEL to the reviewed wheel path}"
@@ -80,6 +81,11 @@ git -C "$PARAM_DIR" apply "$PATCH_PATH"
   --experiment-dir "$EXP_DIR" verify-param-postimage \
   --param-dir "$PARAM_DIR"
 
+mkdir -p "$RUNTIME_ARTIFACTS_DIR"
+"$PYTHON_BIN" -m experiments.rostam.lib.param_artifact \
+  --param-directory "$PARAM_DIR" \
+  --artifact-directory "$RUNTIME_ARTIFACTS_DIR"
+
 PARAM_LINK="$EXP_DIR/third_party/param_bench"
 if [[ -L "$PARAM_LINK" ]]; then
   if [[ "$(readlink "$PARAM_LINK")" != "param" ]]; then
@@ -93,4 +99,15 @@ else
   ln -s "param" "$PARAM_LINK"
 fi
 
-echo "reviewed Rostam environments and PARAM patch installed"
+for environment_id in nccl-2.19.3 nccl-2.20.5; do
+  nccl_path="$VENVS_DIR/$environment_id/lib/python3.12/site-packages/nvidia/nccl/lib/libnccl.so.2"
+  nccl_input_id="nccl-library-${environment_id#nccl-}"
+  nccl_input_id="${nccl_input_id//./-}"
+  if [[ ! -f "$nccl_path" || -L "$nccl_path" ]]; then
+    echo "reviewed NCCL library is missing or unsafe: $nccl_path" >&2
+    exit 1
+  fi
+  echo "manifest input $nccl_input_id: $nccl_path sha256=$(sha256sum "$nccl_path" | awk '{print $1}')"
+done
+
+echo "reviewed Rostam environments, exact NCCL inputs, and PARAM artifact installed"

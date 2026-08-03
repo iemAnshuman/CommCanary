@@ -140,7 +140,9 @@ The local, non-cluster preparation is now implemented:
 - `setup.sh` is fail-closed. It has no editable install, loose dependency,
   build-tool upgrade, clone, or `sed` mutation. It accepts only a reviewed
   CommCanary wheel, complete `--require-hashes` locks, a verified PARAM commit
-  and preimage, the committed patch hash, and the verified postimage.
+  and preimage, the committed patch hash, and the verified postimage. It then
+  builds a deterministic artifact containing every non-Git PARAM file and
+  reports the exact NCCL library files that a campaign must bind.
 
 PARAM patch evidence is reviewed locally. The review fetched only the exact
 public commit `a437fcebd3add1aee66fba880f28cec9fd744589` into a read-only temporary
@@ -378,12 +380,15 @@ experiments/rostam/
   analysis/                        completeness-gated aggregate pipeline
   lib/
     campaign.py                    bind hashed inputs and freeze run manifest
-    submission.py                  immutable plan and explicit submission ledger
+    submission.py                  immutable plan, stdin-spooled wrapper, ledger
     cell_entrypoint.py             one terminal record per physical attempt
+    executor_artifact.py           content-addressed experiment zipapp
+    executor_cli.py                isolated child and frozen-analysis dispatcher
+    param_artifact.py              complete patched PARAM artifact and staging
     physical_results.py            fail-early PARAM/result adapters
     environment_contract.py        setup/patch/lock/wheel verification
     common.sh                      common body for thin SLURM wrappers
-  run_*.sbatch                     wrapper identity only; no embedded scaffolding
+  run_*.sbatch                     frozen wrapper bytes; no workload scaffolding
   run_matrix.sh                    plans by default; submission is explicit
   setup.sh                         fail-closed install after reviewed contracts
   analyze.py                       validated aggregate regeneration CLI
@@ -489,16 +494,21 @@ After an authorized operator has collected and reviewed the target evidence:
    replace their pending readiness state with `ready`, and review the resulting
    catalog hash. Do not reuse the historical calibration without measuring it.
 3. Run the static contract audit and `verify-ready`; only then run `setup.sh`.
+   Record the generated complete PARAM artifact and the exact NCCL library
+   paths and SHA-256 values printed by setup.
 4. Use `lib.campaign` to bind the reviewed catalog, wheel, environment lock,
-   PARAM contract, source commit/archive, repetitions, and requested profile
-   into `results/<run-id>/run_manifest.json`.
+   PARAM contract, required PARAM artifact, exact NCCL libraries, source
+   commit/archive, repetitions, and requested profile into
+   `results/<run-id>/run_manifest.json`.
 5. Run `run_matrix.sh` (or `submission plan`) to freeze and review a unique
    ownership plan. `--resume`, `--only-missing`, `--retry-failed`, and
    `--dry-run` affect the plan but never submit anything.
 6. **Cluster mutation begins only at** `submission submit --plan PLAN
-   --execute`. That is the first command permitted to invoke `sbatch`; it
-   records exact argv, outcome, job ID, stdout, and stderr in the append-only
-   ledger.
+   --execute`. That is the first command permitted to invoke `sbatch`. The
+   planner hashes the final per-cell wrapper bytes and submission sends that
+   snapshot over standard input, so SLURM never reopens a repository wrapper
+   pathname. The append-only ledger records the argv, spooled-script hash,
+   outcome, job ID, stdout, and stderr.
 7. After all terminal attempts exist, persist the immutable selection and
    require a fail-closed completeness verdict. Build the raw archive and its
    post-run descriptor bound to the exact manifest, selection, and verdict

@@ -32,6 +32,7 @@ def _environment(block: int, configuration_index: int) -> Dict[str, Any]:
     return {
         "schema": "commcanary.rostam.runtime-observation.v2",
         "driver_version": "550.54.15",
+        "nccl_library_sha256": "9" * 64,
         "gpus": [
             {
                 "index": index,

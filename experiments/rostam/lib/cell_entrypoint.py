@@ -13,6 +13,7 @@ import math
 import os
 import platform
 import re
+import shlex
 import signal
 import socket
 import stat
@@ -50,6 +51,11 @@ from ..harness import (
 from .executor_artifact import (
     EXECUTOR_ARTIFACT_INPUT_ID,
     EXECUTOR_POLICY_FORMAT,
+)
+from .param_artifact import (
+    PARAM_RUNTIME_ARTIFACT_INPUT_ID,
+    StagedParamRuntime,
+    stage_param_artifact,
 )
 from .physical_results import (
     CAPTURE_MEASUREMENT_SCHEMA,
@@ -351,8 +357,8 @@ def _verify_venv_wheel_binding(venv_directory: Path, manifest: Any) -> None:
         )
 
 
-def _verify_param_postimage(experiment_directory: Path, input_paths: Mapping[str, Path]) -> None:
-    """Refuse to execute in a PARAM checkout that is not at the reviewed postimage."""
+def _verify_param_postimage(param_directory: Path, input_paths: Mapping[str, Path]) -> None:
+    """Refuse to execute a staged PARAM artifact without the reviewed postimage."""
 
     contract_path = input_paths.get(_PARAM_CONTRACT_INPUT_ID)
     if contract_path is None:
@@ -370,7 +376,7 @@ def _verify_param_postimage(experiment_directory: Path, input_paths: Mapping[str
         or not re.fullmatch(r"[0-9a-f]{64}", postimage)
     ):
         raise CellEntrypointError("PARAM patch contract target binding is malformed or unsafe")
-    patched = experiment_directory / "third_party" / "param" / relative_raw
+    patched = param_directory / relative_raw
     if patched.is_symlink() or not patched.is_file():
         raise CellEntrypointError("reviewed PARAM checkout is missing its patched target; rerun setup.sh")
     if file_sha256(patched) != postimage:
@@ -489,6 +495,8 @@ def _resolve_argument(
     venv_directory: Path,
     dependency_paths: Mapping[Tuple[str, str], Path],
     input_paths: Mapping[str, Path],
+    safe_python: Optional[Path] = None,
+    param_runtime: Optional[Path] = None,
 ) -> str:
     match = _PLACEHOLDER_RE.fullmatch(value)
     if match is None:
@@ -508,6 +516,14 @@ def _resolve_argument(
         base = venv_directory / "bin" / "python"
     elif token == "venv_bin":
         base = venv_directory / "bin"
+    elif token == "safe_python":
+        if safe_python is None:
+            raise CellEntrypointError("safe Python runner is not available")
+        base = safe_python
+    elif token == "param_runtime":
+        if param_runtime is None:
+            raise CellEntrypointError("PARAM runtime artifact is not available")
+        base = param_runtime
     elif token.startswith("dependency:"):
         parts = token.split(":")
         if len(parts) != 3 or (parts[1], parts[2]) not in dependency_paths:
@@ -567,19 +583,59 @@ def _find_trace_path(commands: Sequence[Sequence[str]]) -> Optional[Path]:
     return trace
 
 
-def _find_nccl_library(venv_directory: Path) -> Path:
+def _stage_bound_nccl_library(
+    configuration: Any,
+    input_paths: Mapping[str, Path],
+    workspace: Path,
+) -> Path:
+    expected = _object(configuration.expected_runtime.to_value(), "configuration.expected_runtime")
+    version = expected.get("nccl_version")
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", version):
+        raise CellEntrypointError("configuration has no valid NCCL library version binding")
+    input_id = f"nccl-library-{version.replace('.', '-')}"
+    source = input_paths.get(input_id)
+    if source is None or source.is_symlink() or not source.is_file():
+        raise CellEntrypointError(f"configuration lacks manifest-bound NCCL bytes {input_id!r}")
+    destination_directory = workspace / "runtime-libraries"
+    destination_directory.mkdir(mode=0o700)
+    destination = destination_directory / "libnccl.so.2"
+    try:
+        os.link(source, destination, follow_symlinks=False)
+    except OSError as exc:
+        raise CellEntrypointError("cannot privately stage the manifest-bound NCCL library") from exc
+    os.chmod(destination, 0o400)
+    if file_sha256(destination) != file_sha256(source):
+        raise CellEntrypointError("private NCCL library bytes changed while they were staged")
+    return destination
+
+
+def _site_packages(venv_directory: Path) -> Path:
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
-    library_directory = venv_directory / "lib" / python_version / "site-packages" / "nvidia" / "nccl" / "lib"
-    for name in ("libnccl.so.2", "libnccl.so"):
-        candidate = library_directory / name
-        if candidate.is_file():
-            return candidate.resolve()
-    raise CellEntrypointError(f"reviewed venv has no NCCL shared library under {library_directory}")
+    path = venv_directory / "lib" / python_version / "site-packages"
+    if path.is_symlink() or not path.is_dir():
+        raise CellEntrypointError(f"reviewed venv has no safe site-packages directory: {path}")
+    return path.resolve()
+
+
+def _prepare_safe_python(
+    workspace: Path,
+    configured_python: Path,
+    executor_artifact: Path,
+) -> Path:
+    destination = workspace / "isolated-python"
+    script = (
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(configured_python))} -I -S {shlex.quote(str(executor_artifact))} "
+        'run-python "$@"\n'
+    ).encode("utf-8")
+    _write_exclusive(destination, script)
+    os.chmod(destination, 0o500)
+    return destination
 
 
 def _runtime_environment(
     configuration: Any,
-    experiment_directory: Path,
+    venv_directory: Path,
     nccl_library: Path,
     executor_artifact: Path,
 ) -> Dict[str, str]:
@@ -589,10 +645,49 @@ def _runtime_environment(
         if not isinstance(key, str) or not isinstance(value, str):
             raise CellEntrypointError("configuration environment must contain strings")
         result[key] = value
-    third_party = experiment_directory / "third_party"
     result["LD_LIBRARY_PATH"] = str(nccl_library.parent)
-    result["PYTHONPATH"] = os.pathsep.join((str(executor_artifact), str(third_party), str(third_party / "param")))
+    result["COMMCANARY_EXECUTOR_PATH"] = str(executor_artifact)
+    result["COMMCANARY_EXECUTOR_SHA256"] = file_sha256(executor_artifact)
+    result["COMMCANARY_CHILD_IMPORT_PATHS"] = str(_site_packages(venv_directory))
+    result["PYTHONDONTWRITEBYTECODE"] = "1"
+    result["PYTHONNOUSERSITE"] = "1"
+    result["PYTHONSAFEPATH"] = "1"
+    result.pop("PYTHONHOME", None)
+    result.pop("PYTHONPATH", None)
     return result
+
+
+def _command_environments(
+    base: Mapping[str, str],
+    commands: Sequence[Sequence[str]],
+    param_runtime: Optional[StagedParamRuntime],
+) -> Tuple[Dict[str, str], ...]:
+    results = []
+    param_root = None if param_runtime is None else param_runtime.root.resolve()
+    for command in commands:
+        environment = dict(base)
+        uses_param = False
+        if param_root is not None:
+            for argument in command:
+                candidate = Path(argument)
+                if not candidate.is_absolute():
+                    continue
+                try:
+                    candidate.resolve().relative_to(param_root)
+                except (OSError, ValueError):
+                    continue
+                uses_param = True
+                break
+        if uses_param and param_runtime is not None:
+            existing = environment["COMMCANARY_CHILD_IMPORT_PATHS"].split(os.pathsep)
+            environment["COMMCANARY_CHILD_IMPORT_PATHS"] = os.pathsep.join(
+                (*existing, *(str(path) for path in param_runtime.import_paths))
+            )
+            environment["COMMCANARY_ALLOWED_SCRIPT_ROOT"] = str(param_runtime.root)
+        else:
+            environment.pop("COMMCANARY_ALLOWED_SCRIPT_ROOT", None)
+        results.append(environment)
+    return tuple(results)
 
 
 def _capture_bytes(
@@ -881,7 +976,15 @@ def _binding_observation() -> Dict[str, Any]:
 def _runtime_fingerprint(
     nccl_library: Path,
     site_observation: Mapping[str, str],
+    *,
+    site_packages: Optional[Path] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    if site_packages is not None:
+        if site_packages.is_symlink() or not site_packages.is_dir():
+            raise CellEntrypointError("reviewed site-packages directory is missing or unsafe")
+        site_text = str(site_packages.resolve())
+        if site_text not in sys.path:
+            sys.path.append(site_text)
     try:
         torch = importlib.import_module("torch")
     except ImportError as exc:
@@ -898,6 +1001,14 @@ def _runtime_fingerprint(
     if nccl_status != 0:
         raise CellEntrypointError("ncclGetVersion failed for the manifest-selected NCCL library")
     torch_version_raw = getattr(torch, "__version__", None)
+    torch_file_raw = getattr(torch, "__file__", None)
+    if site_packages is not None:
+        if not isinstance(torch_file_raw, str):
+            raise CellEntrypointError("reviewed torch module has no source identity")
+        try:
+            Path(torch_file_raw).resolve().relative_to(site_packages.resolve())
+        except ValueError as exc:
+            raise CellEntrypointError("torch was imported outside the reviewed site-packages directory") from exc
     if torch_version_raw is None:
         raise CellEntrypointError("reviewed torch module has no version")
     torch_version = _observed_text(str(torch_version_raw).split("+", 1)[0], "torch_version", maximum=128)
@@ -940,6 +1051,7 @@ def _runtime_fingerprint(
     evidence = {
         "schema": "commcanary.rostam.runtime-observation.v2",
         "runtime": dict(runtime),
+        "nccl_library_sha256": file_sha256(nccl_library),
         "driver_version": driver_versions[0],
         "gpu_count": len(gpus),
         "gpus": list(gpus),
@@ -969,7 +1081,10 @@ def _run_pipeline(
     stderr_path: Path,
     timeout_seconds: int,
     max_output_bytes: int,
+    command_environments: Optional[Sequence[Mapping[str, str]]] = None,
 ) -> Tuple[int, float, Optional[str], bool]:
+    if command_environments is not None and len(command_environments) != len(commands):
+        raise CellEntrypointError("physical command environment inventory is incomplete")
     started = time.monotonic()
     stdout_path.touch(exist_ok=False)
     stderr_path.touch(exist_ok=False)
@@ -993,7 +1108,7 @@ def _run_pipeline(
             process = subprocess.Popen(
                 command,
                 cwd=str(workspace),
-                env=dict(environment),
+                env=dict(environment if command_environments is None else command_environments[command_index]),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1265,7 +1380,6 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     )
     experiment_directory = Path(os.environ["COMMCANARY_EXPERIMENT_DIR"]).resolve()
     executor_artifact = _verify_running_executor(manifest, experiment_directory)
-    _verify_param_postimage(experiment_directory, input_paths)
     repository_root = experiment_directory.parent.parent
     configuration_parameters = _object(configuration.parameters.to_value(), "configuration.parameters")
     venv_raw = configuration_parameters.get("venv")
@@ -1276,6 +1390,15 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     if not configured_python.exists() or Path(sys.prefix).resolve() != venv_directory:
         raise CellEntrypointError("cell entrypoint is not running from the manifest-selected venv")
     _verify_venv_wheel_binding(venv_directory, manifest)
+    safe_python = _prepare_safe_python(workspace, configured_python, executor_artifact)
+    param_runtime: Optional[StagedParamRuntime] = None
+    param_artifact = input_paths.get(PARAM_RUNTIME_ARTIFACT_INPUT_ID)
+    if param_artifact is not None:
+        try:
+            param_runtime = stage_param_artifact(param_artifact, workspace / "param-pythonpath")
+        except RuntimeError as exc:
+            raise CellEntrypointError(f"cannot stage the manifest-bound PARAM runtime: {exc}") from exc
+        _verify_param_postimage(param_runtime.root, input_paths)
     resolution = {
         "repetition": cell.repetition,
         "workspace": workspace,
@@ -1283,6 +1406,8 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         "venv_directory": venv_directory,
         "dependency_paths": dependency_paths,
         "input_paths": input_paths,
+        "safe_python": safe_python,
+        "param_runtime": None if param_runtime is None else param_runtime.root,
     }
     commands = _commands(parameters, **resolution)
     trace_path = _find_trace_path(commands)
@@ -1291,13 +1416,14 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
             raise CellEntrypointError("replay trace is missing or unsafe")
         world_size, _ranks = validate_physical_layout(parameters)
         load_and_validate_param_trace(str(trace_path), world_size=world_size)
-    nccl_library = _find_nccl_library(venv_directory)
+    nccl_library = _stage_bound_nccl_library(configuration, input_paths, workspace)
     environment = _runtime_environment(
         configuration,
-        experiment_directory,
+        venv_directory,
         nccl_library,
         executor_artifact,
     )
+    command_environments = _command_environments(environment, commands, param_runtime)
     execution_plan = {
         "manifest_sha256": frozen.manifest_sha256,
         "cell_id": cell.id,
@@ -1305,7 +1431,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         "attempt_id": args.attempt_id,
         "wrapper": args.site_wrapper,
         "commands": [list(command) for command in commands],
-        "environment_sha256": canonical_sha256(environment),
+        "environment_sha256": canonical_sha256(command_environments),
         "dependency_attempts": dependency_evidence,
         "input_hashes": {artifact.id: artifact.sha256 for artifact in manifest.campaign.inputs},
         "timeout_seconds": timeout_seconds,
@@ -1323,6 +1449,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         stderr_path=stderr_path,
         timeout_seconds=timeout_seconds,
         max_output_bytes=max_output_bytes,
+        command_environments=command_environments,
     )
     finished_at = utc_timestamp()
     for path in (stdout_path, stderr_path):
@@ -1336,7 +1463,11 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
     reason = execution_reason
     if execution_succeeded:
         try:
-            runtime, runtime_observation = _runtime_fingerprint(nccl_library, site)
+            runtime, runtime_observation = _runtime_fingerprint(
+                nccl_library,
+                site,
+                site_packages=_site_packages(venv_directory),
+            )
             validate_expected_runtime(runtime, configuration.expected_runtime.to_value())
             capture_artifacts: Optional[Dict[str, Any]] = None
             if workload.measurement_schema == CAPTURE_MEASUREMENT_SCHEMA:
@@ -1428,7 +1559,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
                 "account": None if site["account"] == "unrecorded" else site["account"],
                 "partition": site["partition"],
                 "metadata": {
-                    "environment_sha256": canonical_sha256(environment),
+                    "environment_sha256": canonical_sha256(command_environments),
                     "execution_identity_sha256": execution_plan_sha256,
                     "execution_plan_sha256": execution_plan_sha256,
                     "dependency_attempts": dependency_evidence,

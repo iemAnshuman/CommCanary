@@ -135,12 +135,14 @@
       "parameters": {
         "adapter": "torch-json",
         "command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.microbench_tp8",
           "--msg-sizes",
           "64K,128K,256K",
@@ -166,12 +168,14 @@
       "parameters": {
         "adapter": "torch-json",
         "command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.workload_tp8",
           "--layers",
           "32",
@@ -214,12 +218,14 @@
         },
         "pipeline": "profile-import-compile-export",
         "profile_command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.workload_tp8",
           "--layers",
           "32",
@@ -241,9 +247,9 @@
           "{workspace}/profile.json"
         ],
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8"],
-          ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
-          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace.json", "--dtype", "bfloat16", "--skip-unsupported"]
+          ["{safe_python}", "-m", "commcanary.cli", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8"],
+          ["{safe_python}", "-m", "commcanary.cli", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
+          ["{safe_python}", "-m", "commcanary.cli", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace.json", "--dtype", "bfloat16", "--skip-unsupported"]
         ],
         "world_size": 4
       },
@@ -257,7 +263,7 @@
       "measurement_schema": "commcanary.rostam.physical.param-measurement.v1",
       "parameters": {
         "adapter": "param-text",
-        "command": ["{venv_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "{experiment_dir}/third_party/param/train/comms/pt/commsTraceReplay.py", "--trace-type", "basic", "--trace-path", "{dependency:trace-build:param_trace}", "--use-timestamp", "--use-one-trace"],
+        "command": ["{safe_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "--no_python", "{safe_python}", "{param_runtime}/train/comms/pt/commsTraceReplay.py", "--trace-type", "basic", "--trace-path", "{dependency:trace-build:param_trace}", "--use-timestamp", "--use-one-trace"],
         "global_ranks": [0, 1, 2, 3],
         "operation": "all_reduce",
         "replay_mode": "timestamp-paced-blocking",
@@ -283,12 +289,14 @@
         },
         "pipeline": "profile-import-compile-overlap-export",
         "profile_command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.workload_tp8",
           "--layers",
           "32",
@@ -319,9 +327,9 @@
         },
         "readiness": "ready",
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-overlap"],
-          ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
-          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
+          ["{safe_python}", "-m", "commcanary.cli", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-overlap"],
+          ["{safe_python}", "-m", "commcanary.cli", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
+          ["{safe_python}", "-m", "commcanary.cli", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
         "world_size": 4
       },
@@ -335,7 +343,7 @@
       "measurement_schema": "commcanary.rostam.physical.overlap-measurement.v1",
       "parameters": {
         "adapter": "torch-json",
-        "command": ["{venv_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "--module", "experiments.rostam.overlap_replay", "--trace-path", "{dependency:overlap-trace-build:param_trace}", "--device", "cuda", "--backend", "nccl", "--iters", "1", "--warmup", "1"],
+        "command": ["{safe_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "--no_python", "{safe_python}", "-m", "experiments.rostam.overlap_replay", "--trace-path", "{dependency:overlap-trace-build:param_trace}", "--device", "cuda", "--backend", "nccl", "--iters", "1", "--warmup", "1"],
         "global_ranks": [0, 1, 2, 3],
         "operation": "all_reduce",
         "replay_mode": "explicit-wait-overlap",
@@ -361,12 +369,14 @@
         },
         "pipeline": "profile-import-compile-overlap-export",
         "profile_command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.workload_tp8",
           "--layers",
           "32",
@@ -397,9 +407,9 @@
         },
         "readiness": "ready",
         "transform_commands": [
-          ["{venv_bin}/commcanary", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-shared"],
-          ["{venv_bin}/commcanary", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
-          ["{venv_bin}/commcanary", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
+          ["{safe_python}", "-m", "commcanary.cli", "import-kineto", "{workspace}/profile.json", "--max-input-bytes", "1073741824", "--max-json-items", "12000000", "-o", "{workspace}/trace.json", "--workload-name", "rostam-tp8-shared"],
+          ["{safe_python}", "-m", "commcanary.cli", "compile", "{workspace}/trace.json", "-o", "{workspace}/canary.json", "--require-behavior-verification", "--timing-sample-limit", "64"],
+          ["{safe_python}", "-m", "commcanary.cli", "export-param", "{workspace}/canary.json", "-o", "{workspace}/param_trace_overlap.json", "--dtype", "bfloat16", "--skip-unsupported", "--compute-fill-us-per-gemm", "19.08992", "--compute-fill-gemm-dim", "1024", "--overlap-structure"]
         ],
         "world_size": 4
       },
@@ -413,7 +423,7 @@
       "measurement_schema": "commcanary.rostam.physical.overlap-measurement.v1",
       "parameters": {
         "adapter": "torch-json",
-        "command": ["{venv_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "--module", "experiments.rostam.overlap_replay", "--trace-path", "{input:shared-param-trace}", "--device", "cuda", "--backend", "nccl", "--iters", "1", "--warmup", "1"],
+        "command": ["{safe_python}", "-m", "torch.distributed.run", "--standalone", "--nproc_per_node=4", "--no_python", "{safe_python}", "-m", "experiments.rostam.overlap_replay", "--trace-path", "{input:shared-param-trace}", "--device", "cuda", "--backend", "nccl", "--iters", "1", "--warmup", "1"],
         "global_ranks": [0, 1, 2, 3],
         "operation": "all_reduce",
         "replay_mode": "fixed-input-explicit-wait-overlap",
@@ -431,12 +441,14 @@
         "adapter": "torch-json",
         "backend": "nccl",
         "command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.qualification_physical",
           "--request-manifest",
           "{input:qualification-request-manifest}",
@@ -497,12 +509,14 @@
         "adapter": "torch-json",
         "backend": "nccl",
         "command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.decision_gate_bootstrap",
           "--wheel",
           "{input:decision-gate-wheel}",
@@ -565,12 +579,14 @@
         "adapter": "torch-json",
         "backend": "nccl",
         "command": [
-          "{venv_python}",
+          "{safe_python}",
           "-m",
           "torch.distributed.run",
           "--standalone",
           "--nproc_per_node=4",
-          "--module",
+          "--no_python",
+          "{safe_python}",
+          "-m",
           "experiments.rostam.decision_gate_bootstrap",
           "--wheel",
           "{input:decision-gate-wheel}",
@@ -630,22 +646,22 @@
   "profiles": {
     "core": {
       "configuration_ids": ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "param-patch-contract", "rostam-catalog"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "nccl-library-2-19-3", "nccl-library-2-20-5", "param-patch-contract", "param-runtime-artifact", "rostam-catalog"],
       "workload_ids": ["micro", "full", "trace-build", "canary-param"]
     },
     "overlap": {
       "configuration_ids": ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "param-patch-contract", "rostam-catalog"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "nccl-library-2-19-3", "nccl-library-2-20-5", "param-patch-contract", "rostam-catalog"],
       "workload_ids": ["overlap-trace-build", "canary-overlap"]
     },
     "shared-capture": {
       "configuration_ids": ["nccl-2.20.5-default"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "param-patch-contract", "rostam-catalog"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "gemm-calibration", "nccl-library-2-20-5", "param-patch-contract", "rostam-catalog"],
       "workload_ids": ["shared-trace-capture"]
     },
     "shared-replay": {
       "configuration_ids": ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple"],
-      "required_input_ids": ["commcanary-wheel", "environment-lock", "param-patch-contract", "rostam-catalog", "shared-param-trace"],
+      "required_input_ids": ["commcanary-wheel", "environment-lock", "nccl-library-2-19-3", "nccl-library-2-20-5", "param-patch-contract", "rostam-catalog", "shared-param-trace"],
       "workload_ids": ["shared-overlap"]
     },
     "qualification-exact": {
@@ -653,6 +669,7 @@
       "required_input_ids": [
         "commcanary-wheel",
         "environment-lock",
+        "nccl-library-2-20-5",
         "param-patch-contract",
         "qualification-canary",
         "qualification-fidelity",
@@ -680,6 +697,8 @@
         "decision-gate-source-trace",
         "decision-gate-wheel",
         "environment-lock",
+        "nccl-library-2-19-3",
+        "nccl-library-2-20-5",
         "param-patch-contract",
         "rostam-catalog"
       ],
@@ -699,6 +718,8 @@
         "decision-gate-source-trace",
         "decision-gate-wheel",
         "environment-lock",
+        "nccl-library-2-19-3",
+        "nccl-library-2-20-5",
         "param-patch-contract",
         "rostam-catalog"
       ],

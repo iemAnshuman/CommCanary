@@ -141,7 +141,11 @@ injected and naturally occurring regressions.
   claims.
 - a content-addressed Rostam executor artifact that mechanically includes the
   experiment package, is verified and privately staged by a standard-library
-  bootstrap, and runs under isolated Python before any project import;
+  bootstrap, starts with `-I -S` before any project import, and dispatches all
+  child Python processes without processing `.pth` or `sitecustomize` files;
+- stdin-spooled, hash-bound SLURM wrappers, exact configuration-specific NCCL
+  inputs, and a deterministic complete patched-PARAM artifact that is privately
+  staged only for PARAM commands;
 - descriptor-to-private-file staging for the manifest-bound CommCanary wheel,
   campaign inputs, dependency artifacts, and selected analysis bytes;
 - operator-distinguishing and route-distinguishing collective correctness

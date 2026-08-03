@@ -328,7 +328,7 @@ def build_campaign(
                 "source_file_count": len(executor.source_files),
                 "schema_file_count": len(executor.schema_files),
             },
-            "planner_schema": "commcanary.rostam.submission-plan.v1",
+            "planner_schema": "commcanary.rostam.submission-plan.v2",
             "retry_policy": "append-only-explicit",
             "script_hashes": script_hashes,
             "tie_policy": "difference-below-either-config-iqr",

@@ -38,10 +38,11 @@ def _contract(tmp_path: Path, *, postimage: str = _POSTIMAGE, target: str = "tra
 
 def _experiment(tmp_path: Path, *, content: bytes = _PATCHED) -> Path:
     experiment = tmp_path / "rostam"
-    target = experiment / "third_party" / "param" / "train" / "comms" / "pt" / "backend.py"
+    param = experiment / "third_party" / "param"
+    target = param / "train" / "comms" / "pt" / "backend.py"
     target.parent.mkdir(parents=True)
     target.write_bytes(content)
-    return experiment
+    return param
 
 
 def _inputs(contract: Path) -> Dict[str, Path]:
