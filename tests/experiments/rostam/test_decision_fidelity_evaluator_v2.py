@@ -14,9 +14,10 @@ from experiments.rostam.analysis.decision_fidelity import (
     evaluate_decision_fidelity,
     validate_decision_fidelity_policy,
 )
-from experiments.rostam.analysis.decision_fidelity_v2 import _simultaneous_intervals
+from experiments.rostam.analysis.decision_fidelity_v2 import _bootstrap_vector, _simultaneous_intervals
 from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
+from experiments.rostam.decision_gate_schedule import frozen_schedule_inventory
 from experiments.rostam.evaluate_decision_gate import _verdict_summary
 from experiments.rostam.harness import canonical_json_bytes, canonical_sha256
 from experiments.rostam.lib.executor_artifact import EXECUTOR_ARTIFACT_INPUT_ID, prepare_executor_artifact
@@ -28,7 +29,17 @@ VERDICT_SCHEMA_PATH = ROOT / "experiments" / "rostam" / "schemas" / "decision-fi
 REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew")
 
 
-def _environment(block: int, configuration_index: int) -> Dict[str, Any]:
+class _FixedRandom:
+    def __init__(self, values: list[int]) -> None:
+        self._values = iter(values)
+
+    def randrange(self, stop: int) -> int:
+        value = next(self._values)
+        assert 0 <= value < stop
+        return value
+
+
+def _environment(repetition: int, configuration_index: int) -> Dict[str, Any]:
     return {
         "schema": "commcanary.rostam.runtime-observation.v2",
         "driver_version": "550.54.15",
@@ -60,13 +71,19 @@ def _environment(block: int, configuration_index: int) -> Dict[str, Any]:
             "cpu_affinity": [0, 1, 2, 3],
             "cpu_affinity_method": "sched_getaffinity",
         },
-        "observation_sha256": canonical_sha256({"allocation_block": block, "configuration_index": configuration_index}),
+        "observation_sha256": canonical_sha256(
+            {"configuration_repetition": repetition, "configuration_index": configuration_index}
+        ),
     }
 
 
 def _policy() -> Tuple[Dict[str, Any], bytes]:
     policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
-    policy["measurement"]["allocation_blocks"] = 5
+    policy["measurement"]["configuration_repetitions"] = 5
+    policy["measurement"]["representation_schedule"] = frozen_schedule_inventory(
+        configuration_repetitions=5,
+        iterations=24,
+    )
     policy["comparison"]["uncertainty"]["resamples"] = 100
     projection = dict(policy)
     projection.pop("policy_id")
@@ -77,9 +94,10 @@ def _policy() -> Tuple[Dict[str, Any], bytes]:
 
 def _aggregate(policy: Dict[str, Any], policy_bytes: bytes) -> Dict[str, Any]:
     configurations = policy["scope"]["configuration_ids"]
-    blocks = policy["measurement"]["allocation_blocks"]
+    repetitions = policy["measurement"]["configuration_repetitions"]
+    schedule = policy["measurement"]["representation_schedule"]
     rows = []
-    for block in range(blocks):
+    for repetition in range(repetitions):
         for index, configuration in enumerate(configurations):
             source = float((index + 1) * 100)
             medians = {
@@ -95,14 +113,18 @@ def _aggregate(policy: Dict[str, Any], policy_bytes: bytes) -> Dict[str, Any]:
                     "source_run_id": "decision-gate-v2-test",
                     "workload_id": policy["scope"]["workload_id"],
                     "configuration_id": configuration,
-                    "repetition": block,
+                    "repetition": repetition,
                     "measurement_schema": PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2,
                     "decision_gate": {
                         "execution": {
-                            "allocation_block": block,
+                            "configuration_repetition": repetition,
                             "iterations": 24,
                             "warmup": policy["measurement"]["warmup"],
                             "order_method": policy["measurement"]["order_method"],
+                            "representation_order_by_iteration": [
+                                schedule["rows"][row_index]
+                                for row_index in schedule["row_index_by_configuration_repetition"][repetition]
+                            ],
                             "timing_semantics": policy["measurement"]["timing_semantics"],
                         },
                         "request": {"format": "commcanary.qualification_request.v2", "request_id": "a" * 64},
@@ -114,10 +136,10 @@ def _aggregate(policy: Dict[str, Any], policy_bytes: bytes) -> Dict[str, Any]:
                         },
                     },
                     "decision_gate_runtime": {
-                        "hostname": f"toranj{block % 2}.example",
-                        "job_id": f"job-{block:02d}-{index:02d}",
+                        "hostname": f"toranj{repetition % 2}.example",
+                        "job_id": f"job-{repetition:02d}-{index:02d}",
                     },
-                    "decision_gate_environment": _environment(block, index),
+                    "decision_gate_environment": _environment(repetition, index),
                 }
             )
     campaign = {
@@ -150,7 +172,7 @@ def _evaluate() -> Tuple[Dict[str, Any], Dict[str, Any], bytes, Dict[str, Any]]:
     return evaluate_decision_fidelity(aggregate, policy_bytes), policy, policy_bytes, aggregate
 
 
-def test_v2_evaluator_uses_complete_blocks_and_simultaneous_intervals() -> None:
+def test_v2_evaluator_uses_independent_repetitions_and_simultaneous_intervals() -> None:
     verdict, _policy_value, _policy_bytes, _aggregate_value = _evaluate()
     schema = json.loads(VERDICT_SCHEMA_PATH.read_text(encoding="utf-8"))
 
@@ -159,10 +181,10 @@ def test_v2_evaluator_uses_complete_blocks_and_simultaneous_intervals() -> None:
     verdict_id = identity_projection.pop("verdict_id")
 
     assert verdict["outcome"] == "pass"
-    assert verdict["evidence"]["allocation_block_count"] == 5
+    assert verdict["evidence"]["configuration_repetition_count"] == 5
     assert verdict["evidence"]["distinct_job_count"] == 40
     assert verdict["evidence"]["environment_observation_count"] == 40
-    assert verdict["uncertainty"]["method"].endswith("standardized-max.v2")
+    assert verdict["uncertainty"]["method"].endswith("standardized-max.v3")
     assert set(verdict["uncertainty"]["metric_intervals"]["exact_work"]) == {
         "pairwise_ranking_agreement",
         "kendall_tau_b",
@@ -214,14 +236,14 @@ def test_v2_constant_statistics_keep_exact_intervals_when_timings_are_noisy() ->
     }
     for row in aggregate["selected_cells"]:
         index = configuration_indices[row["configuration_id"]]
-        block = row["repetition"]
+        repetition = row["repetition"]
         source = float((index + 1) * 100)
         source_timings = [
-            source * (1.0 + ((iteration + block + index) % 5 - 2) / 1000.0)
+            source * (1.0 + ((iteration + repetition + index) % 5 - 2) / 1000.0)
             for iteration in range(24)
         ]
         exact_timings = [
-            value * (1.01 + ((iteration + 2 * block + index) % 7 - 3) / 2000.0)
+            value * (1.01 + ((iteration + 2 * repetition + index) % 7 - 3) / 2000.0)
             for iteration, value in enumerate(source_timings)
         ]
         row["decision_gate"]["representations"]["source"]["timings_us"] = source_timings
@@ -248,6 +270,49 @@ def test_v2_zero_variance_bootstrap_must_match_the_observation() -> None:
         )
 
 
+def test_v2_bootstrap_resamples_repetitions_independently_and_keeps_williams_cycles() -> None:
+    samples = {
+        repetition: {
+            configuration: {
+                representation: (base,) * 6 + (base + 100.0,) * 6
+                for representation in REPRESENTATIONS
+            }
+            for configuration, base in (
+                ("configuration-a", 10.0 + 10.0 * repetition),
+                ("configuration-b", 30.0 + 10.0 * repetition),
+            )
+        }
+        for repetition in (0, 1)
+    }
+    rng = _FixedRandom(
+        [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+        ]
+    )
+
+    vector = _bootstrap_vector(
+        samples,
+        configuration_repetitions=(0, 1),
+        configurations=("configuration-a", "configuration-b"),
+        measured_repetitions=12,
+        rng=rng,  # type: ignore[arg-type]
+    )
+
+    assert vector["configuration-a"]["source"] == 10.0
+    assert vector["configuration-b"]["source"] == 40.0
+
+
 def test_v2_evaluator_rejects_reused_allocation_job_ids() -> None:
     _verdict, policy, policy_bytes, aggregate = _evaluate()
     aggregate["selected_cells"][1]["decision_gate_runtime"]["job_id"] = aggregate["selected_cells"][0][
@@ -262,14 +327,16 @@ def test_v2_evaluator_rejects_reused_allocation_job_ids() -> None:
     assert verdict["uncertainty"]["standardized_max_critical_value"] is None
 
 
-def test_v2_evaluator_requires_every_configuration_in_every_block() -> None:
+def test_v2_evaluator_requires_every_configuration_repetition() -> None:
     _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
     aggregate["selected_cells"].pop()
 
     verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
 
     assert verdict["outcome"] == "incomparable"
-    assert [issue["code"] for issue in verdict["issues"]] == ["incomplete_allocation_block_inventory"]
+    assert [issue["code"] for issue in verdict["issues"]] == [
+        "incomplete_configuration_repetition_inventory"
+    ]
 
 
 def test_v2_evaluator_requires_bound_environment_evidence() -> None:

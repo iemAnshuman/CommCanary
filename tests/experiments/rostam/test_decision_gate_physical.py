@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from commcanary.compiler import compile_trace
@@ -75,15 +76,22 @@ def test_representation_order_rotates_every_measured_iteration() -> None:
     assert [order[0] for order in orders] == list(decision_gate_physical.REPRESENTATION_IDS)
 
 
-def test_replicated_schedule_balances_positions_and_rotates_block_start() -> None:
+def test_replicated_schedule_balances_positions_carryover_and_repetition_start() -> None:
     positions = {representation: [0] * 6 for representation in decision_gate_physical.REPRESENTATION_IDS}
+    predecessors = Counter()
     for iteration in range(24):
-        order = decision_gate_physical.representation_order(iteration, allocation_block=3)
+        order = decision_gate_physical.representation_order(
+            iteration,
+            configuration_repetition=3,
+        )
         for position, representation in enumerate(order):
             positions[representation][position] += 1
+        predecessors.update(zip(order, order[1:]))
 
     assert all(counts == [4, 4, 4, 4, 4, 4] for counts in positions.values())
-    assert decision_gate_physical.representation_order(0, allocation_block=1)[0] == "exact_work"
+    assert set(predecessors.values()) == {4}
+    assert len(predecessors) == 30
+    assert decision_gate_physical.representation_order(0, configuration_repetition=1)[0] == "exact_work"
 
 
 def test_warmup_order_indices_rotate_before_measured_indices_restart() -> None:
@@ -194,11 +202,11 @@ def test_replicated_payload_declares_positive_control_and_block_schedule(tmp_pat
             "runtime_nccl_version_code": 22005,
             "distributed_backend": "nccl",
         },
-        allocation_block=2,
+        configuration_repetition=2,
     )
 
     assert payload["schema"] == "commcanary.rostam.decision-gate.stdout.v2"
-    assert payload["execution"]["allocation_block"] == 2
+    assert payload["execution"]["configuration_repetition"] == 2
     assert payload["execution"]["representation_order_by_iteration"][0][0] == "stratified"
     assert payload["representations"]["exact_work"]["category"] == "positive_conformance_control"
 

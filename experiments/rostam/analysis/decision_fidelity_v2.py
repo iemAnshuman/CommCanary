@@ -8,6 +8,11 @@ import statistics
 from itertools import combinations
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, cast
 
+from ..decision_gate_schedule import (
+    REPLICATED_ORDER_METHOD,
+    WILLIAMS_CYCLE_LENGTH,
+    frozen_schedule_inventory,
+)
 from ..harness import JSONResourceLimits, canonical_sha256, sha256_hex, strict_json_loads
 from ..lib.executor_artifact import ExecutorArtifact
 from .decision_fidelity import (
@@ -39,7 +44,7 @@ _EVALUATED_REPRESENTATIONS = ("exact_work", "stratified", "isolated", "no_overla
 _UNCERTAINTY_REPRESENTATIONS = ("source", "exact_work")
 _STABILITY_REPRESENTATIONS = ("source", "exact_work", "stratified", "isolated")
 
-BlockSamples = Dict[int, Dict[str, Dict[str, Tuple[float, ...]]]]
+RepetitionSamples = Dict[int, Dict[str, Dict[str, Tuple[float, ...]]]]
 MedianVector = Dict[str, Dict[str, float]]
 
 
@@ -162,9 +167,10 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         "decision fidelity policy v2.measurement",
         {
             "allocation_policy",
-            "allocation_blocks",
-            "block_pairing",
+            "configuration_repetitions",
+            "cross_configuration_pairing",
             "order_method",
+            "representation_schedule",
             "timing_semantics",
             "warmup",
             "measured_repetitions",
@@ -176,9 +182,9 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     expected_measurement = {
-        "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-and-block",
-        "block_pairing": "campaign-repetition-index",
-        "order_method": "allocation-block-rotated-latin-cycle.v2",
+        "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-repetition",
+        "cross_configuration_pairing": "none-independent-scheduler-allocations",
+        "order_method": REPLICATED_ORDER_METHOD,
         "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
         "measured_repetitions": 24,
         "required_correctness": "passed",
@@ -195,9 +201,20 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
     }
     if any(measurement.get(field) != expected for field, expected in expected_measurement.items()):
         raise DecisionFidelityError("decision fidelity policy v2 measurement semantics are unsupported")
-    _integer(measurement["allocation_blocks"], "allocation_blocks", minimum=5, maximum=10)
+    configuration_repetitions = _integer(
+        measurement["configuration_repetitions"],
+        "configuration_repetitions",
+        minimum=5,
+        maximum=10,
+    )
     _integer(measurement["warmup"], "warmup", maximum=100)
     _number(measurement["max_relative_iqr_pct"], "max_relative_iqr_pct", minimum=0.0, maximum=1000.0)
+    expected_schedule = frozen_schedule_inventory(
+        configuration_repetitions=configuration_repetitions,
+        iterations=int(measurement["measured_repetitions"]),
+    )
+    if measurement["representation_schedule"] != expected_schedule:
+        raise DecisionFidelityError("decision fidelity policy v2 representation schedule is not the frozen design")
 
     comparison = _object(
         policy["comparison"],
@@ -215,7 +232,7 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     if (
-        comparison.get("primary_metric") != "median-of-allocation-medians-us"
+        comparison.get("primary_metric") != "median-of-configuration-repetition-medians-us"
         or comparison.get("configuration_pair_order") != "lexicographic-unordered-pairs"
         or comparison.get("pair_label_method") != "larger-of-absolute-or-relative-tie-band.v1"
         or comparison.get("relative_threshold_reference") != "smaller_pair_median"
@@ -249,9 +266,9 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     expected_uncertainty = {
-        "method": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2",
-        "outer_unit": "complete-allocation-block",
-        "inner_unit": "measured-iteration-vector-within-cell",
+        "method": "hierarchical-unpaired-repetition-bootstrap-policy-margin-standardized-max.v3",
+        "outer_unit": "configuration-repetition-resampled-independently-per-configuration",
+        "inner_unit": "complete-six-iteration-williams-cycle-within-cell",
         "simultaneous_scope": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria",
         "boundary_crossing_outcome": "inconclusive",
     }
@@ -323,14 +340,19 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
 
 
 def _nested_median_vector(
-    samples: BlockSamples,
+    samples: RepetitionSamples,
     *,
-    blocks: Sequence[int],
+    configuration_repetitions: Sequence[int],
     configurations: Sequence[str],
 ) -> MedianVector:
     return {
         configuration: {
-            representation: _median([_median(samples[block][configuration][representation]) for block in blocks])
+            representation: _median(
+                [
+                    _median(samples[repetition][configuration][representation])
+                    for repetition in configuration_repetitions
+                ]
+            )
             for representation in _REPRESENTATIONS
         }
         for configuration in configurations
@@ -487,26 +509,40 @@ def _statistics(
 
 
 def _bootstrap_vector(
-    samples: BlockSamples,
+    samples: RepetitionSamples,
     *,
-    blocks: Sequence[int],
+    configuration_repetitions: Sequence[int],
     configurations: Sequence[str],
-    repetitions: int,
+    measured_repetitions: int,
     rng: random.Random,
 ) -> MedianVector:
-    selected_blocks = [blocks[rng.randrange(len(blocks))] for _ in blocks]
-    block_medians: Dict[str, Dict[str, List[float]]] = {
+    if measured_repetitions % WILLIAMS_CYCLE_LENGTH:
+        raise DecisionFidelityError("measured repetitions do not form complete Williams cycles")
+    cycle_count = measured_repetitions // WILLIAMS_CYCLE_LENGTH
+    repetition_medians: Dict[str, Dict[str, List[float]]] = {
         configuration: {representation: [] for representation in _REPRESENTATIONS} for configuration in configurations
     }
-    for block in selected_blocks:
-        for configuration in configurations:
-            indices = [rng.randrange(repetitions) for _ in range(repetitions)]
+    for configuration in configurations:
+        selected_repetitions = [
+            configuration_repetitions[rng.randrange(len(configuration_repetitions))]
+            for _ in configuration_repetitions
+        ]
+        for repetition in selected_repetitions:
+            selected_cycles = [rng.randrange(cycle_count) for _ in range(cycle_count)]
+            indices = [
+                cycle * WILLIAMS_CYCLE_LENGTH + offset
+                for cycle in selected_cycles
+                for offset in range(WILLIAMS_CYCLE_LENGTH)
+            ]
             for representation in _REPRESENTATIONS:
-                values = samples[block][configuration][representation]
-                block_medians[configuration][representation].append(_median([values[index] for index in indices]))
+                values = samples[repetition][configuration][representation]
+                repetition_medians[configuration][representation].append(
+                    _median([values[index] for index in indices])
+                )
     return {
         configuration: {
-            representation: _median(block_medians[configuration][representation]) for representation in _REPRESENTATIONS
+            representation: _median(repetition_medians[configuration][representation])
+            for representation in _REPRESENTATIONS
         }
         for configuration in configurations
     }
@@ -575,7 +611,7 @@ def evaluate_decision_fidelity_v2(
     *,
     executor_artifact: Optional[ExecutorArtifact] = None,
 ) -> Dict[str, Any]:
-    """Evaluate complete allocation blocks under the immutable v2 method."""
+    """Evaluate independent per-configuration repetitions under the v2 policy."""
 
     aggregate = _object(aggregate, "aggregate")
     if not isinstance(policy_bytes, bytes) or not 0 < len(policy_bytes) <= _POLICY_LIMITS.max_document_bytes:
@@ -593,8 +629,8 @@ def evaluate_decision_fidelity_v2(
     )
     completeness = _object(aggregate.get("completeness"), "aggregate.completeness")
     configurations = list(policy["scope"]["configuration_ids"])
-    block_count = int(policy["measurement"]["allocation_blocks"])
-    blocks = list(range(block_count))
+    repetition_count = int(policy["measurement"]["configuration_repetitions"])
+    configuration_repetitions = list(range(repetition_count))
     workload_id = str(policy["scope"]["workload_id"])
     selected = aggregate.get("selected_cells")
     if not isinstance(selected, list):
@@ -614,57 +650,78 @@ def evaluate_decision_fidelity_v2(
             or not isinstance(configuration, str)
             or isinstance(repetition, bool)
             or not isinstance(repetition, int)
-            or not 0 <= repetition < block_count
+            or not 0 <= repetition < repetition_count
             or (repetition, configuration) in rows
         ):
             raise DecisionFidelityError("aggregate selected cell is outside the replicated decision gate")
         rows[(repetition, configuration)] = row
-    expected_cells = {(block, configuration) for block in blocks for configuration in configurations}
+    expected_cells = {
+        (repetition, configuration)
+        for repetition in configuration_repetitions
+        for configuration in configurations
+    }
     if set(rows) != expected_cells:
         issues.append(
             {
-                "code": "incomplete_allocation_block_inventory",
-                "detail": "selected cells do not cover every configuration in every allocation block",
+                "code": "incomplete_configuration_repetition_inventory",
+                "detail": "selected cells do not cover every configuration repetition",
             }
         )
 
-    samples: BlockSamples = {}
+    samples: RepetitionSamples = {}
     identities: Set[Tuple[str, str, str]] = set()
     environment_observations: Set[str] = set()
     jobs: List[str] = []
     nodes: Set[str] = set()
-    repetitions = int(policy["measurement"]["measured_repetitions"])
+    measured_repetitions = int(policy["measurement"]["measured_repetitions"])
+    schedule_inventory = cast(Mapping[str, Any], policy["measurement"]["representation_schedule"])
+    schedule_rows = cast(Sequence[Sequence[str]], schedule_inventory["rows"])
+    schedule_indices = cast(
+        Sequence[Sequence[int]],
+        schedule_inventory["row_index_by_configuration_repetition"],
+    )
     if not issues:
-        for block in blocks:
-            samples[block] = {}
+        for repetition in configuration_repetitions:
+            samples[repetition] = {}
             for configuration in configurations:
-                row = rows[(block, configuration)]
-                gate = _object(row.get("decision_gate"), f"block {block} configuration {configuration}.decision_gate")
-                execution = _object(gate.get("execution"), f"block {block} configuration {configuration}.execution")
+                row = rows[(repetition, configuration)]
+                gate = _object(
+                    row.get("decision_gate"),
+                    f"configuration repetition {repetition}, {configuration}.decision_gate",
+                )
+                execution = _object(
+                    gate.get("execution"),
+                    f"configuration repetition {repetition}, {configuration}.execution",
+                )
+                expected_orders = [list(schedule_rows[index]) for index in schedule_indices[repetition]]
                 if (
-                    execution.get("allocation_block") != block
-                    or execution.get("iterations") != repetitions
+                    execution.get("configuration_repetition") != repetition
+                    or execution.get("iterations") != measured_repetitions
                     or execution.get("warmup") != policy["measurement"]["warmup"]
                     or execution.get("order_method") != policy["measurement"]["order_method"]
                     or execution.get("timing_semantics") != policy["measurement"]["timing_semantics"]
+                    or execution.get("representation_order_by_iteration") != expected_orders
                 ):
                     raise DecisionFidelityError("replicated decision-gate execution disagrees with policy")
                 representations = _object(gate.get("representations"), "replicated decision-gate representations")
-                samples[block][configuration] = {}
+                samples[repetition][configuration] = {}
                 for representation in _REPRESENTATIONS:
                     value = _object(representations.get(representation), f"representation {representation}")
                     timings = value.get("timings_us")
                     if not isinstance(timings, list):
                         raise DecisionFidelityError("replicated decision-gate timings are invalid")
                     parsed = tuple(_number(item, "replicated decision-gate timing", minimum=0.0) for item in timings)
-                    if len(parsed) != repetitions:
+                    if len(parsed) != measured_repetitions:
                         raise DecisionFidelityError("replicated decision-gate timing inventory is incomplete")
-                    samples[block][configuration][representation] = parsed
-                if _median(samples[block][configuration]["source"]) <= 0.0:
+                    samples[repetition][configuration][representation] = parsed
+                if _median(samples[repetition][configuration]["source"]) <= 0.0:
                     issues.append(
                         {
                             "code": "nonpositive_source_timing",
-                            "detail": f"source timing is not positive for block {block}, {configuration}",
+                            "detail": (
+                                "source timing is not positive for configuration repetition "
+                                f"{repetition}, {configuration}"
+                            ),
                         }
                     )
                 runtime = _object(row.get("decision_gate_runtime"), "replicated decision-gate runtime")
@@ -677,7 +734,7 @@ def evaluate_decision_fidelity_v2(
                 environment_observations.add(
                     _environment_identity(
                         row.get("decision_gate_environment"),
-                        f"block {block} configuration {configuration}.decision_gate_environment",
+                        f"configuration repetition {repetition}, {configuration}.decision_gate_environment",
                     )
                 )
                 identities.add(
@@ -691,7 +748,7 @@ def evaluate_decision_fidelity_v2(
             issues.append(
                 {
                     "code": "allocation_job_reuse",
-                    "detail": "every configuration/block cell must have a distinct scheduler job ID",
+                    "detail": "every configuration repetition must have a distinct scheduler job ID",
                 }
             )
         if len(identities) != 1:
@@ -700,7 +757,7 @@ def evaluate_decision_fidelity_v2(
             issues.append(
                 {
                     "code": "environment_observation_reuse",
-                    "detail": "every configuration/block cell must bind a distinct runtime observation",
+                    "detail": "every configuration repetition must bind a distinct runtime observation",
                 }
             )
 
@@ -713,15 +770,21 @@ def evaluate_decision_fidelity_v2(
     critical_value: Optional[float] = None
     if not issues:
         maximum_iqr = float(policy["measurement"]["max_relative_iqr_pct"])
-        for block in blocks:
+        for repetition in configuration_repetitions:
             for configuration in configurations:
                 for representation in _STABILITY_REPRESENTATIONS:
-                    relative_iqr = _relative_iqr(samples[block][configuration][representation])
+                    relative_iqr = _relative_iqr(samples[repetition][configuration][representation])
                     if relative_iqr > maximum_iqr:
-                        stability_issues.append(f"{block}|{configuration}|{representation}|{relative_iqr}")
+                        stability_issues.append(
+                            f"{repetition}|{configuration}|{representation}|{relative_iqr}"
+                        )
 
         comparison = cast(Mapping[str, Any], policy["comparison"])
-        observed_vector = _nested_median_vector(samples, blocks=blocks, configurations=configurations)
+        observed_vector = _nested_median_vector(
+            samples,
+            configuration_repetitions=configuration_repetitions,
+            configurations=configurations,
+        )
         observed_pair_rows = _pair_rows(
             observed_vector,
             configurations=configurations,
@@ -752,9 +815,9 @@ def evaluate_decision_fidelity_v2(
         for _ in range(int(uncertainty["resamples"])):
             vector = _bootstrap_vector(
                 samples,
-                blocks=blocks,
+                configuration_repetitions=configuration_repetitions,
                 configurations=configurations,
-                repetitions=repetitions,
+                measured_repetitions=measured_repetitions,
                 rng=rng,
             )
             pairs = _pair_rows(
@@ -846,7 +909,7 @@ def evaluate_decision_fidelity_v2(
             "manifest_sha256": campaign.get("manifest_sha256"),
             "selection_sha256": campaign.get("selection_sha256"),
             "completeness_verdict_sha256": campaign.get("verdict_sha256"),
-            "allocation_block_count": block_count,
+            "configuration_repetition_count": repetition_count,
             "configuration_count": len(configurations),
             "configuration_pair_count": len(observed_pair_rows),
             "distinct_job_count": len(set(jobs)),

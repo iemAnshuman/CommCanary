@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
+from ..decision_gate_schedule import (
+    REPLICATED_ORDER_METHOD,
+    REPRESENTATION_IDS,
+    representation_order,
+)
 from ..harness import CELL_RESULT_SCHEMA, ContractError, strict_json_loads
 
 LOCAL_PREPARE_MEASUREMENT_SCHEMA = "commcanary.experiment.local.prepare-measurement.v1"
@@ -137,14 +142,7 @@ _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
 _OVERLAP_REPLAY_MODES = {"explicit-wait-overlap", "fixed-input-explicit-wait-overlap"}
 _ARTIFACT_ID_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_DECISION_GATE_REPRESENTATIONS = (
-    "source",
-    "exact_work",
-    "stratified",
-    "isolated",
-    "no_overlap",
-    "no_rank_skew",
-)
+_DECISION_GATE_REPRESENTATIONS = REPRESENTATION_IDS
 _DECISION_GATE_REPRESENTATION_CONTRACTS = {
     "source": ("ground_truth", "direct-source-issue-rank-work-wait"),
     "exact_work": ("product_candidate", "verified-materialization-issue-rank-work-wait"),
@@ -262,7 +260,7 @@ def _decision_gate_attributes(
     samples: Tuple[float, ...],
 ) -> Dict[str, Any]:
     replicated = schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
-    order_method = "allocation-block-rotated-latin-cycle.v2" if replicated else "iteration-rotated-latin-cycle.v1"
+    order_method = REPLICATED_ORDER_METHOD if replicated else "iteration-rotated-latin-cycle.v1"
     contracts = (
         _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS if replicated else _DECISION_GATE_REPRESENTATION_CONTRACTS
     )
@@ -298,7 +296,7 @@ def _decision_gate_attributes(
         "world_size",
     }
     if replicated:
-        execution_fields.add("allocation_block")
+        execution_fields.add("configuration_repetition")
     execution = _strict_object(raw["execution"], "measurement.execution", execution_fields)
     iterations = execution["iterations"]
     warmup = execution["warmup"]
@@ -320,9 +318,13 @@ def _decision_gate_attributes(
         or execution["stratified_method"] != "first-observed-per-collective-shape.v1"
     ):
         raise MeasurementValidationError("decision-gate execution contract is inconsistent")
-    allocation_block = execution.get("allocation_block", 0)
-    if isinstance(allocation_block, bool) or not isinstance(allocation_block, int) or not 0 <= allocation_block <= 999:
-        raise MeasurementValidationError("decision-gate allocation block is invalid")
+    configuration_repetition = execution.get("configuration_repetition") if replicated else None
+    if replicated and (
+        isinstance(configuration_repetition, bool)
+        or not isinstance(configuration_repetition, int)
+        or not 0 <= configuration_repetition <= 999
+    ):
+        raise MeasurementValidationError("decision-gate configuration repetition is invalid")
     selected = execution["stratified_source_event_indices"]
     if (
         not isinstance(selected, list)
@@ -337,8 +339,12 @@ def _decision_gate_attributes(
     if not isinstance(orders, list) or len(orders) != iterations:
         raise MeasurementValidationError("decision-gate representation order inventory is incomplete")
     for iteration, order in enumerate(orders):
-        offset = (allocation_block + iteration) % len(_DECISION_GATE_REPRESENTATIONS)
-        expected = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
+        expected = list(
+            representation_order(
+                iteration,
+                configuration_repetition=configuration_repetition,
+            )
+        )
         if order != expected:
             raise MeasurementValidationError(f"decision-gate representation order is invalid at iteration {iteration}")
 

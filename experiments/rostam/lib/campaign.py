@@ -143,19 +143,19 @@ def _verify_decision_fidelity_binding(
             continue
         if not isinstance(policy_id, str) or _SHA256_RE.fullmatch(policy_id) is None:
             raise CampaignPreparationError(f"workload {workload.id!r} decision-fidelity policy ID is invalid")
-        allocation_blocks = parameters.get("allocation_blocks")
-        if allocation_blocks is not None and (
-            isinstance(allocation_blocks, bool)
-            or not isinstance(allocation_blocks, int)
-            or not 5 <= allocation_blocks <= 10
+        configuration_repetitions = parameters.get("configuration_repetitions")
+        if configuration_repetitions is not None and (
+            isinstance(configuration_repetitions, bool)
+            or not isinstance(configuration_repetitions, int)
+            or not 5 <= configuration_repetitions <= 10
         ):
-            raise CampaignPreparationError(f"workload {workload.id!r} allocation block count is invalid")
-        declarations.append((workload.id, policy_id, allocation_blocks))
+            raise CampaignPreparationError(f"workload {workload.id!r} configuration repetition count is invalid")
+        declarations.append((workload.id, policy_id, configuration_repetitions))
     if not declarations:
         return
     if len(declarations) != 1:
         raise CampaignPreparationError("a campaign profile must select exactly one decision-fidelity workload")
-    workload_id, expected_policy_id, allocation_blocks = declarations[0]
+    workload_id, expected_policy_id, configuration_repetitions = declarations[0]
     path = inputs.get("decision-fidelity-policy")
     if path is None or path.is_symlink() or not path.is_file():
         raise CampaignPreparationError("decision-fidelity campaign requires a real policy input")
@@ -183,13 +183,14 @@ def _verify_decision_fidelity_binding(
         or scope.get("configuration_ids") != sorted(profile.configuration_ids)
     ):
         raise CampaignPreparationError("decision-fidelity policy input disagrees with the catalog profile")
-    if allocation_blocks is not None and (
-        repetitions != allocation_blocks
+    if configuration_repetitions is not None and (
+        repetitions != configuration_repetitions
         or not isinstance(measurement, Mapping)
-        or measurement.get("allocation_blocks") != allocation_blocks
+        or measurement.get("configuration_repetitions") != configuration_repetitions
     ):
         raise CampaignPreparationError(
-            f"replicated decision-fidelity campaign requires exactly {allocation_blocks} campaign repetitions"
+            "replicated decision-fidelity campaign requires exactly "
+            f"{configuration_repetitions} configuration repetitions"
         )
 
 

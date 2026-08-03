@@ -11,6 +11,11 @@ from functools import partial
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, cast
 
+from ..decision_gate_schedule import (
+    REPLICATED_ORDER_METHOD,
+    REPRESENTATION_IDS,
+    representation_order,
+)
 from ..harness import ContractError, strict_json_loads
 
 MICRO_MEASUREMENT_SCHEMA = "commcanary.rostam.physical.micro-measurement.v1"
@@ -41,16 +46,9 @@ DECISION_GATE_REPLICATED_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout
 SOURCE_TIMING_SEMANTICS = "maximum-rank-unprofiled-whole-program-duration"
 DECISION_GATE_TIMING_SEMANTICS = "maximum-rank-cuda-event-whole-program-duration"
 DECISION_GATE_ORDER_METHOD = "iteration-rotated-latin-cycle.v1"
-DECISION_GATE_REPLICATED_ORDER_METHOD = "allocation-block-rotated-latin-cycle.v2"
+DECISION_GATE_REPLICATED_ORDER_METHOD = REPLICATED_ORDER_METHOD
 DECISION_GATE_STRATIFIED_METHOD = "first-observed-per-collective-shape.v1"
-_DECISION_GATE_REPRESENTATIONS = (
-    "source",
-    "exact_work",
-    "stratified",
-    "isolated",
-    "no_overlap",
-    "no_rank_skew",
-)
+_DECISION_GATE_REPRESENTATIONS = REPRESENTATION_IDS
 _DECISION_GATE_REPRESENTATION_CONTRACTS = {
     "source": ("ground_truth", "direct-source-issue-rank-work-wait"),
     "exact_work": ("product_candidate", "verified-materialization-issue-rank-work-wait"),
@@ -1169,7 +1167,7 @@ def _decision_gate_payload(
         "stratified_source_event_indices",
     }
     if replicated:
-        execution_fields.add("allocation_block")
+        execution_fields.add("configuration_repetition")
     _strict(execution, "decision-gate producer stdout.execution", execution_fields)
     iterations = _integer(parameters.get("iterations"), "workload.parameters.iterations", minimum=1, maximum=1000)
     warmup = _integer(parameters.get("warmup"), "workload.parameters.warmup", maximum=100)
@@ -1188,8 +1186,8 @@ def _decision_gate_payload(
         or execution["stratified_method"] != DECISION_GATE_STRATIFIED_METHOD
     ):
         raise PhysicalResultError("decision-gate execution contract disagrees with the frozen workload")
-    if replicated and execution["allocation_block"] != repetition:
-        raise PhysicalResultError("decision-gate allocation block disagrees with its manifest repetition")
+    if replicated and execution["configuration_repetition"] != repetition:
+        raise PhysicalResultError("decision-gate configuration repetition disagrees with its manifest repetition")
     selected = execution["stratified_source_event_indices"]
     expected_selected = parameters.get("expected_stratified_source_event_indices")
     if not isinstance(selected, list) or selected != expected_selected or not selected:
@@ -1203,8 +1201,12 @@ def _decision_gate_payload(
     if not isinstance(raw_orders, list) or len(raw_orders) != iterations:
         raise PhysicalResultError("decision-gate representation order inventory is incomplete")
     for iteration, order in enumerate(raw_orders):
-        offset = ((repetition or 0) + iteration) % len(_DECISION_GATE_REPRESENTATIONS)
-        expected_order = list(_DECISION_GATE_REPRESENTATIONS[offset:] + _DECISION_GATE_REPRESENTATIONS[:offset])
+        expected_order = list(
+            representation_order(
+                iteration,
+                configuration_repetition=repetition if replicated else None,
+            )
+        )
         if order != expected_order:
             raise PhysicalResultError(f"decision-gate representation order disagrees at iteration {iteration}")
 

@@ -264,23 +264,28 @@ independent-operator usability.
 The `decision-gate-exact-replicated` profile and
 `decision-fidelity-gate-v2.json` define a replacement experiment without
 altering the archived v1 policy or verdict. Campaign preparation requires
-exactly eight repetitions. Each repetition is one complete allocation block;
-every configuration/block cell must have a distinct scheduler job and a
-distinct bound runtime observation.
+exactly eight repetitions per configuration. Every configuration/repetition
+cell has its own exclusive scheduler allocation, distinct job ID, and distinct
+bound runtime observation. Equal repetition numbers across configurations do
+not imply a shared allocation or a paired statistical block.
 
-Each cell uses five warmups and 24 measured passes. The block-rotated cyclic
-schedule places every one of the six representations in every order position
-four times per cell, then rotates the starting position across blocks. Runtime
+Each cell uses five warmups and 24 measured passes. The policy freezes all six
+Williams rows and the row used by every pass in every repetition. Within each
+cell, every representation occupies every position four times and every
+ordered predecessor/successor pair occurs four times. The opening row rotates
+across configuration repetitions. Runtime
 evidence includes CPU affinity, GPU persistence and performance state,
 temperature, power draw and limit, current SM and memory clocks, topology, and
 the scheduler's node-state record. Retries may replace infrastructure failures
 only; a noisy successful attempt remains evidence and cannot be replaced by a
 quieter run.
 
-The v2 evaluator uses the allocation block as the outer paired bootstrap unit
-and the measured pass vector as the inner unit. Every bootstrap draw recomputes
-the relative tie threshold and policy margin from its sampled medians. One
-predeclared standardized bootstrap max statistic supplies simultaneous
+The v2 evaluator independently resamples configuration repetitions for each
+configuration as its outer bootstrap. Its inner bootstrap resamples complete
+six-pass Williams cycles and preserves the representation vector within each
+selected cell. Every draw recomputes the relative tie threshold and policy
+margin from sampled medians. One predeclared standardized bootstrap max
+statistic supplies simultaneous
 intervals for source and exact-work pair margins, exact-work metrics, and
 decision criteria. Constant statistics receive exact intervals and do not
 inflate the global critical value. A boundary crossing remains `inconclusive`.

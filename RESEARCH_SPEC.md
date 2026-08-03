@@ -152,9 +152,10 @@ injected and naturally occurring regressions.
   probes, with mutation tests and a mandatory four-process CPU/Gloo
   conformance test in a dedicated pinned-Torch CI job;
 - a separately versioned, not-yet-executed exact-capsule follow-up design with
-  eight complete allocation blocks, 24 balanced representation rotations,
-  dynamic policy-margin bootstrap draws, and simultaneous uncertainty over all
-  pair margins and reported criteria.
+  eight independent repetitions per configuration, 24 carryover-balanced
+  Williams passes, complete-cycle inner resampling, unpaired outer resampling,
+  dynamic policy-margin bootstrap draws, and simultaneous uncertainty over
+  all pair margins and reported criteria.
 
 ## Not implemented—and required before a strong systems-paper claim
 

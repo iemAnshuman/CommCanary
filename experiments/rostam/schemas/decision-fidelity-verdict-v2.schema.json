@@ -22,7 +22,7 @@
       "additionalProperties": false,
       "properties": {
         "aggregate_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
-        "allocation_block_count": {"maximum": 10, "minimum": 5, "type": "integer"},
+        "configuration_repetition_count": {"maximum": 10, "minimum": 5, "type": "integer"},
         "completeness_verdict_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "configuration_count": {"minimum": 2, "type": "integer"},
         "configuration_pair_count": {"minimum": 0, "type": "integer"},
@@ -33,7 +33,7 @@
         "run_id": {"minLength": 1, "type": "string"},
         "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
       },
-      "required": ["aggregate_sha256", "allocation_block_count", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "run_id", "selection_sha256"],
+      "required": ["aggregate_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "configuration_repetition_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "run_id", "selection_sha256"],
       "type": "object"
     },
     "issues": {
@@ -53,7 +53,7 @@
       "properties": {
         "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
         "inconclusive_pairs": {"items": {"minLength": 1, "type": "string"}, "type": "array"},
-        "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2"},
+        "method": {"const": "hierarchical-unpaired-repetition-bootstrap-policy-margin-standardized-max.v3"},
         "metric_intervals": {
           "additionalProperties": false,
           "properties": {

@@ -1,6 +1,6 @@
 {
   "schema": "commcanary.rostam.decision-fidelity-policy.v2",
-  "policy_id": "1d3d8db489c9b49c8db6e96c0fea6e490d9bdd18390eb549c8485307e55fbf9c",
+  "policy_id": "8a77f9c967c980959ee070c1feb64480f2b9467d7920a2c6ceddc5e96430381a",
   "scope": {
     "workload_id": "decision-gate-exact-replicated",
     "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
@@ -24,10 +24,30 @@
     }
   },
   "measurement": {
-    "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-and-block",
-    "allocation_blocks": 8,
-    "block_pairing": "campaign-repetition-index",
-    "order_method": "allocation-block-rotated-latin-cycle.v2",
+    "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-repetition",
+    "configuration_repetitions": 8,
+    "cross_configuration_pairing": "none-independent-scheduler-allocations",
+    "order_method": "configuration-repetition-williams-design.v3",
+    "representation_schedule": {
+      "rows": [
+        ["source", "exact_work", "no_rank_skew", "stratified", "no_overlap", "isolated"],
+        ["exact_work", "stratified", "source", "isolated", "no_rank_skew", "no_overlap"],
+        ["stratified", "isolated", "exact_work", "no_overlap", "source", "no_rank_skew"],
+        ["isolated", "no_overlap", "stratified", "no_rank_skew", "exact_work", "source"],
+        ["no_overlap", "no_rank_skew", "isolated", "source", "stratified", "exact_work"],
+        ["no_rank_skew", "source", "no_overlap", "exact_work", "isolated", "stratified"]
+      ],
+      "row_index_by_configuration_repetition": [
+        [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0],
+        [2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1],
+        [3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2],
+        [4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3],
+        [5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4],
+        [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0]
+      ]
+    },
     "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
     "warmup": 5,
     "measured_repetitions": 24,
@@ -45,7 +65,7 @@
     "retry_policy": "infrastructure-failure-only-never-retry-for-noise"
   },
   "comparison": {
-    "primary_metric": "median-of-allocation-medians-us",
+    "primary_metric": "median-of-configuration-repetition-medians-us",
     "configuration_pair_order": "lexicographic-unordered-pairs",
     "pair_label_method": "larger-of-absolute-or-relative-tie-band.v1",
     "absolute_tie_threshold_us": 10.0,
@@ -57,12 +77,12 @@
       "opposite_direction": "one_false_negative_and_one_false_positive"
     },
     "uncertainty": {
-      "method": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2",
+      "method": "hierarchical-unpaired-repetition-bootstrap-policy-margin-standardized-max.v3",
       "confidence": 0.95,
       "resamples": 10000,
       "seed": 8241,
-      "outer_unit": "complete-allocation-block",
-      "inner_unit": "measured-iteration-vector-within-cell",
+      "outer_unit": "configuration-repetition-resampled-independently-per-configuration",
+      "inner_unit": "complete-six-iteration-williams-cycle-within-cell",
       "simultaneous_scope": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria",
       "boundary_crossing_outcome": "inconclusive"
     },

@@ -35,22 +35,19 @@ from commcanary.execution import (
 )
 from commcanary.services import verify_qualification_request
 
+from .decision_gate_schedule import (
+    REPLICATED_ORDER_METHOD,
+    REPRESENTATION_IDS,
+    representation_order,
+)
 from .qualification_physical import stage_qualification_inputs
 
 DECISION_GATE_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v1"
 DECISION_GATE_REPLICATED_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v2"
 DECISION_GATE_TIMING_SEMANTICS = "maximum-rank-cuda-event-whole-program-duration"
 DECISION_GATE_ORDER_METHOD = "iteration-rotated-latin-cycle.v1"
-DECISION_GATE_REPLICATED_ORDER_METHOD = "allocation-block-rotated-latin-cycle.v2"
+DECISION_GATE_REPLICATED_ORDER_METHOD = REPLICATED_ORDER_METHOD
 STRATIFIED_METHOD = "first-observed-per-collective-shape.v1"
-REPRESENTATION_IDS = (
-    "source",
-    "exact_work",
-    "stratified",
-    "isolated",
-    "no_overlap",
-    "no_rank_skew",
-)
 REPRESENTATION_METADATA = {
     "source": ("ground_truth", "direct-source-issue-rank-work-wait"),
     "exact_work": ("product_candidate", "verified-materialization-issue-rank-work-wait"),
@@ -99,7 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-policy-id", required=True)
     parser.add_argument("--iterations", type=int, default=20)
     parser.add_argument("--warmup", type=int, default=5)
-    parser.add_argument("--allocation-block", type=int)
+    parser.add_argument("--configuration-repetition", type=int)
     parser.add_argument(
         "--distributed-timeout-seconds",
         type=int,
@@ -261,11 +258,6 @@ def stratified_indices(events: Sequence[GateEvent]) -> Tuple[int, ...]:
     return tuple(selected)
 
 
-def representation_order(iteration: int, *, allocation_block: int = 0) -> Tuple[str, ...]:
-    offset = (allocation_block + iteration) % len(REPRESENTATION_IDS)
-    return REPRESENTATION_IDS[offset:] + REPRESENTATION_IDS[:offset]
-
-
 def _median(values: Sequence[float]) -> float:
     return float(statistics.median(values))
 
@@ -298,12 +290,12 @@ def result_payload(
     gathered: Sequence[Mapping[str, Any]],
     correctness_checks_per_rank: Sequence[int],
     runtime: Mapping[str, Any],
-    allocation_block: Optional[int] = None,
+    configuration_repetition: Optional[int] = None,
 ) -> Dict[str, Any]:
     if len(gathered) != world_size:
         raise SystemExit("decision-gate timing inventory does not cover the launched world")
-    if allocation_block is not None and allocation_block < 0:
-        raise SystemExit("allocation_block must be non-negative")
+    if configuration_repetition is not None and configuration_repetition < 0:
+        raise SystemExit("configuration_repetition must be non-negative")
     representations: Dict[str, Any] = {}
     for representation in REPRESENTATION_IDS:
         by_rank: List[List[float]] = []
@@ -323,7 +315,11 @@ def result_payload(
         maxima = [max(by_rank[rank][iteration] for rank in range(world_size)) for iteration in range(iterations)]
         rounded_by_rank = [[round(value, 3) for value in values] for values in by_rank]
         rounded_maxima = [round(value, 3) for value in maxima]
-        metadata = REPRESENTATION_METADATA if allocation_block is None else REPLICATED_REPRESENTATION_METADATA
+        metadata = (
+            REPRESENTATION_METADATA
+            if configuration_repetition is None
+            else REPLICATED_REPRESENTATION_METADATA
+        )
         category, semantics = metadata[representation]
         if representation == "stratified":
             executed_events = len(selected_indices)
@@ -352,19 +348,31 @@ def result_payload(
         "warmup": warmup,
         "timing_semantics": DECISION_GATE_TIMING_SEMANTICS,
         "order_method": (
-            DECISION_GATE_ORDER_METHOD if allocation_block is None else DECISION_GATE_REPLICATED_ORDER_METHOD
+            DECISION_GATE_ORDER_METHOD
+            if configuration_repetition is None
+            else DECISION_GATE_REPLICATED_ORDER_METHOD
         ),
         "representation_order_by_iteration": [
-            list(representation_order(index, allocation_block=allocation_block or 0)) for index in range(iterations)
+            list(
+                representation_order(
+                    index,
+                    configuration_repetition=configuration_repetition,
+                )
+            )
+            for index in range(iterations)
         ],
         "source_event_count": source_event_count,
         "stratified_method": STRATIFIED_METHOD,
         "stratified_source_event_indices": list(selected_indices),
     }
-    if allocation_block is not None:
-        execution["allocation_block"] = allocation_block
+    if configuration_repetition is not None:
+        execution["configuration_repetition"] = configuration_repetition
     return {
-        "schema": (DECISION_GATE_STDOUT_SCHEMA if allocation_block is None else DECISION_GATE_REPLICATED_STDOUT_SCHEMA),
+        "schema": (
+            DECISION_GATE_STDOUT_SCHEMA
+            if configuration_repetition is None
+            else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
+        ),
         "request": {
             "format": request["format"],
             "request_id": request["request_id"],
@@ -484,7 +492,7 @@ def _execute(
     iterations: int,
     warmup: int,
     timeout_seconds: int,
-    allocation_block: int,
+    configuration_repetition: int,
 ) -> Tuple[Sequence[Mapping[str, Any]], Sequence[int], Mapping[str, Any]]:
     try:
         import torch  # type: ignore[import-not-found]
@@ -604,7 +612,10 @@ def _execute(
         timings: Dict[str, List[float]] = {name: [] for name in REPRESENTATION_IDS}
         for pass_index in range(-warmup, iterations):
             order_index = pass_index if pass_index >= 0 else pass_index + warmup
-            order = representation_order(order_index, allocation_block=allocation_block)
+            order = representation_order(
+                order_index,
+                configuration_repetition=configuration_repetition,
+            )
             for representation in order:
                 for tensor in communication.values():
                     tensor.zero_()
@@ -653,9 +664,12 @@ def run(args: argparse.Namespace) -> int:
         "distributed-timeout-seconds",
         maximum=3600,
     )
-    allocation_block = args.allocation_block
-    if allocation_block is not None and (isinstance(allocation_block, bool) or not 0 <= allocation_block <= 999):
-        raise SystemExit("allocation-block must be an integer in [0, 999]")
+    configuration_repetition = args.configuration_repetition
+    if configuration_repetition is not None and (
+        isinstance(configuration_repetition, bool)
+        or not 0 <= configuration_repetition <= 999
+    ):
+        raise SystemExit("configuration-repetition must be an integer in [0, 999]")
     rank, world_size, local_rank = distributed_execution_environment(os.environ)
     sources = {
         "request_manifest": args.request_manifest,
@@ -705,7 +719,7 @@ def run(args: argparse.Namespace) -> int:
         iterations=iterations,
         warmup=args.warmup,
         timeout_seconds=timeout_seconds,
-        allocation_block=allocation_block or 0,
+        configuration_repetition=configuration_repetition or 0,
     )
     if rank == 0:
         payload = result_payload(
@@ -721,7 +735,7 @@ def run(args: argparse.Namespace) -> int:
             gathered=gathered,
             correctness_checks_per_rank=correctness,
             runtime=runtime,
-            allocation_block=allocation_block,
+            configuration_repetition=configuration_repetition,
         )
         print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False), flush=True)
     return 0

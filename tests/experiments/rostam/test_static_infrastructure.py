@@ -398,11 +398,11 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     replicated_parameters = replicated_workload.parameters.to_value()
     replicated_command = replicated_parameters["command"]
     assert replicated_workload.measurement_schema.endswith("decision-gate-measurement.v2")
-    assert replicated_parameters["allocation_blocks"] == 8
+    assert replicated_parameters["configuration_repetitions"] == 8
     assert replicated_parameters["iterations"] == 24
-    assert replicated_command[replicated_command.index("--allocation-block") + 1] == "{repetition}"
+    assert replicated_command[replicated_command.index("--configuration-repetition") + 1] == "{repetition}"
     assert replicated_parameters["decision_fidelity_policy_id"] == (
-        "1d3d8db489c9b49c8db6e96c0fea6e490d9bdd18390eb549c8485307e55fbf9c"
+        "8a77f9c967c980959ee070c1feb64480f2b9467d7920a2c6ceddc5e96430381a"
     )
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -1008,7 +1008,7 @@ def test_decision_gate_profile_binds_every_predeclared_input(tmp_path: Path) -> 
     assert policy["executor"]["source_file_count"] > 20
 
 
-def test_replicated_decision_gate_profile_expands_complete_allocation_blocks(tmp_path: Path) -> None:
+def test_replicated_decision_gate_profile_expands_configuration_repetitions(tmp_path: Path) -> None:
     inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate-exact-replicated")
     for input_id in (
         "decision-fidelity-policy",
@@ -1047,7 +1047,7 @@ def test_replicated_decision_gate_profile_expands_complete_allocation_blocks(tmp
         assert len([cell for cell in manifest.cells if cell.repetition == repetition]) == 8
 
 
-def test_replicated_decision_gate_profile_refuses_wrong_allocation_block_count(tmp_path: Path) -> None:
+def test_replicated_decision_gate_profile_refuses_wrong_repetition_count(tmp_path: Path) -> None:
     inputs = _campaign_inputs(tmp_path, reviewed=True, profile_id="decision-gate-exact-replicated")
     for input_id in (
         "decision-fidelity-policy",
@@ -1067,7 +1067,7 @@ def test_replicated_decision_gate_profile_refuses_wrong_allocation_block_count(t
             path.write_bytes(b"reviewed-replicated-decision-input")
         inputs[input_id] = path
 
-    with pytest.raises(CampaignPreparationError, match="exactly 8 campaign repetitions"):
+    with pytest.raises(CampaignPreparationError, match="exactly 8 configuration repetitions"):
         build_campaign(
             catalog=load_catalog(CATALOG_PATH),
             catalog_path=CATALOG_PATH,

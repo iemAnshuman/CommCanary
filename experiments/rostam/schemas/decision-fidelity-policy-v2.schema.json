@@ -36,12 +36,43 @@
     "measurement": {
       "additionalProperties": false,
       "properties": {
-        "allocation_blocks": {"maximum": 10, "minimum": 5, "type": "integer"},
-        "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-and-block"},
-        "block_pairing": {"const": "campaign-repetition-index"},
+        "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-repetition"},
+        "configuration_repetitions": {"maximum": 10, "minimum": 5, "type": "integer"},
+        "cross_configuration_pairing": {"const": "none-independent-scheduler-allocations"},
         "max_relative_iqr_pct": {"maximum": 1000, "minimum": 0, "type": "number"},
         "measured_repetitions": {"const": 24},
-        "order_method": {"const": "allocation-block-rotated-latin-cycle.v2"},
+        "order_method": {"const": "configuration-repetition-williams-design.v3"},
+        "representation_schedule": {
+          "additionalProperties": false,
+          "properties": {
+            "row_index_by_configuration_repetition": {
+              "items": {
+                "items": {"maximum": 5, "minimum": 0, "type": "integer"},
+                "maxItems": 24,
+                "minItems": 24,
+                "type": "array"
+              },
+              "maxItems": 10,
+              "minItems": 5,
+              "type": "array"
+            },
+            "rows": {
+              "items": {
+                "items": {"enum": ["source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew"]},
+                "maxItems": 6,
+                "minItems": 6,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "maxItems": 6,
+              "minItems": 6,
+              "type": "array",
+              "uniqueItems": true
+            }
+          },
+          "required": ["row_index_by_configuration_repetition", "rows"],
+          "type": "object"
+        },
         "required_correctness": {"const": "passed"},
         "required_environment_evidence": {"const": ["cpu_affinity", "gpu_clocks", "gpu_persistence_mode", "gpu_power", "gpu_temperature", "node_state"]},
         "require_distinct_job_ids": {"const": true},
@@ -49,7 +80,7 @@
         "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
         "warmup": {"maximum": 100, "minimum": 0, "type": "integer"}
       },
-      "required": ["allocation_blocks", "allocation_policy", "block_pairing", "max_relative_iqr_pct", "measured_repetitions", "order_method", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
+      "required": ["allocation_policy", "configuration_repetitions", "cross_configuration_pairing", "max_relative_iqr_pct", "measured_repetitions", "order_method", "representation_schedule", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
       "type": "object"
     },
     "comparison": {
@@ -68,7 +99,7 @@
         },
         "configuration_pair_order": {"const": "lexicographic-unordered-pairs"},
         "pair_label_method": {"const": "larger-of-absolute-or-relative-tie-band.v1"},
-        "primary_metric": {"const": "median-of-allocation-medians-us"},
+        "primary_metric": {"const": "median-of-configuration-repetition-medians-us"},
         "relative_threshold_reference": {"const": "smaller_pair_median"},
         "relative_tie_threshold_pct": {"minimum": 0, "type": "number"},
         "reported_metrics": {
@@ -79,9 +110,9 @@
           "properties": {
             "boundary_crossing_outcome": {"const": "inconclusive"},
             "confidence": {"exclusiveMaximum": 1, "exclusiveMinimum": 0.5, "type": "number"},
-            "inner_unit": {"const": "measured-iteration-vector-within-cell"},
-            "method": {"const": "hierarchical-paired-block-bootstrap-policy-margin-standardized-max.v2"},
-            "outer_unit": {"const": "complete-allocation-block"},
+            "inner_unit": {"const": "complete-six-iteration-williams-cycle-within-cell"},
+            "method": {"const": "hierarchical-unpaired-repetition-bootstrap-policy-margin-standardized-max.v3"},
+            "outer_unit": {"const": "configuration-repetition-resampled-independently-per-configuration"},
             "resamples": {"maximum": 100000, "minimum": 100, "type": "integer"},
             "seed": {"maximum": 9223372036854775807, "minimum": 0, "type": "integer"},
             "simultaneous_scope": {"const": "source-and-exact-work-pair-margins-exact-work-metrics-and-criteria"}

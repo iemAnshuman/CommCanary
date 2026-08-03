@@ -19,9 +19,9 @@
     "execution": {
       "additionalProperties": false,
       "properties": {
-        "allocation_block": {"maximum": 999, "minimum": 0, "type": "integer"},
+        "configuration_repetition": {"maximum": 999, "minimum": 0, "type": "integer"},
         "iterations": {"const": 24},
-        "order_method": {"const": "allocation-block-rotated-latin-cycle.v2"},
+        "order_method": {"const": "configuration-repetition-williams-design.v3"},
         "representation_order_by_iteration": {
           "items": {
             "items": {
@@ -48,7 +48,7 @@
         "warmup": {"maximum": 100, "minimum": 0, "type": "integer"},
         "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
       },
-      "required": ["allocation_block", "iterations", "order_method", "representation_order_by_iteration", "source_event_count", "stratified_method", "stratified_source_event_indices", "timing_semantics", "warmup", "world_size"],
+      "required": ["configuration_repetition", "iterations", "order_method", "representation_order_by_iteration", "source_event_count", "stratified_method", "stratified_source_event_indices", "timing_semantics", "warmup", "world_size"],
       "type": "object"
     },
     "global_ranks": {

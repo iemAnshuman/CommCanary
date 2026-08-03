@@ -48,6 +48,7 @@ def test_replicated_decision_fidelity_policy_is_schema_valid_and_self_bound() ->
     policy_id = identity_projection.pop("policy_id")
 
     assert policy_id == canonical_sha256(identity_projection)
-    assert policy["measurement"]["allocation_blocks"] == 8
+    assert policy["measurement"]["configuration_repetitions"] == 8
     assert policy["measurement"]["measured_repetitions"] == 24
+    assert len(policy["measurement"]["representation_schedule"]["rows"]) == 6
     assert policy["claim_boundary"]["reduced_canary_claim"] == "not_evaluated"

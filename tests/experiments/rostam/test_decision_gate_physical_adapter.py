@@ -102,7 +102,7 @@ def _adapt(payload: dict) -> dict:
     )
 
 
-def _replicated_payload(allocation_block: int) -> dict:
+def _replicated_payload(configuration_repetition: int) -> dict:
     gathered = [
         {
             "rank": rank,
@@ -131,7 +131,7 @@ def _replicated_payload(allocation_block: int) -> dict:
             "runtime_nccl_version_code": 22005,
             "distributed_backend": "nccl",
         },
-        allocation_block=allocation_block,
+        configuration_repetition=configuration_repetition,
     )
 
 
@@ -192,12 +192,12 @@ def test_replicated_decision_gate_binds_block_schedule_and_positive_control() ->
     )
 
     assert scalar.physical is not None
-    assert scalar.physical.attributes["execution"]["allocation_block"] == 2
+    assert scalar.physical.attributes["execution"]["configuration_repetition"] == 2
     assert scalar.physical.attributes["representations"]["exact_work"]["category"] == ("positive_conformance_control")
 
 
 def test_replicated_decision_gate_rejects_cross_block_substitution() -> None:
-    with pytest.raises(PhysicalResultError, match="allocation block"):
+    with pytest.raises(PhysicalResultError, match="configuration repetition"):
         _adapt_replicated(_replicated_payload(2), repetition=3)
 
 

@@ -66,8 +66,9 @@ campaign identities, hashes, and reproduction contract.
 
 1. **Replicated exact-capsule follow-up.** The first complete predeclared
    matrix is `inconclusive`, not failed and not passed. The versioned v2 design
-   freezes eight complete allocation blocks, 24 balanced passes, environment
-   telemetry, hierarchical resampling, and simultaneous uncertainty. It has
+   freezes eight independent repetitions per configuration, 24
+   carryover-balanced Williams passes, environment telemetry, unpaired
+   hierarchical resampling, and simultaneous uncertainty. It has
    not run; do not select a quieter successful attempt or tune its policy to an
    observed answer.
 2. **Reduced decision canary.** Add and physically execute a genuinely reduced

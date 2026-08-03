@@ -779,7 +779,7 @@ def _physical_binding(
             "world_size": parameters.get("world_size"),
         }
         if workload.measurement_schema == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2:
-            expected_execution["allocation_block"] = cell.repetition
+            expected_execution["configuration_repetition"] = cell.repetition
         if not isinstance(execution, Mapping) or any(
             execution.get(field) != expected for field, expected in expected_execution.items()
         ):

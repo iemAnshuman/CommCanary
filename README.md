@@ -889,8 +889,10 @@ The published Rostam evidence covers a narrow campaign on one 4×A100 PCIe
 node. Its exact-work decision verdict is reproducible and `inconclusive`; it
 does not establish a reduced canary, a cost benefit, or a portable hardware
 number. The repository now contains an unexecuted, separately versioned design
-for eight independent allocation blocks and simultaneous policy-margin
-uncertainty. It is implementation, not new evidence. Multi-node, NVLink-class,
+with eight independent repetitions per configuration and simultaneous
+policy-margin uncertainty. Its 64 configuration/repetition cells are separate
+scheduler allocations and are not treated as paired blocks. It is
+implementation, not new evidence. Multi-node, NVLink-class,
 multi-model, and multi-generation-hardware evaluation; Chakra ET/current PARAM
 or Nsight ingestion; dependency-aware compute-kernel synthesis; and full
 per-window/per-motif Pareto minimisation remain open.
