@@ -1,0 +1,13 @@
+{
+  "format": "commcanary.product_runner_lock.v1",
+  "architecture": "amd64",
+  "base_image": "docker.io/lmsysorg/sglang",
+  "base_manifest_digest": "sha256:015f39a45844be5a7b35270c56dc4d9ebcfe9b0c21a3b4f877a4ee22e795bd7a",
+  "base_tag_observed": "v0.5.12",
+  "expected_application_engine": "sglang",
+  "expected_application_engine_version": "0.5.12",
+  "runner_protocols": [
+    "chakra-et-collective-graph.v1",
+    "sglang-offline-tensor-parallel.v1"
+  ]
+}

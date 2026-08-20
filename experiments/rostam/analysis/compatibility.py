@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple, Union, cast
 
@@ -14,9 +15,14 @@ from ..harness import (
     RepositoryState,
     canonical_json_bytes,
     canonical_sha256,
-    file_sha256,
     read_bounded_bytes,
+    sha256_hex,
     strict_json_loads,
+)
+from ..lib.executor_artifact import (
+    EXECUTOR_ANALYSIS_VERSION,
+    EXECUTOR_ANALYZE_ENTRY_POINT,
+    ExecutorArtifact,
 )
 
 PathLike = Union[str, "Path"]
@@ -33,7 +39,22 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ID_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$")
 _ALLOWED_POLICY_DIFFERENCES = frozenset({"script_hashes"})
 _PUBLICATION_FILENAMES = frozenset({"aggregate.json", "aggregate.csv", "paper-fragment.md"})
-_ROSTAM_ROOT = Path(__file__).resolve().parent.parent
+_ANALYSIS_SOURCE_EXACT = frozenset(
+    {
+        "__main__.py",
+        "experiments/__init__.py",
+        "experiments/rostam/__init__.py",
+        "experiments/rostam/analyze.py",
+        "experiments/rostam/evaluate_decision_gate.py",
+        "experiments/rostam/decision_gate_schedule.py",
+        "experiments/rostam/lib/__init__.py",
+        "experiments/rostam/lib/catalog.py",
+        "experiments/rostam/lib/executor_artifact.py",
+        "experiments/rostam/lib/executor_cli.py",
+        "experiments/rostam/lib/physical_results.py",
+        "experiments/rostam/lib/submission.py",
+    }
+)
 
 
 class CrossCommitCompatibilityError(ContractError):
@@ -93,36 +114,88 @@ def _string_array(value: Any, field: str, *, safe_ids: bool = False) -> Tuple[st
     return tuple(result)
 
 
-def analysis_implementation_record() -> Dict[str, Any]:
-    """Fingerprint every local analyzer, harness, CLI, and schema source byte."""
+def _analysis_source_member(path: str) -> bool:
+    return (
+        path in _ANALYSIS_SOURCE_EXACT
+        or path.startswith("experiments/rostam/analysis/")
+        or path.startswith("experiments/rostam/harness/")
+    )
 
-    candidates = [_ROSTAM_ROOT / "analyze.py"]
-    candidates.extend(sorted((_ROSTAM_ROOT / "analysis").glob("*.py")))
-    candidates.extend(sorted((_ROSTAM_ROOT / "harness").glob("*.py")))
-    candidates.extend(sorted((_ROSTAM_ROOT / "schemas").glob("*.json")))
+
+def _legacy_analysis_files() -> list[Dict[str, Any]]:
+    root = resources.files("experiments.rostam")
+    candidates = [
+        (name, root.joinpath(name)) for name in ("analyze.py", "evaluate_decision_gate.py", "decision_gate_schedule.py")
+    ]
+    for directory_name in ("analysis", "harness", "schemas"):
+        directory = root.joinpath(directory_name)
+        candidates.extend(
+            sorted(
+                (
+                    (f"{directory_name}/{child.name}", child)
+                    for child in directory.iterdir()
+                    if child.is_file() and child.name.endswith((".py", ".json"))
+                ),
+                key=lambda item: item[0],
+            )
+        )
     files = []
-    seen_paths = set()
-    for path in candidates:
-        if path.is_symlink() or not path.is_file():
-            raise CrossCommitCompatibilityError(f"analysis implementation file is missing or unsafe: {path}")
-        relative = path.relative_to(_ROSTAM_ROOT).as_posix()
-        if relative in seen_paths:
-            continue
-        seen_paths.add(relative)
+    for relative, candidate in candidates:
+        if not candidate.is_file():
+            raise CrossCommitCompatibilityError(f"analysis package resource is missing: {candidate.name}")
+        raw = candidate.read_bytes()
         files.append(
             {
                 "path": relative,
-                "sha256": file_sha256(path),
-                "size_bytes": path.stat().st_size,
+                "sha256": sha256_hex(raw),
+                "size_bytes": len(raw),
             }
         )
     files.sort(key=lambda item: cast(str, item["path"]))
-    if not files:
-        raise CrossCommitCompatibilityError("analysis implementation inventory is empty")
-    return {
-        "fingerprint": canonical_sha256({"files": files}),
-        "files": files,
-    }
+    return files
+
+
+def analysis_implementation_record(executor_artifact: Optional[ExecutorArtifact] = None) -> Dict[str, Any]:
+    """Fingerprint analyzer inputs from package resources or a verified executor inventory."""
+
+    if executor_artifact is None:
+        files = _legacy_analysis_files()
+        projection: Dict[str, Any] = {
+            "mode": "legacy-package-resources.v1",
+            "files": files,
+        }
+    else:
+        source_rows = [
+            {"path": path, "sha256": digest, "size_bytes": size}
+            for path, digest, size in executor_artifact.source_records
+            if _analysis_source_member(path)
+        ]
+        schema_rows = [
+            {"path": path, "sha256": digest, "size_bytes": size}
+            for path, digest, size in executor_artifact.schema_records
+        ]
+        files = sorted((*source_rows, *schema_rows), key=lambda item: cast(str, item["path"]))
+        required = {
+            "__main__.py",
+            "experiments/rostam/analyze.py",
+            "experiments/rostam/evaluate_decision_gate.py",
+            "experiments/rostam/decision_gate_schedule.py",
+            "experiments/rostam/analysis/pipeline.py",
+            "experiments/rostam/lib/executor_cli.py",
+        }
+        if not required <= {str(item["path"]) for item in files} or not schema_rows:
+            raise CrossCommitCompatibilityError("executor analysis member inventory is incomplete")
+        projection = {
+            "mode": "executor-inventory.v1",
+            "artifact_sha256": executor_artifact.sha256,
+            "artifact_size_bytes": executor_artifact.size_bytes,
+            "source_inventory_sha256": executor_artifact.source_inventory_sha256,
+            "schema_inventory_sha256": executor_artifact.schema_inventory_sha256,
+            "entry_point": EXECUTOR_ANALYZE_ENTRY_POINT,
+            "analysis_version": EXECUTOR_ANALYSIS_VERSION,
+            "files": files,
+        }
+    return {**projection, "fingerprint": canonical_sha256(projection)}
 
 
 @dataclass(frozen=True)
@@ -144,7 +217,12 @@ class CrossCommitCompatibility:
     allowed_input_ids: Tuple[str, ...]
 
     @classmethod
-    def from_mapping(cls, raw_value: Any) -> "CrossCommitCompatibility":
+    def from_mapping(
+        cls,
+        raw_value: Any,
+        *,
+        executor_artifact: Optional[ExecutorArtifact] = None,
+    ) -> "CrossCommitCompatibility":
         raw = _object(raw_value, "cross-commit compatibility contract")
         _strict(
             raw,
@@ -165,7 +243,46 @@ class CrossCommitCompatibility:
             raise CrossCommitCompatibilityError("cross-commit compatibility contract must have status='reviewed'")
 
         implementation = _object(raw["analysis_implementation"], "analysis_implementation")
-        _strict(implementation, "analysis_implementation", ("fingerprint", "files"))
+        mode = implementation.get("mode")
+        implementation_fields: Tuple[str, ...]
+        if mode == "legacy-package-resources.v1":
+            implementation_fields = ("mode", "fingerprint", "files")
+            if executor_artifact is not None:
+                raise CrossCommitCompatibilityError("legacy compatibility may not acquire an executor identity")
+        elif mode == "executor-inventory.v1":
+            implementation_fields = (
+                "mode",
+                "artifact_sha256",
+                "artifact_size_bytes",
+                "source_inventory_sha256",
+                "schema_inventory_sha256",
+                "entry_point",
+                "analysis_version",
+                "fingerprint",
+                "files",
+            )
+            _sha256(implementation.get("artifact_sha256"), "analysis_implementation.artifact_sha256")
+            _sha256(
+                implementation.get("source_inventory_sha256"),
+                "analysis_implementation.source_inventory_sha256",
+            )
+            _sha256(
+                implementation.get("schema_inventory_sha256"),
+                "analysis_implementation.schema_inventory_sha256",
+            )
+            size = implementation.get("artifact_size_bytes")
+            if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+                raise CrossCommitCompatibilityError("analysis implementation artifact size is invalid")
+            if (
+                implementation.get("entry_point") != EXECUTOR_ANALYZE_ENTRY_POINT
+                or implementation.get("analysis_version") != EXECUTOR_ANALYSIS_VERSION
+            ):
+                raise CrossCommitCompatibilityError("analysis implementation executor vocabulary is unsupported")
+            if executor_artifact is None:
+                raise CrossCommitCompatibilityError("executor compatibility requires its frozen executor artifact")
+        else:
+            raise CrossCommitCompatibilityError("analysis implementation mode is unsupported")
+        _strict(implementation, "analysis_implementation", implementation_fields)
         _sha256(implementation["fingerprint"], "analysis_implementation.fingerprint")
         files_raw = implementation["files"]
         if not isinstance(files_raw, list) or not files_raw:
@@ -185,7 +302,8 @@ class CrossCommitCompatibility:
             {item["path"] for item in files}
         ) != len(files):
             raise CrossCommitCompatibilityError("analysis implementation files must be sorted and unique")
-        if canonical_sha256({"files": files}) != implementation["fingerprint"]:
+        implementation_projection = {key: value for key, value in implementation.items() if key != "fingerprint"}
+        if canonical_sha256(implementation_projection) != implementation["fingerprint"]:
             raise CrossCommitCompatibilityError("analysis implementation fingerprint does not match its file inventory")
 
         campaigns_raw = raw["campaigns"]
@@ -311,12 +429,12 @@ class CrossCommitCompatibility:
             allowed_policy_fields=policy_fields,
             allowed_input_ids=input_ids,
         )
-        result.verify_current_implementation()
+        result.verify_current_implementation(executor_artifact)
         return result
 
-    def verify_current_implementation(self) -> None:
+    def verify_current_implementation(self, executor_artifact: Optional[ExecutorArtifact] = None) -> None:
         declared = _object(self.raw["analysis_implementation"], "analysis_implementation")
-        if analysis_implementation_record() != declared:
+        if analysis_implementation_record(executor_artifact) != declared:
             raise CrossCommitCompatibilityError(
                 "current analysis implementation does not match the reviewed compatibility contract"
             )
@@ -333,7 +451,11 @@ class CrossCommitCompatibility:
         }
 
 
-def load_cross_commit_compatibility(path_value: PathLike) -> CrossCommitCompatibility:
+def load_cross_commit_compatibility(
+    path_value: PathLike,
+    *,
+    executor_artifact: Optional[ExecutorArtifact] = None,
+) -> CrossCommitCompatibility:
     path = Path(path_value).expanduser()
     if path.is_symlink() or not path.is_file():
         raise CrossCommitCompatibilityError("cross-commit compatibility contract must be a real regular file")
@@ -346,7 +468,7 @@ def load_cross_commit_compatibility(path_value: PathLike) -> CrossCommitCompatib
         raw = strict_json_loads(raw_bytes, limits=_CONTRACT_LIMITS)
     except (OSError, UnicodeError, ContractError) as exc:
         raise CrossCommitCompatibilityError(f"cannot decode cross-commit compatibility contract: {exc}") from exc
-    contract = CrossCommitCompatibility.from_mapping(raw)
+    contract = CrossCommitCompatibility.from_mapping(raw, executor_artifact=executor_artifact)
     if raw_bytes != canonical_json_bytes(raw):
         raise CrossCommitCompatibilityError("cross-commit compatibility file must use canonical JSON bytes")
     return contract

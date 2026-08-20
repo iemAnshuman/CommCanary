@@ -7,6 +7,7 @@ import math
 import pkgutil
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 
@@ -14,8 +15,9 @@ from ..decision_gate_schedule import (
     REPLICATED_ORDER_METHOD,
     REPRESENTATION_IDS,
     representation_order,
+    warmup_representation_order,
 )
-from ..harness import CELL_RESULT_SCHEMA, ContractError, strict_json_loads
+from ..harness import CELL_RESULT_SCHEMA, ContractError, canonical_sha256, strict_json_loads
 
 LOCAL_PREPARE_MEASUREMENT_SCHEMA = "commcanary.experiment.local.prepare-measurement.v1"
 LOCAL_CONSUME_MEASUREMENT_SCHEMA = "commcanary.experiment.local.consume-measurement.v1"
@@ -129,6 +131,7 @@ _PHYSICAL_SPECIFIC_FIELDS = {
         "request",
     },
     PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2: {
+        "correctness",
         "correctness_check_count",
         "decision_claims",
         "execution",
@@ -136,6 +139,7 @@ _PHYSICAL_SPECIFIC_FIELDS = {
         "policy",
         "representations",
         "request",
+        "telemetry_checkpoints",
     },
 }
 _PARAM_REPLAY_MODES = {"timestamp-paced-blocking", "compute-filled-blocking"}
@@ -153,7 +157,20 @@ _DECISION_GATE_REPRESENTATION_CONTRACTS = {
 }
 _DECISION_GATE_REPLICATED_REPRESENTATION_CONTRACTS = {
     **_DECISION_GATE_REPRESENTATION_CONTRACTS,
-    "exact_work": ("positive_conformance_control", "verified-materialization-issue-rank-work-wait"),
+    "source": ("trace_derived_reference", "direct-source-issue-rank-work-wait"),
+    "exact_work": ("exact_materialization_control", "verified-materialization-issue-rank-work-wait"),
+}
+_DECISION_GATE_CYCLE_TELEMETRY_GPU_FIELDS = {
+    "index",
+    "uuid",
+    "performance_state",
+    "temperature_c",
+    "power_draw_w",
+    "sm_clock_mhz",
+    "memory_clock_mhz",
+    "throttle_reasons_active",
+    "ecc_corrected_volatile_total",
+    "ecc_uncorrected_volatile_total",
 }
 
 
@@ -252,6 +269,141 @@ def _strict_object(raw: Any, field: str, expected_fields: set[str]) -> Mapping[s
     return raw
 
 
+def _decision_gate_cycle_telemetry_attributes(
+    raw: Any,
+    *,
+    world_size: int,
+    iterations: int,
+) -> Dict[str, Any]:
+    field = "measurement.telemetry_checkpoints"
+    telemetry = _strict_object(raw, field, {"schema", "method", "snapshots"})
+    if (
+        telemetry["schema"] != "commcanary.rostam.decision-gate-cycle-telemetry.v1"
+        or telemetry["method"] != "bounded-between-six-row-cycles.v1"
+        or iterations % 6
+    ):
+        raise MeasurementValidationError(f"{field} contract is unsupported")
+    labels = [
+        "before_warmup",
+        "before_measured_cycle_1",
+        *(f"after_measured_cycle_{cycle}" for cycle in range(1, iterations // 6 + 1)),
+        "final",
+    ]
+    snapshots = telemetry["snapshots"]
+    if not isinstance(snapshots, list) or len(snapshots) != len(labels):
+        raise MeasurementValidationError(f"{field}.snapshots inventory is incomplete")
+    normalized: List[Dict[str, Any]] = []
+    timestamps: List[datetime] = []
+    expected_uuids: Optional[List[str]] = None
+    expected_node: Optional[str] = None
+    previous_ecc: Optional[List[Tuple[int, int]]] = None
+    previous_xid: Optional[int] = None
+    for snapshot_index, (raw_snapshot, label) in enumerate(zip(snapshots, labels)):
+        snapshot_field = f"{field}.snapshots[{snapshot_index}]"
+        snapshot = _strict_object(
+            raw_snapshot,
+            snapshot_field,
+            {"label", "captured_at", "gpus", "node_state", "xid"},
+        )
+        captured_at = snapshot["captured_at"]
+        if snapshot["label"] != label or not isinstance(captured_at, str):
+            raise MeasurementValidationError(f"{snapshot_field} identity is invalid")
+        try:
+            timestamps.append(datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
+        except ValueError as exc:
+            raise MeasurementValidationError(f"{snapshot_field}.captured_at is invalid") from exc
+        raw_gpus = snapshot["gpus"]
+        if not isinstance(raw_gpus, list) or len(raw_gpus) != world_size:
+            raise MeasurementValidationError(f"{snapshot_field}.gpus does not cover the launched world")
+        uuids: List[str] = []
+        ecc: List[Tuple[int, int]] = []
+        for gpu_index, raw_gpu in enumerate(raw_gpus):
+            gpu_field = f"{snapshot_field}.gpus[{gpu_index}]"
+            gpu = _strict_object(raw_gpu, gpu_field, _DECISION_GATE_CYCLE_TELEMETRY_GPU_FIELDS)
+            uuid = gpu["uuid"]
+            performance_state = gpu["performance_state"]
+            temperature = gpu["temperature_c"]
+            throttle = gpu["throttle_reasons_active"]
+            integers = (
+                gpu["sm_clock_mhz"],
+                gpu["memory_clock_mhz"],
+                gpu["ecc_corrected_volatile_total"],
+                gpu["ecc_uncorrected_volatile_total"],
+            )
+            if (
+                gpu["index"] != gpu_index
+                or not isinstance(uuid, str)
+                or not uuid
+                or not isinstance(performance_state, str)
+                or not performance_state
+                or isinstance(temperature, bool)
+                or not isinstance(temperature, int)
+                or not -50 <= temperature <= 200
+                or not isinstance(throttle, str)
+                or re.fullmatch(r"0x[0-9a-f]{16}", throttle) is None
+                or any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in integers)
+            ):
+                raise MeasurementValidationError(f"{gpu_field} is invalid")
+            _finite_number(gpu["power_draw_w"], f"{gpu_field}.power_draw_w")
+            uuids.append(uuid)
+            ecc.append((int(integers[2]), int(integers[3])))
+        if expected_uuids is None:
+            expected_uuids = uuids
+        elif uuids != expected_uuids:
+            raise MeasurementValidationError(f"{snapshot_field}.gpus changed UUID order")
+        if previous_ecc is not None and any(
+            corrected < old_corrected or uncorrected < old_uncorrected
+            for (corrected, uncorrected), (old_corrected, old_uncorrected) in zip(ecc, previous_ecc)
+        ):
+            raise MeasurementValidationError(f"{snapshot_field}.gpus ECC counters regressed")
+        previous_ecc = ecc
+
+        node_state = _strict_object(snapshot["node_state"], f"{snapshot_field}.node_state", {"method", "node", "state"})
+        node = node_state["node"]
+        if (
+            node_state["method"] != "scontrol show node --oneliner HOSTNAME"
+            or not isinstance(node, str)
+            or not node
+            or not isinstance(node_state["state"], str)
+            or not node_state["state"]
+        ):
+            raise MeasurementValidationError(f"{snapshot_field}.node_state is invalid")
+        if expected_node is None:
+            expected_node = node
+        elif node != expected_node:
+            raise MeasurementValidationError(f"{snapshot_field}.node_state changed node")
+
+        xid = _strict_object(snapshot["xid"], f"{snapshot_field}.xid", {"method", "event_count", "window_sha256"})
+        xid_count = xid["event_count"]
+        if (
+            xid["method"] != "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid"
+            or isinstance(xid_count, bool)
+            or not isinstance(xid_count, int)
+            or xid_count < 0
+            or not isinstance(xid["window_sha256"], str)
+            or _SHA256_RE.fullmatch(xid["window_sha256"]) is None
+        ):
+            raise MeasurementValidationError(f"{snapshot_field}.xid is invalid")
+        if previous_xid is not None and xid_count < previous_xid:
+            raise MeasurementValidationError(f"{snapshot_field}.xid event counter regressed")
+        previous_xid = xid_count
+        normalized.append(
+            {
+                **dict(snapshot),
+                "gpus": [dict(gpu) for gpu in raw_gpus],
+                "node_state": dict(node_state),
+                "xid": dict(xid),
+            }
+        )
+    if any(second <= first for first, second in zip(timestamps, timestamps[1:])):
+        raise MeasurementValidationError(f"{field}.snapshots timestamps are not strictly ordered")
+    return {
+        "schema": telemetry["schema"],
+        "method": telemetry["method"],
+        "snapshots": normalized,
+    }
+
+
 def _decision_gate_attributes(
     raw: Mapping[str, Any],
     *,
@@ -296,7 +448,13 @@ def _decision_gate_attributes(
         "world_size",
     }
     if replicated:
-        execution_fields.add("configuration_repetition")
+        execution_fields.update(
+            {
+                "configuration_repetition",
+                "representation_order_by_warmup",
+                "representation_schedule_sha256",
+            }
+        )
     execution = _strict_object(raw["execution"], "measurement.execution", execution_fields)
     iterations = execution["iterations"]
     warmup = execution["warmup"]
@@ -347,10 +505,87 @@ def _decision_gate_attributes(
         )
         if order != expected:
             raise MeasurementValidationError(f"decision-gate representation order is invalid at iteration {iteration}")
+    if replicated:
+        validated_repetition = cast(int, configuration_repetition)
+        warmup_orders = execution["representation_order_by_warmup"]
+        expected_warmup_orders = [
+            list(
+                warmup_representation_order(
+                    index,
+                    configuration_repetition=validated_repetition,
+                )
+            )
+            for index in range(warmup)
+        ]
+        if warmup_orders != expected_warmup_orders:
+            raise MeasurementValidationError("decision-gate warmup representation order is invalid")
+        expected_schedule_sha256 = canonical_sha256(
+            {
+                "warmup": expected_warmup_orders,
+                "measured": orders,
+            }
+        )
+        if execution["representation_schedule_sha256"] != expected_schedule_sha256:
+            raise MeasurementValidationError("decision-gate representation schedule digest is invalid")
+        normalized_telemetry: Optional[Dict[str, Any]] = _decision_gate_cycle_telemetry_attributes(
+            raw["telemetry_checkpoints"],
+            world_size=world_size,
+            iterations=iterations,
+        )
+    else:
+        normalized_telemetry = None
 
     check_count = raw["correctness_check_count"]
     if isinstance(check_count, bool) or not isinstance(check_count, int) or check_count <= 0:
         raise MeasurementValidationError("decision-gate correctness_check_count must be positive")
+    normalized_correctness: Optional[Dict[str, Any]] = None
+    if replicated:
+        correctness = _strict_object(
+            raw["correctness"],
+            "measurement.correctness",
+            {
+                "status",
+                "semantics",
+                "checks_per_rank",
+                "total_check_count",
+                "source_output_commitment_sha256_by_rank",
+                "exact_work_output_commitment_sha256_by_rank",
+                "backend_smoke_check",
+            },
+        )
+        checks_per_rank = correctness["checks_per_rank"]
+        source_commitments = correctness["source_output_commitment_sha256_by_rank"]
+        exact_commitments = correctness["exact_work_output_commitment_sha256_by_rank"]
+        if (
+            correctness["status"] != "passed"
+            or correctness["semantics"] != "complete-source-and-exact-work-output-commitment-comparison"
+            or not isinstance(checks_per_rank, list)
+            or len(checks_per_rank) != world_size
+            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in checks_per_rank)
+            or correctness["total_check_count"] != sum(checks_per_rank)
+            or correctness["total_check_count"] != check_count
+            or not isinstance(source_commitments, list)
+            or source_commitments != exact_commitments
+            or len(source_commitments) != world_size
+            or any(not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None for value in source_commitments)
+        ):
+            raise MeasurementValidationError("decision-gate representation correctness evidence is invalid")
+        backend = _strict_object(
+            correctness["backend_smoke_check"],
+            "measurement.correctness.backend_smoke_check",
+            {"status", "semantics", "checks_per_rank", "total_check_count"},
+        )
+        backend_checks = backend["checks_per_rank"]
+        if (
+            backend["status"] != "passed"
+            or backend["semantics"] != "one-blocking-sum-check-per-collective-shape"
+            or not isinstance(backend_checks, list)
+            or len(backend_checks) != world_size
+            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in backend_checks)
+            or backend["total_check_count"] != sum(backend_checks)
+        ):
+            raise MeasurementValidationError("decision-gate backend smoke evidence is invalid")
+        normalized_correctness = dict(correctness)
     representations = _strict_object(
         raw["representations"],
         "measurement.representations",
@@ -434,7 +669,7 @@ def _decision_gate_attributes(
     }
     if dict(claims) != expected_claims:
         raise MeasurementValidationError("decision-gate claims exceed the pre-analysis boundary")
-    return {
+    result = {
         "request": dict(request),
         "materialization": dict(materialization),
         "policy": dict(policy),
@@ -443,6 +678,11 @@ def _decision_gate_attributes(
         "representations": normalized_representations,
         "decision_claims": expected_claims,
     }
+    if normalized_correctness is not None:
+        result["correctness"] = normalized_correctness
+    if normalized_telemetry is not None:
+        result["telemetry_checkpoints"] = normalized_telemetry
+    return result
 
 
 def _physical_measurement(

@@ -401,10 +401,10 @@ def test_catalog_is_strict_declarative_and_manifest_ready() -> None:
     assert replicated_workload.measurement_schema.endswith("decision-gate-measurement.v2")
     assert replicated_parameters["configuration_repetitions"] == 8
     assert replicated_parameters["iterations"] == 24
-    assert replicated_parameters["readiness"] == "blocked-content-addressed-runtime-image"
+    assert replicated_parameters["readiness"] == "retired-identical-instruction-path-no-product-evidence"
     assert replicated_command[replicated_command.index("--configuration-repetition") + 1] == "{repetition}"
     assert replicated_parameters["decision_fidelity_policy_id"] == (
-        "9b9e85be6717edbf7b1dd104d8bb15d4086c65492693115f36ec86d55847d8ac"
+        "2bed33369b944cf45c68c02c1a2b924ae2b37cd305f6d5388e1497eebec71162"
     )
 
     raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
@@ -1029,7 +1029,7 @@ def test_replicated_decision_gate_profile_refuses_unbound_runtime_image(tmp_path
         else:
             path.write_bytes(b"reviewed-replicated-decision-input")
         inputs[input_id] = path
-    with pytest.raises(CampaignPreparationError, match="blocked-content-addressed-runtime-image"):
+    with pytest.raises(CampaignPreparationError, match="retired-identical-instruction-path-no-product-evidence"):
         build_campaign(
             catalog=load_catalog(CATALOG_PATH),
             catalog_path=CATALOG_PATH,
@@ -1042,6 +1042,43 @@ def test_replicated_decision_gate_profile_refuses_unbound_runtime_image(tmp_path
             source_archive_sha256="2" * 64,
             inputs=inputs,
         )
+
+
+def test_replicated_submission_order_uses_the_frozen_configuration_schedule() -> None:
+    policy = json.loads(
+        (EXPERIMENT_DIRECTORY / "policies" / "decision-fidelity-gate-v2.json").read_text(encoding="utf-8")
+    )
+    configurations = policy["scope"]["configuration_ids"]
+    schedule = policy["measurement"]["configuration_order_by_repetition"]
+    cells = [
+        SimpleNamespace(
+            id=f"cell-{repetition}-{configuration}",
+            configuration_id=configuration,
+            workload_id="decision-gate-exact-replicated",
+            repetition=repetition,
+        )
+        for repetition in range(8)
+        for configuration in configurations
+    ]
+    manifest = SimpleNamespace(
+        cells=cells,
+        campaign=SimpleNamespace(
+            configurations=[SimpleNamespace(id=configuration) for configuration in configurations],
+            workloads=[SimpleNamespace(id="decision-gate-exact-replicated", depends_on=())],
+            repetitions=8,
+            policy=SimpleNamespace(to_value=lambda: policy["measurement"]),
+        ),
+    )
+
+    ordered = submission_module._ordered_cells(manifest)
+
+    for repetition in range(8):
+        row = ordered[repetition * 8 : (repetition + 1) * 8]
+        assert [cell.configuration_id for cell in row] == schedule[repetition]
+    assert all(
+        sorted(schedule[repetition][position] for repetition in range(8)) == sorted(configurations)
+        for position in range(8)
+    )
 
 
 def test_replicated_decision_gate_profile_refuses_wrong_repetition_count(tmp_path: Path) -> None:
@@ -1356,7 +1393,8 @@ def test_design_marks_historical_evidence_and_the_exact_precluster_boundary() ->
     assert "experiments/rostam/results/" in text
     assert "older narrative measurements lacked a complete" in text
     assert "They do not retroactively turn the\nolder reports into reproducible evidence" in text
-    assert "has not run and adds no\n> physical evidence" in text
+    assert "versioned replicated-campaign design exists but is retired" in text
+    assert "add environmental-noise measurements rather than product evidence" in text
     assert "Pre-cluster handoff: deliberately unresolved evidence" in text
     assert "pending-rostam-resolution" in text
     assert "PARAM patch evidence is reviewed locally" in text

@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.public_claims.v1.schema.json",
+  "title": "CommCanary public claims registry v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "product_status",
+    "allowed",
+    "qualified_only_after_evidence",
+    "forbidden"
+  ],
+  "properties": {
+    "schema": {
+      "const": "commcanary.public_claims.v1"
+    },
+    "product_status": {
+      "const": "research_alpha"
+    },
+    "allowed": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/allowedClaim"
+      }
+    },
+    "qualified_only_after_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/qualifiedClaim"
+      }
+    },
+    "forbidden": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/forbiddenClaim"
+      }
+    }
+  },
+  "$defs": {
+    "claimId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "allowedClaim": {
+      "type": "object",
+      "required": ["id", "status", "qualification", "evidence"],
+      "properties": {
+        "id": {"$ref": "#/$defs/claimId"},
+        "status": {"enum": ["implemented_and_tested", "measured"]},
+        "qualification": {
+          "enum": ["local_verified", "physically_observed_on_rostam"]
+        },
+        "evidence": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "qualifiedClaim": {
+      "type": "object",
+      "required": ["id", "status", "evidence_required"],
+      "properties": {
+        "id": {"$ref": "#/$defs/claimId"},
+        "status": {"enum": ["unproven", "unmeasured", "not_validated"]},
+        "evidence_required": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "forbiddenClaim": {
+      "type": "object",
+      "required": ["id", "status", "reason"],
+      "properties": {
+        "id": {"$ref": "#/$defs/claimId"},
+        "status": {"const": "forbidden"},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -9,8 +9,21 @@ from __future__ import annotations
 
 import pytest
 
+import commcanary.adapters.capture as capture_module
 from commcanary.capture import TraceRecorder
 from commcanary.schema import SchemaError
+
+
+def _recipe() -> dict:
+    return {
+        "op": "gemm",
+        "dtype": "bfloat16",
+        "m": 16,
+        "n": 16,
+        "k": 16,
+        "source_kernel_count": 1,
+        "source_kernel_duration_us": 1.0,
+    }
 
 
 def _recorder(tmp_path) -> TraceRecorder:
@@ -175,3 +188,116 @@ def test_full_optional_metadata_is_recorded_with_partial_rank_arrival_flagged(tm
     assert event["message_sequence"] == 3
     assert event["rank_arrival_us"] == {"0": 0.0}
     assert event["partial_rank_arrival"] is True
+
+
+def test_reduction_op_and_compute_recipe_are_preserved(tmp_path) -> None:
+    recorder = _recorder(tmp_path)
+    recorder.record_collective(
+        op="all_reduce",
+        bytes=16,
+        ranks=[0, 1],
+        dtype="bfloat16",
+        reduction_op="sum",
+        compute_recipe=[_recipe()],
+    )
+    event = recorder.events[0]
+    assert event["reduction_op"] == "sum"
+    assert event["compute_recipe"] == [_recipe()]
+
+
+def test_compute_recipe_by_rank_is_preserved(tmp_path) -> None:
+    recorder = _recorder(tmp_path)
+    recorder.record_collective(
+        op="all_reduce",
+        bytes=16,
+        ranks=[0, 1],
+        dtype="bfloat16",
+        reduction_op="sum",
+        compute_recipe_by_rank={"0": [_recipe()], "1": [_recipe()]},
+    )
+    event = recorder.events[0]
+    assert event["reduction_op"] == "sum"
+    assert event["compute_recipe_by_rank"] == {"0": [_recipe()], "1": [_recipe()]}
+    assert "compute_recipe" not in event
+
+
+def test_compute_recipe_snapshot_is_isolated_from_caller_mutation(tmp_path) -> None:
+    recorder = _recorder(tmp_path)
+    recipe = _recipe()
+    by_rank = {"0": [_recipe()], "1": [_recipe()]}
+    recorder.record_collective(
+        op="all_reduce",
+        bytes=16,
+        ranks=[0, 1],
+        reduction_op="sum",
+        compute_recipe=[recipe],
+    )
+    recorder.record_collective(
+        op="all_reduce",
+        bytes=16,
+        ranks=[0, 1],
+        reduction_op="sum",
+        compute_recipe_by_rank=by_rank,
+    )
+    recipe["m"] = 999
+    by_rank["0"][0]["n"] = 999
+
+    assert recorder.events[0]["compute_recipe"][0]["m"] == 16
+    assert recorder.events[1]["compute_recipe_by_rank"]["0"][0]["n"] == 16
+
+
+def test_compute_recipe_forms_are_mutually_exclusive(tmp_path) -> None:
+    recorder = _recorder(tmp_path)
+    with pytest.raises(SchemaError, match="mutually exclusive"):
+        recorder.record_collective(
+            op="all_reduce",
+            bytes=16,
+            ranks=[0, 1],
+            reduction_op="sum",
+            compute_recipe=[_recipe()],
+            compute_recipe_by_rank={"0": [_recipe()], "1": [_recipe()]},
+        )
+    assert recorder.events == []
+
+
+@pytest.mark.parametrize(
+    ("op", "reduction_op", "message"),
+    [
+        ("all_reduce", "xor", "reduction_op must be one of"),
+        ("broadcast", "sum", "reduction_op is only valid for reduction collectives"),
+    ],
+)
+def test_invalid_reduction_metadata_is_rejected(tmp_path, op, reduction_op, message) -> None:
+    recorder = _recorder(tmp_path)
+    with pytest.raises(SchemaError, match=message):
+        recorder.record_collective(op=op, bytes=16, ranks=[0, 1], reduction_op=reduction_op)
+    assert recorder.events == []
+
+
+def test_compute_recipe_requires_an_array(tmp_path) -> None:
+    recorder = _recorder(tmp_path)
+    with pytest.raises(SchemaError, match="compute_recipe must be an array"):
+        recorder.record_collective(
+            op="all_reduce",
+            bytes=16,
+            ranks=[0, 1],
+            reduction_op="sum",
+            compute_recipe=_recipe(),
+        )
+    assert recorder.events == []
+
+
+def test_module_level_record_collective_forwards_physical_fields(tmp_path, monkeypatch) -> None:
+    recorder = _recorder(tmp_path)
+    monkeypatch.setattr(capture_module, "get_recorder", lambda: recorder)
+    capture_module.record_collective(
+        op="all_reduce",
+        byte_count=16,
+        ranks=[0, 1],
+        dtype="bfloat16",
+        reduction_op="sum",
+        compute_recipe=[_recipe()],
+    )
+    event = recorder.events[0]
+    assert event["reduction_op"] == "sum"
+    assert event["compute_recipe"] == [_recipe()]

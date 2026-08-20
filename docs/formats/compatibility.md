@@ -26,6 +26,18 @@ matrix together with `commcanary.canonical-json.v1` and the replay model.
 | Qualification policy | `commcanary.qualification_policy.v1` | `commcanary.qualification_policy.v1.schema.json` | Yes | Yes | `validate_qualification_policy` | None |
 | Qualification observation | `commcanary.qualification_observation.v1` | `commcanary.qualification_observation.v1.schema.json` | Yes | Yes | `validate_qualification_observation` | None |
 | Qualification verdict | `commcanary.qualification_verdict.v1` | `commcanary.qualification_verdict.v1.schema.json` | Yes | Yes | `validate_qualification_verdict` plus `evaluate_qualification_observations` | None |
+| Chakra projection | `commcanary.chakra_projection.v1` | `commcanary.chakra_projection.v1.schema.json` | No standalone producer | Yes | `validate_chakra_projection` against exact ET bytes | None |
+| Physical canary policy | `commcanary.physical_canary_policy.v1` | `commcanary.physical_canary_policy.v1.schema.json` | No standalone producer | Yes | `validate_physical_canary_policy` | None |
+| Physical oracle corpus | `commcanary.physical_oracle_corpus.v1` | `commcanary.physical_oracle_corpus.v1.schema.json` | No standalone producer | Yes | `validate_physical_oracle_corpus` against the exact Chakra trace, projection, and policy | None |
+| Physical decision canary | `physical_decision_canary.v1` | `physical_decision_canary.v1.schema.json` | Yes | Yes | directory-level `verify_physical_canary_bundle` | None |
+| Physical gate observation | `commcanary.physical_gate_observation.v1` | `commcanary.physical_gate_observation.v1.schema.json` | No standalone producer | Yes | `validate_physical_gate_observation` against policy | None |
+| Physical gate result | `commcanary.physical_gate_result.v1` | `commcanary.physical_gate_result.v1.schema.json` | Yes | Yes | `validate_physical_gate_result` plus `evaluate_physical_gate` | None |
+| Physical execution measurement | `commcanary.physical_execution_measurement.v1` | `commcanary.physical_execution_measurement.v1.schema.json` | Yes | Yes | `validate_physical_execution_measurement` | None |
+| Physical execution evidence set | `commcanary.physical_execution_evidence_set.v1` | `commcanary.physical_execution_evidence_set.v1.schema.json` | Yes | Yes | `validate_physical_execution_evidence_set` | None |
+| Application measurement | `commcanary.application_measurement.v1` | `commcanary.application_measurement.v1.schema.json` | Yes | Yes | `validate_application_measurement` | None |
+| Application oracle | `commcanary.application_oracle.v1` | `commcanary.application_oracle.v1.schema.json` | Yes | Yes | `validate_application_oracle` | None |
+| Application evidence set | `commcanary.application_evidence_set.v1` | `commcanary.application_evidence_set.v1.schema.json` | Yes | Yes | `validate_application_evidence_set` | None |
+| Active physical study ledger | `commcanary.active_physical_study_ledger.v1` | `commcanary.active_physical_study_ledger.v1.schema.json` | Yes | Yes | `validate_active_physical_study_ledger` | None |
 
 Behavior search additionally emits the explicitly experimental
 `commcanary.behavior_search_evidence.experimental.v1` sidecar. It is omitted
@@ -65,6 +77,17 @@ declared format. The runtime layer remains authoritative for semantic checks.
 | Qualification policy | canonical policy ID, mandatory sample and warmup counts, absolute/relative acceptance boundary, deterministic bootstrap method/seed/count/confidence, explicit noise and environment comparability limits, and fixed four-state handling for incomplete, unstable, incompatible, and incorrect observations |
 | Qualification observation | canonical observation ID, request/materialization/policy bindings, role and metric semantics, environment identity, raw positive samples, warmup/discard/correctness counts, and an unsigned raw-observation claim boundary |
 | Qualification verdict | canonical verdict ID, exact policy and observation bindings, closed reason-code vocabulary, recomputable medians/difference/threshold/noise/confidence interval, and exactly one of pass/fail/inconclusive/incomparable |
+| Chakra projection | exact source ET identity/version, complete source-order node coverage, Chakra node-type agreement, narrow operation support, dependency-closed regions, recomputed feature/disclosure summaries, and explicit opaque-attribute review |
+| Physical canary policy | canonical policy ID, narrow domain, runtime and severe-regression boundaries, required feature/baseline vocabulary, false-negative/false-positive/agreement/reduction gates, deployment metric directions, and privacy ceiling |
+| Physical oracle corpus | canonical corpus ID; exact source/projection/policy, runner, baseline/candidate subject, environment, evidence, and executable commitments; actual-application ground-truth label; training/holdout split; severe-boundary derivation; complete candidate observations; measured/synthetic distinction; and reduced-candidate executable/work recomputation |
+| Physical execution measurement | canonical identity, runner/source/projection/executable bindings, full-rank correctness, sample-derived runtime and peak memory, environment identity, cycle telemetry, and comparability assessment |
+| Physical execution evidence set | canonical identity, runner consistency, recomputed candidate IDs, canonical ordering, and unique candidate/subject measurements |
+| Application measurement and oracle | canonical identity, exact subject/workload, sample-derived summaries, environment and telemetry commitments, position balance, allocation/day policy, and comparability assessment |
+| Application evidence set | canonical identity, exact training/holdout inventory, one runner/workload/baseline subject, globally unique perturbations, and comparable evidence |
+| Active physical study ledger | canonical selection-before-holdout boundary, exact request ordering and identities, corpus and evidence-set bindings, and final training/holdout statistics |
+| Physical decision canary | closed regular-file inventory, exact artifact hashes and sizes, complete source-assisted regeneration, dependency-closed Chakra output, raw application/physical evidence recomputation in audit modes, selection/ledger/certificate/leakage identities, and Ed25519 private-exchange verification |
+| Physical gate observation | exact bundle, subject, environment, runner, executable, and evidence commitments; baseline/candidate role; exact policy-metric coverage; non-empty finite non-negative sample arrays; and total sample budget |
+| Physical gate result | bundle, subject, environment, runner, executable, and evidence commitments; closed outcome vocabulary; mandatory-failure precedence; environment incomparability; per-metric median/regression derivation; and sorted issue inventory |
 
 This boundary is executable in `tests/contracts/test_json_schemas.py`:
 

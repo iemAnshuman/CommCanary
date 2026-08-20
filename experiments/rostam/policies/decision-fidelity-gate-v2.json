@@ -1,6 +1,6 @@
 {
   "schema": "commcanary.rostam.decision-fidelity-policy.v2",
-  "policy_id": "9b9e85be6717edbf7b1dd104d8bb15d4086c65492693115f36ec86d55847d8ac",
+  "policy_id": "2bed33369b944cf45c68c02c1a2b924ae2b37cd305f6d5388e1497eebec71162",
   "scope": {
     "workload_id": "decision-gate-exact-replicated",
     "supported_domain": "single-node-four-A100-single-inflight-all-reduce-regions-with-explicit-waits-and-source-observed-contiguous-gemm",
@@ -15,8 +15,8 @@
       "nccl-2.20.5-tree-simple"
     ],
     "representations": {
-      "source": "ground_truth",
-      "exact_work": "positive_conformance_control",
+      "source": "trace_derived_reference",
+      "exact_work": "exact_materialization_control",
       "stratified": "sampling_baseline",
       "isolated": "incumbent_baseline",
       "no_overlap": "causal_ablation",
@@ -24,10 +24,23 @@
     }
   },
   "measurement": {
-    "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-repetition",
+    "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-cell",
     "configuration_repetitions": 8,
     "cross_configuration_pairing": "none-independent-scheduler-allocations",
-    "order_method": "configuration-repetition-williams-design.v3",
+    "configuration_order_method": "eight-configuration-williams-design.v1",
+    "configuration_order_by_repetition": [
+      ["nccl-2.19.3-default", "nccl-2.20.5-default", "nccl-2.20.5-tree-simple", "nccl-2.20.5-ring-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-tree-ll", "nccl-2.20.5-ring-simple"],
+      ["nccl-2.20.5-default", "nccl-2.20.5-ring-ll", "nccl-2.19.3-default", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-tree-simple", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-ll"],
+      ["nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-default", "nccl-2.20.5-ring-simple", "nccl-2.19.3-default", "nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-simple", "nccl-2.20.5-tree-ll128"],
+      ["nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-ring-ll", "nccl-2.20.5-tree-ll", "nccl-2.20.5-default", "nccl-2.20.5-tree-ll128", "nccl-2.19.3-default", "nccl-2.20.5-tree-simple"],
+      ["nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-ll", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-ring-ll", "nccl-2.20.5-tree-simple", "nccl-2.20.5-default", "nccl-2.19.3-default"],
+      ["nccl-2.20.5-tree-ll", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-ring-simple", "nccl-2.20.5-tree-simple", "nccl-2.20.5-ring-ll128", "nccl-2.19.3-default", "nccl-2.20.5-ring-ll", "nccl-2.20.5-default"],
+      ["nccl-2.20.5-tree-ll128", "nccl-2.20.5-tree-simple", "nccl-2.20.5-tree-ll", "nccl-2.19.3-default", "nccl-2.20.5-ring-simple", "nccl-2.20.5-default", "nccl-2.20.5-ring-ll128", "nccl-2.20.5-ring-ll"],
+      ["nccl-2.20.5-tree-simple", "nccl-2.19.3-default", "nccl-2.20.5-tree-ll128", "nccl-2.20.5-default", "nccl-2.20.5-tree-ll", "nccl-2.20.5-ring-ll", "nccl-2.20.5-ring-simple", "nccl-2.20.5-ring-ll128"]
+    ],
+    "maximum_repetition_span_seconds": 3600,
+    "required_scheduler_evidence": ["planned_position", "scheduler_start_time", "node", "elapsed_from_repetition_start_seconds", "chunk_identifier"],
+    "order_method": "configuration-repetition-frozen-global-carryover-design.v4",
     "representation_schedule": {
       "rows": [
         ["source", "exact_work", "no_rank_skew", "stratified", "no_overlap", "isolated"],
@@ -38,28 +51,46 @@
         ["no_rank_skew", "source", "no_overlap", "exact_work", "isolated", "stratified"]
       ],
       "row_index_by_configuration_repetition": [
-        [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
-        [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0],
-        [2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1],
-        [3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2],
-        [4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3],
-        [5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4],
-        [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
-        [1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0]
+        [0, 1, 2, 3, 4, 5, 0, 2, 1, 3, 5, 4, 2, 0, 4, 3, 1, 5, 1, 0, 5, 3, 2, 4],
+        [1, 2, 3, 4, 5, 0, 1, 3, 2, 4, 0, 5, 3, 1, 5, 4, 2, 0, 2, 1, 0, 4, 3, 5],
+        [2, 3, 4, 5, 0, 1, 2, 4, 3, 5, 1, 0, 4, 2, 0, 5, 3, 1, 3, 2, 1, 5, 4, 0],
+        [3, 4, 5, 0, 1, 2, 3, 5, 4, 0, 2, 1, 5, 3, 1, 0, 4, 2, 4, 3, 2, 0, 5, 1],
+        [4, 5, 0, 1, 2, 3, 4, 0, 5, 1, 3, 2, 0, 4, 2, 1, 5, 3, 5, 4, 3, 1, 0, 2],
+        [5, 0, 1, 2, 3, 4, 5, 1, 0, 2, 4, 3, 1, 5, 3, 2, 0, 4, 0, 5, 4, 2, 1, 3],
+        [0, 1, 2, 3, 4, 5, 0, 2, 1, 3, 5, 4, 2, 0, 4, 3, 1, 5, 1, 0, 5, 3, 2, 4],
+        [1, 2, 3, 4, 5, 0, 1, 3, 2, 4, 0, 5, 3, 1, 5, 4, 2, 0, 2, 1, 0, 4, 3, 5]
+      ],
+      "warmup_row_index_by_configuration_repetition": [
+        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0],
+        [2, 3, 4, 5, 0, 1],
+        [3, 4, 5, 0, 1, 2],
+        [4, 5, 0, 1, 2, 3],
+        [5, 0, 1, 2, 3, 4],
+        [0, 1, 2, 3, 4, 5],
+        [1, 2, 3, 4, 5, 0]
       ]
     },
     "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
-    "warmup": 5,
+    "warmup": 6,
     "measured_repetitions": 24,
     "required_correctness": "passed",
     "environment_comparability": {
+      "allowed_node_states": ["ALLOCATED"],
+      "allowed_performance_states": ["P0", "P2", "P8"],
+      "allowed_throttle_reasons_active": ["0x0000000000000000"],
       "require_identical_platform_fingerprint": true,
       "minimum_temperature_c": -20,
       "maximum_temperature_c": 95,
       "maximum_pre_post_temperature_delta_c": 30,
       "maximum_power_draw_to_limit_ratio": 1.1,
+      "minimum_sm_clock_mhz": 210,
       "maximum_sm_clock_mhz": 3000,
-      "maximum_memory_clock_mhz": 5000
+      "minimum_memory_clock_mhz": 1215,
+      "maximum_memory_clock_mhz": 5000,
+      "maximum_ecc_corrected_delta": 0,
+      "maximum_ecc_uncorrected_delta": 0,
+      "maximum_xid_event_delta": 0
     },
     "max_relative_iqr_pct": 20.0,
     "require_distinct_job_ids": true,
@@ -70,6 +101,7 @@
       "gpu_power_limit",
       "gpu_topology",
       "nccl_library_digest",
+      "between_cycle_gpu_node_xid_ecc_telemetry",
       "pre_post_gpu_telemetry",
       "pre_post_node_state"
     ],
@@ -123,11 +155,12 @@
     "inconclusive": "simultaneous uncertainty crosses one or more required decision boundaries",
     "incomparable": "allocation inventory, identity, correctness, or execution requirements are violated"
   },
+  "outcome_precedence": ["incomparable", "fail", "inconclusive", "pass"],
   "claim_boundary": {
-    "mode": "exact_qualification_capsule",
-    "exact_work_claim": "portable_reconstruction_positive_control",
+    "mode": "exact_materialization_conformance_control",
+    "exact_work_claim": "identical_compiled_instruction_path_measurement_floor",
     "reduced_canary_claim": "not_evaluated",
-    "cost_claim": "not_evaluated_by_exact_work_control",
+    "cost_claim": "not_evaluated_by_exact_materialization_control",
     "generality_claim": "not_evaluated_beyond_the_declared_supported_domain",
     "independent_operator_claim": "not_evaluated_by_this_campaign"
   }

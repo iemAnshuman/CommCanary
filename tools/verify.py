@@ -74,12 +74,14 @@ RELEASE_ROOT_FILES = (
     "NOTICE",
     "MANIFEST.in",
     "README.md",
+    "RESEARCH_HISTORY.md",
     "RESEARCH_SPEC.md",
     "SECURITY.md",
     "pyproject.toml",
 )
 RELEASE_SOURCE_DIRS = (
     "benchmarks",
+    "claims",
     "docs",
     "examples",
     "experiments",

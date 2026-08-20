@@ -81,6 +81,15 @@ class BoundedJsonLoaderTests(unittest.TestCase):
             ResourceLimits(max_execution_timeout_seconds=0)
         with self.assertRaisesRegex(ValueError, "max_behavior_configurations must be at least 2"):
             ResourceLimits(max_behavior_configurations=1)
+        for field in (
+            "max_chakra_messages",
+            "max_chakra_message_bytes",
+            "max_physical_regions",
+            "max_physical_perturbations",
+            "max_physical_candidate_evaluations",
+        ):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                ResourceLimits(**{field: 0})
 
     def test_circular_references_are_rejected_without_recursion(self) -> None:
         circular_mapping: dict = {"payload": {}}

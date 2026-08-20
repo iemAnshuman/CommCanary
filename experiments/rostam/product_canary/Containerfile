@@ -1,0 +1,11 @@
+FROM docker.io/vllm/vllm-openai@sha256:770fe65b2c73ee74a5c42165cf3433de4048cc2cd9c57a937ca4e35aba5aa87b
+
+LABEL org.opencontainers.image.title="CommCanary physical runner" \
+      org.opencontainers.image.description="Digest-bound vLLM application oracle and Chakra physical runner" \
+      dev.commcanary.base_oci_digest="sha256:770fe65b2c73ee74a5c42165cf3433de4048cc2cd9c57a937ca4e35aba5aa87b"
+
+COPY commcanary.whl /tmp/commcanary.whl
+
+RUN python3 -m pip install --no-cache-dir --no-deps /tmp/commcanary.whl \
+    && python3 -I -S -c 'import os,sys; assert "" not in sys.path and os.getcwd() not in sys.path' \
+    && rm -f /tmp/commcanary.whl

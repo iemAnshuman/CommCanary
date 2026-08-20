@@ -80,6 +80,35 @@ def test_preflight_accepts_real_public_program_shape_and_bounds_all_work(
     assert broadcast["root"] == 2
 
 
+def test_point_to_point_validation_pair_uses_one_route_identity() -> None:
+    shared = {
+        "pg_id": 0,
+        "global_ranks": [0, 1, 2, 3],
+        "world_size": 4,
+        "in_msg_size": 8,
+        "out_msg_size": 8,
+        "dtype": "int8",
+        "src_rank": 0,
+        "dst_rank": 3,
+        "startTime_ns": 100,
+    }
+    send = {**shared, "comms": "send", "req": 10}
+    recv = {**shared, "comms": "recv", "req": 11}
+
+    execution_module._bind_point_to_point_validation_routes((send, recv))
+
+    assert send["req"] != recv["req"]
+    assert send["_validation_route_id"] == recv["_validation_route_id"] == send["req"]
+
+
+def test_point_to_point_validation_pair_must_be_adjacent_and_exact() -> None:
+    send = {"comms": "send", "req": 10, "src_rank": 0, "dst_rank": 3}
+    recv = {"comms": "recv", "req": 11, "src_rank": 2, "dst_rank": 3}
+
+    with pytest.raises(SchemaError, match="does not match"):
+        execution_module._bind_point_to_point_validation_routes((send, recv))
+
+
 def test_preflight_rejects_rank_allocation_and_repeated_work_before_torch_import(
     tmp_path: Path,
 ) -> None:
@@ -926,6 +955,33 @@ def test_low_precision_routing_signatures_are_injective_for_four_rank_all_to_all
 
     assert len(set(signatures.values())) == 16
     assert signatures[(0, 0)] != signatures[(2, 3)]
+
+
+def test_low_lane_int8_broadcast_rejects_colliding_root_signatures() -> None:
+    entry = _oracle_entry("broadcast", dtype="int8", group_ranks=tuple(range(128)))
+    entry["in_msg_size"] = 1
+    entry["out_msg_size"] = 1
+    entry["root"] = 0
+
+    with pytest.raises(SchemaError, match="routing-signature capacity"):
+        execution_module._validate_correctness_probe_support(
+            (entry,),
+            {0: tuple(range(128))},
+            limits=ResourceLimits(),
+        )
+
+
+@pytest.mark.parametrize("operation", ("send", "recv"))
+def test_low_lane_point_to_point_rejects_colliding_endpoint_routes(operation: str) -> None:
+    entry = _oracle_entry(operation, dtype="int8", group_ranks=tuple(range(12)))
+    entry.update({"in_msg_size": 1, "out_msg_size": 1, "src_rank": 0, "dst_rank": 1})
+
+    with pytest.raises(SchemaError, match="routing-signature capacity"):
+        execution_module._validate_correctness_probe_support(
+            (entry,),
+            {0: tuple(range(12))},
+            limits=ResourceLimits(),
+        )
 
 
 @pytest.mark.parametrize("dtype", ("float16", "bfloat16", "int8"))

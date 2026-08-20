@@ -8,6 +8,7 @@ import time
 from dataclasses import replace
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from ..adapters.chakra_capture import commcanary_trace_to_chakra
 from ..adapters.kineto import (
     kineto_trace_to_commcanary_trace,
     kineto_traces_to_commcanary_trace,
@@ -16,7 +17,10 @@ from ..adapters.kineto import (
 from ..adapters.param import canary_to_param_comms_trace, write_param_comms_trace
 from ..artifacts import (
     SENSITIVE_JSON_POLICY,
+    SHAREABLE_HTML_POLICY,
+    atomic_write_bytes,
     atomic_write_json,
+    atomic_write_text,
     load_json,
     validate_qualification_policy,
     validate_report,
@@ -38,11 +42,18 @@ from ..experimental import (
     stratified_sampling_baseline_trace,
 )
 from ..replay import replay_canary
-from ..reporting import write_compare_html, write_report_html
+from ..reporting import (
+    physical_gate_junit_bytes,
+    physical_gate_sarif,
+    render_physical_gate_html,
+    write_compare_html,
+    write_report_html,
+)
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from ..services import (
     compile_trace,
     ddmin_ranking_reduction,
+    evaluate_physical_gate,
     evaluate_qualification_observations,
     import_failure_readiness_report,
     prepare_qualification_request,
@@ -52,12 +63,110 @@ from ..services import (
 )
 from ..verification.canary import verify_canary_behavior, verify_canary_fidelity
 from ..verification.report import verify_report_against_canary
-from ..workflows import materialize_qualification, verify_qualification_materialization
+from ..workflows import (
+    build_physical_canary_bundle,
+    materialize_qualification,
+    verify_physical_canary_bundle,
+    verify_qualification_materialization,
+)
 from .codes import EXIT_NEGATIVE_RESULT, EXIT_SUCCESS
 
 DiagnosticEmitter = Callable[..., None]
 ElapsedClock = Callable[[float], float]
 AblationSplitter = Callable[[List[str]], List[str]]
+
+
+def build_command(args: Any) -> int:
+    projection = load_json(args.projection)
+    policy = load_json(args.policy)
+    corpus = load_json(args.oracle_corpus) if args.oracle_corpus else None
+    active_ledger = load_json(args.active_ledger) if args.active_ledger else None
+    application_evidence = load_json(args.application_evidence) if args.application_evidence else None
+    physical_evidence = load_json(args.physical_evidence) if args.physical_evidence else None
+    if args.runtime_budget is not None:
+        acknowledged = _parse_duration_seconds(args.runtime_budget)
+        bound = float(policy.get("runtime_budget_seconds", -1.0))
+        if acknowledged != bound:
+            raise SchemaError(f"--runtime-budget acknowledges {acknowledged:g}s but the policy binds {bound:g}s")
+    manifest = build_physical_canary_bundle(
+        args.chakra_trace,
+        projection,
+        policy,
+        args.output,
+        corpus=corpus,
+        active_ledger=active_ledger,
+        application_evidence=application_evidence,
+        physical_evidence=physical_evidence,
+        mode=args.mode,
+        owner_private_key=args.owner_private_key,
+        owner_public_key=args.owner_public_key,
+    )
+    print(f"physical canary build: {manifest['status']}")
+    print(f"bundle: {manifest['bundle_id']} ({args.output})")
+    print(
+        "selected "
+        f"{len(manifest['selection']['selected_region_ids'])} regions and "
+        f"{len(manifest['selection']['selected_node_ids'])} Chakra nodes"
+    )
+    if manifest["status"] != "qualified_physical_decision_canary":
+        print("decision preservation and physical runtime reduction remain unproven", file=sys.stderr)
+        return EXIT_NEGATIVE_RESULT
+    return EXIT_SUCCESS
+
+
+def gate_command(args: Any) -> int:
+    manifest = verify_physical_canary_bundle(
+        args.canary_bundle,
+        trusted_owner_public_key=args.owner_public_key,
+    )
+    baseline = load_json(args.baseline)
+    candidate = load_json(args.candidate)
+    result = evaluate_physical_gate(
+        bundle_id=manifest["bundle_id"],
+        bundle_status=manifest["status"],
+        certified_baseline_subject_sha256=manifest["baseline_subject_sha256"],
+        certified_canary_et_sha256=manifest["artifacts"]["canary.et"]["sha256"],
+        policy=manifest["gate_policy"],
+        baseline=baseline,
+        candidate=candidate,
+    )
+    write_json(args.output, result)
+    if args.html:
+        atomic_write_text(
+            args.html,
+            render_physical_gate_html(result),
+            policy=replace(SHAREABLE_HTML_POLICY, artifact_label="physical gate HTML report"),
+        )
+    if args.junit:
+        atomic_write_bytes(
+            args.junit,
+            physical_gate_junit_bytes(result),
+            policy=replace(SHAREABLE_HTML_POLICY, artifact_label="physical gate JUnit report"),
+        )
+    if args.sarif:
+        atomic_write_json(
+            args.sarif,
+            physical_gate_sarif(result),
+            indent=2,
+            policy=replace(SHAREABLE_HTML_POLICY, artifact_label="physical gate SARIF report"),
+        )
+    print(f"physical gate: {result['outcome']}")
+    for issue in result["issues"]:
+        print(f"- {issue}")
+    return EXIT_SUCCESS if result["outcome"] == "pass" else EXIT_NEGATIVE_RESULT
+
+
+def _parse_duration_seconds(value: str) -> float:
+    text = str(value).strip().lower()
+    if not text.endswith("s") or text.count("s") != 1:
+        raise SchemaError("--runtime-budget must use seconds with an 's' suffix, for example 60s")
+    try:
+        seconds = float(text[:-1])
+    except ValueError as exc:
+        raise SchemaError("--runtime-budget must use seconds with an 's' suffix, for example 60s") from exc
+    if seconds <= 0.0:
+        raise SchemaError("--runtime-budget must be positive")
+    return seconds
 
 
 def split_ablations(values: List[str]) -> List[str]:
@@ -281,6 +390,7 @@ def reduce_command(
 
 def import_kineto_command(args: Any) -> int:
     trace, _limits = _import_kineto_profiles(args)
+    _write_optional_chakra_capture(args, trace)
     write_json(args.output, trace)
     workload = trace["workload"]
     print(
@@ -304,6 +414,32 @@ def import_kineto_command(args: Any) -> int:
         )
     )
     return 0
+
+
+def _write_optional_chakra_capture(args: Any, trace: Mapping[str, Any]) -> None:
+    chakra_output = getattr(args, "chakra_output", None)
+    projection_output = getattr(args, "projection_output", None)
+    if bool(chakra_output) != bool(projection_output):
+        raise SchemaError("--chakra-output and --projection-output must be supplied together")
+    if not chakra_output:
+        return
+    if projection_output is None:
+        raise SchemaError("--projection-output is required with --chakra-output")
+    chakra_path = str(chakra_output)
+    projection_path = str(projection_output)
+    destinations = [os.path.abspath(str(value)) for value in (args.output, chakra_path, projection_path)]
+    if len(destinations) != len(set(destinations)):
+        raise SchemaError("trace, Chakra ET, and projection outputs must use different paths")
+    captured = commcanary_trace_to_chakra(
+        trace,
+        opaque_attributes_reviewed=bool(getattr(args, "opaque_attributes_reviewed", False)),
+    )
+    atomic_write_bytes(chakra_path, captured.chakra_et, policy=SENSITIVE_JSON_POLICY)
+    write_json(projection_path, captured.projection)
+    print(
+        f"captured Chakra ET with {len(captured.projection['nodes'])} nodes and "
+        f"{len(captured.projection['regions'])} executable regions: {chakra_path}"
+    )
 
 
 def doctor_command(args: Any) -> int:
@@ -695,9 +831,11 @@ __all__ = [
     "DiagnosticEmitter",
     "ElapsedClock",
     "baseline_command",
+    "build_command",
     "compare_command",
     "compile_command",
     "export_param_command",
+    "gate_command",
     "import_kineto_command",
     "reduce_command",
     "replay_command",

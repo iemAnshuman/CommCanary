@@ -3,11 +3,13 @@ include CONTRIBUTING.md
 include LICENSE
 include NOTICE
 include README.md
+include RESEARCH_HISTORY.md
 include RESEARCH_SPEC.md
 include SECURITY.md
 include pyproject.toml
 
 recursive-include benchmarks *
+recursive-include claims *
 recursive-include docs *
 recursive-include examples *
 recursive-include experiments *

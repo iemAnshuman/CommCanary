@@ -26,15 +26,50 @@
         "completeness_verdict_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "configuration_count": {"minimum": 2, "type": "integer"},
         "configuration_pair_count": {"minimum": 0, "type": "integer"},
+        "cycle_telemetry_summary": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "additionalProperties": false,
+              "properties": {
+                "cell_count": {"minimum": 1, "type": "integer"},
+                "maximum_ecc_corrected_delta": {"minimum": 0, "type": "integer"},
+                "maximum_ecc_uncorrected_delta": {"minimum": 0, "type": "integer"},
+                "maximum_memory_clock_mhz": {"minimum": 0, "type": "integer"},
+                "maximum_power_draw_w": {"minimum": 0, "type": "number"},
+                "maximum_sm_clock_mhz": {"minimum": 0, "type": "integer"},
+                "maximum_temperature_c": {"maximum": 200, "minimum": -50, "type": "integer"},
+                "maximum_xid_event_delta": {"minimum": 0, "type": "integer"},
+                "minimum_memory_clock_mhz": {"minimum": 0, "type": "integer"},
+                "minimum_power_draw_w": {"minimum": 0, "type": "number"},
+                "minimum_sm_clock_mhz": {"minimum": 0, "type": "integer"},
+                "minimum_temperature_c": {"maximum": 200, "minimum": -50, "type": "integer"},
+                "performance_states": {"items": {"minLength": 1, "type": "string"}, "type": "array", "uniqueItems": true},
+                "snapshots_per_cell": {"items": {"minimum": 1, "type": "integer"}, "type": "array", "uniqueItems": true}
+              },
+              "required": ["cell_count", "maximum_ecc_corrected_delta", "maximum_ecc_uncorrected_delta", "maximum_memory_clock_mhz", "maximum_power_draw_w", "maximum_sm_clock_mhz", "maximum_temperature_c", "maximum_xid_event_delta", "minimum_memory_clock_mhz", "minimum_power_draw_w", "minimum_sm_clock_mhz", "minimum_temperature_c", "performance_states", "snapshots_per_cell"],
+              "type": "object"
+            }
+          ]
+        },
         "distinct_job_count": {"minimum": 0, "type": "integer"},
         "environment_observation_count": {"minimum": 0, "type": "integer"},
         "manifest_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "nodes": {"items": {"minLength": 1, "type": "string"}, "type": "array", "uniqueItems": true},
         "platform_sha256": {"pattern": "^[0-9a-f]{64}$", "type": ["string", "null"]},
         "run_id": {"minLength": 1, "type": "string"},
+        "scheduler_start_span_seconds_by_repetition": {
+          "additionalProperties": {"minimum": 0, "type": "number"},
+          "type": "object"
+        },
+        "submission_chunks": {
+          "items": {"pattern": "^p-[0-9a-f]{24}$", "type": "string"},
+          "type": "array",
+          "uniqueItems": true
+        },
         "selection_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
       },
-      "required": ["aggregate_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "configuration_repetition_count", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "platform_sha256", "run_id", "selection_sha256"],
+      "required": ["aggregate_sha256", "completeness_verdict_sha256", "configuration_count", "configuration_pair_count", "configuration_repetition_count", "cycle_telemetry_summary", "distinct_job_count", "environment_observation_count", "manifest_sha256", "nodes", "platform_sha256", "run_id", "scheduler_start_span_seconds_by_repetition", "selection_sha256", "submission_chunks"],
       "type": "object"
     },
     "issues": {
@@ -130,11 +165,11 @@
     "product_interpretation": {
       "additionalProperties": false,
       "properties": {
-        "cost_claim": {"const": "not_evaluated_by_exact_work_control"},
-        "exact_work_claim": {"const": "portable_reconstruction_positive_control"},
+        "cost_claim": {"const": "not_evaluated_by_exact_materialization_control"},
+        "exact_work_claim": {"const": "identical_compiled_instruction_path_measurement_floor"},
         "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
         "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"},
-        "mode": {"const": "exact_qualification_capsule"},
+        "mode": {"const": "exact_materialization_conformance_control"},
         "positioning": {"enum": ["exact_capsule_positive_control_supported", "exact_capsule_positive_control_unvalidated"]},
         "reduced_canary_claim": {"const": "not_evaluated"}
       },

@@ -496,7 +496,7 @@ def benchmark_environment() -> JsonDict:
         "machine": platform.machine(),
         "processor": platform.processor(),
         "cpu_count": os.cpu_count(),
-        "executable": sys.executable,
+        "executable": Path(sys.executable).name,
     }
 
 

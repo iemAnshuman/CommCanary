@@ -1,0 +1,74 @@
+{
+  "schema": "commcanary.public_claims.v1",
+  "product_status": "research_alpha",
+  "allowed": [
+    {
+      "id": "capture_build_gate_exists",
+      "status": "implemented_and_tested",
+      "qualification": "local_verified",
+      "evidence": "The capture, build, and gate commands are implemented in src/commcanary/command_line and covered by CLI and physical-canary contract tests."
+    },
+    {
+      "id": "chakra_dependency_closed_selection_exists",
+      "status": "implemented_and_tested",
+      "qualification": "local_verified",
+      "evidence": "Chakra graph ingestion, dependency-closed selection, and active training/holdout isolation are implemented under src/commcanary and covered by artifact and service tests."
+    },
+    {
+      "id": "exact_work_point_estimates_published",
+      "status": "measured",
+      "qualification": "physically_observed_on_rostam",
+      "evidence": "experiments/rostam/results/publications/decision-gate-20260801-r3-analysis-1300d12-repro/decision-fidelity-verdict.json records 26/28 configuration-pair agreement, Kendall tau-b 0.857, and the frozen inconclusive outcome."
+    },
+    {
+      "id": "private_exchange_is_implemented",
+      "status": "implemented_and_tested",
+      "qualification": "local_verified",
+      "evidence": "Owner-signed Ed25519 private-exchange bundles and independent verification against a supplied public-key trust anchor are implemented and tested."
+    }
+  ],
+  "qualified_only_after_evidence": [
+    {
+      "id": "predicts_stack_change_decisions",
+      "status": "unproven",
+      "evidence_required": "A predeclared physical study must show zero severe held-out false negatives, no more than 10% false positives, and at least 90% pair-decision agreement across independent allocations and days."
+    },
+    {
+      "id": "reduces_physical_runtime_by_10x",
+      "status": "unmeasured",
+      "evidence_required": "A frozen reduced candidate must measure at least 10x lower physical runtime than the full application while satisfying every held-out safety gate."
+    },
+    {
+      "id": "safe_for_ci_gating",
+      "status": "not_validated",
+      "evidence_required": "The held-out gates must pass, the result must replicate on a second engine or materially different workload, and an independent operator must complete the documented workflow."
+    },
+    {
+      "id": "preserves_held_out_regressions",
+      "status": "unproven",
+      "evidence_required": "A selection frozen before holdout access must preserve real application decisions with zero severe false negatives and no more than 10% false positives."
+    }
+  ],
+  "forbidden": [
+    {
+      "id": "production_validated",
+      "status": "forbidden",
+      "reason": "CommCanary 0.3.0 is unreleased, no product runner has been built on Rostam, and no real application corpus or held-out reduced-canary result exists."
+    },
+    {
+      "id": "privacy_safe",
+      "status": "forbidden",
+      "reason": "CommCanary makes no privacy or anonymity guarantee. Communication structure and provenance can disclose deployment details even when prompts and weights are absent."
+    },
+    {
+      "id": "works_across_arbitrary_models",
+      "status": "forbidden",
+      "reason": "The current product-study boundary is single-node, four-GPU tensor-parallel dense-decoder inference with GEMM and all-reduce dependency structure."
+    },
+    {
+      "id": "multi_node_qualified",
+      "status": "forbidden",
+      "reason": "Multi-node communication, expert-parallel all-to-all, network congestion, CUDA graphs, and multi-stream execution are outside the qualified domain."
+    }
+  ]
+}

@@ -3,898 +3,110 @@
 [![CI](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml/badge.svg)](https://github.com/iemAnshuman/commcanary/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](pyproject.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+[![Preprint DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21939040.svg)](https://doi.org/10.5281/zenodo.21939040)
 
-> **Research alpha.** CommCanary 0.3.0 is unreleased. It is a
-> source-verifiable research framework for synthesizing and evaluating
-> workload-shaped distributed-communication canaries, with an experimental
-> hardware-qualification workflow. It is not yet a validated hardware-
-> qualification decision tool.
+CommCanary aims to turn an expensive distributed-AI workload and a regression
+policy into a short physical test that decides whether a stack change should
+ship. Chakra carries the execution graph; CommCanary owns dependency-closed
+selection, policy-conditioned minimization, asymmetric regression safety, and
+the evidence bundle.
 
-**Turn distributed workload profiles into a model-free, source-verifiable
-qualification experiment—without shipping weights or prompts.**
+> **Research alpha.** Version 0.3.0 is unreleased. The implementation is ready
+> for its first predeclared physical study. It is not a validated performance
+> gate, a production CI product, or a source of measured cost savings.
 
-Isolated collective microbenchmarks are known to mislead: `nccl-tests` can
-report healthy numbers while the real workload ships a 20% regression
-([NVIDIA/nccl#513](https://github.com/NVIDIA/nccl/issues/513)), because they
-erase everything contextual — operation order, rank-arrival skew,
-compute/communication overlap, queueing, and rare tail windows. Full
-reference-workload runs preserve all of that but need model code, data, and a
-cluster. CommCanary occupies the space between: a portable request distilled
-from *your* workload's trace, carrying no weights or prompts, whose source
-correspondence a receiving lab can recompute before target-specific replay.
-The first predeclared cross-configuration gate measured strong point estimates
-for exact-work replay—92.86% pair agreement and Kendall tau-b 0.857, versus
-67.86% and 0.764 for the isolated baseline—but its policy outcome was
-`inconclusive` because confidence intervals crossed decision boundaries and
-one configuration was unstable. Decision fidelity therefore remains unproven,
-not an implied property of the file format. That gate replayed the complete
-source-derived event program. It is evidence about an exact qualification
-capsule, not evidence that a smaller canary preserves the same decision or
-costs less to run.
+## Supported domain
 
-![CommCanary comparison report: verdict FAIL, with median/p95/p99 deltas, a metrics
-table, the threshold reasons that tripped, and per-phase and per-operation regression
-breakdowns](docs/images/comparison-report.png)
+The first qualification study is deliberately narrow:
 
-*`commcanary compare` on the bundled example trace. Exits 1, names the phase and the
-operation, and ships as standalone HTML next to the JSON. Reproduce it with the
-[Quick start](#quick-start) below.*
-
-## Why the gate is the whole product
-
-A generic delta-debugging reducer, handed an oracle that only has to preserve
-*the decision*, deletes 99 of 100 events from our adversarial trace in six
-oracle calls — and every pairwise configuration ranking still holds:
-
-```console
-$ python examples/research_scaffolding.py          # writes out/research_scaffold/
-$ commcanary reduce out/research_scaffold/adversarial_decode.trace.json \
-    -o out/reduced.trace.json
-ddmin reduced 100 -> 1 events in 6 oracle calls
-
-$ commcanary compile out/reduced.trace.json -o out/reduced.canary.json
-$ commcanary verify-behavior out/research_scaffold/adversarial_decode.trace.json \
-    out/reduced.canary.json -o out/reduced.behavior.json
-behavior verification: failed
-- representation fidelity: lossless_timing
-- source verified: failed
-- deterministic-model behavior: fail
-- configuration ranking: pass        # <- the ranking survived. Nothing else did.
+```text
+single node
+exactly four NVIDIA GPUs
+tensor-parallel dense-decoder inference
+vLLM first; SGLang as the planned replication
+GEMM and all-reduce dependency structure
 ```
 
-A ranking is a projection. Five backend configurations give ten pairs, scored
-on four latency metrics — forty bits of agreement that one well-placed event
-can carry on its own. Minimize against that alone and you get an artifact with
-almost nothing in common with the workload it came from.
+Multi-node communication, expert-parallel all-to-all, CUDA graphs,
+multi-stream execution, KV-cache pressure, and network congestion are not
+qualified.
 
-CommCanary ships that reducer as a baseline and builds everything else around
-refusing its answer.
-
-What makes it different:
-
-- **Optional model-behavior-gated compilation.** Source/timing fidelity is always
-  audited; callers can additionally require a canary to preserve declared
-  simulator verdicts, pairwise rankings, and tail behavior. The distinction
-  matters—a generic ddmin reducer with a ranking-only oracle happily collapses
-  our adversarial 100-event trace to a **single event** (`commcanary reduce`,
-  included as a baseline).
-- **Auditable lossy compression.** Every approximation carries per-field
-  max-error bounds and a SHA-256 commitment to the exact source segment it
-  summarizes, so a third party holding the trace can recompute every claim.
-- **Tamper-evident artifacts.** Report validation re-runs the scheduler model
-  over embedded samples; `verify-report` recomputes bit-identically. Edited
-  numbers fail validation. The exact digest coverage, assurance ladder, and
-  authenticity limits are documented in [`docs/integrity.md`](docs/integrity.md).
-- **Bounded untrusted input.** Loading, expansion, replay, behavior search,
-  reduction, capture merging, and PARAM export share one immutable resource
-  policy. Defaults and stricter service configurations are documented in
-  [`docs/resource-limits.md`](docs/resource-limits.md).
-- **Explicit ecosystem boundaries.** PyTorch Kineto profiler traces come in
-  through `import-kineto`. The PARAM-basic-derived rank-aware encoding requires
-  a CommCanary adapter; current upstream PARAM compatibility is not claimed.
-- **Portable qualification requests.** `prepare-qualification` turns complete
-  rank-local profiles and a predeclared decision policy into one
-  source-verified owner-to-lab directory;
-  `verify-qualification` independently rehashes every file and recomputes the
-  trace-to-canary fidelity proof. The receiving lab can then run
-  `materialize-qualification` and `verify-materialization` without fitting
-  source durations to target timing. Materialization binds the exact
-  source-derived rectangular GEMM recipe for every rank, its canonical
-  projection hash, operation/FLOP counts, and the deterministic
-  issue-work-wait program bytes. Timing-only mutations cannot change the
-  executable work; missing or unsupported recipes refuse.
-
-```
-capture / import-kineto        compile                replay              compare
-  workload trace  ────────▶  canary artifact  ────▶  report(s)  ────▶  pass / warn / fail
-      (v1)          verified minimization     deterministic sim      CI exit code
-                    + sha256 commitments
-
-source + canary + fidelity + policy ──▶ qualification request
-                                      │ exact per-rank work recipes
-                                      ▼
-                           verified materialization
-                                      │ bounded reference executor
-                                      ▼
-                          self-reported diagnostic
-                                      │ bound raw observation
-                                      ▼
-                          verifiable physical observation
-                                      │ predeclared matrix + policy
-                                      ▼
-                         pass / fail / inconclusive / incomparable
-```
-
-The physical path is intentionally staged. A portable request contains the
-source trace, canary, fidelity proof, and exact source-observed rank-local GEMM
-recipes. Lab-side materialization deterministically binds those recipes and
-the generated program bytes; it does not fit source durations to target
-hardware. It explicitly does not claim execution, measurement, current
-upstream PARAM compatibility, or a qualification verdict.
-
-CommCanary treats two physical products separately. The implemented exact
-qualification capsule reconstructs the full trace-derived program for a
-verifiable owner-to-lab replay. A reduced decision canary must execute a
-smaller representation and separately earn decision-fidelity, regression-
-sensitivity, runtime-reduction, and artifact-size-reduction claims. No
-physical reduced-canary result exists yet.
-
-### What this is not
-
-- **Not yet a validated hardware-qualification decision tool.** The completed
-  eight-configuration gate, with all representations paired inside each
-  configuration's allocation, met every numeric point-estimate
-  criterion: 26/28 pair agreement, tau-b 0.857, one false negative, one false
-  positive, 1.55% median error, and 4.05% p95 error. Its exact predeclared
-  outcome is nevertheless `inconclusive`, not `pass`: bootstrap intervals
-  crossed required pair boundaries and `nccl-2.20.5-tree-ll` exceeded the 20%
-  stability limit. The kill/reframe condition was not evaluated on noisy
-  evidence.
-- **Not a source of portable hardware numbers.** The physical observation is
-  bound to one request, materialization, node, software stack, and pair of raw
-  twenty-sample distributions. Other hardware still requires its own retained
-  measurements and reviewed decision policy.
-- **Not yet validated against a multi-node cluster.** That campaign is
-  specified in [`docs/artifact-evaluation.md`](docs/artifact-evaluation.md)
-  and has not run.
-
-The manifests, failed-attempt records, selections, completeness verdicts, raw
-archives, and generated tables behind the physical statements above are
-published in [`experiments/rostam/results/`](experiments/rostam/results/README.md).
-
-What the simulator *does* buy you is determinism, which is what makes the
-verification story checkable at all: `verify-report` recomputes a report
-bit-identically, so an edited number fails validation instead of surviving as
-a screenshot. It does not schedule a compute resource: `compute_before_us` is
-preserved and reported, and can supply readiness only when a trace has neither
-timestamps nor explicit gaps, but it does not otherwise create a compute queue,
-shared-SM contention, memory-bandwidth contention, or a compute-to-network
-dependency. The research contract, including what is deliberately *not*
-claimed, lives in [`RESEARCH_SPEC.md`](RESEARCH_SPEC.md).
-
-## Quick start
-
-CommCanary is not currently published on PyPI. Install the research alpha from
-a reviewed source checkout; pin the checkout to the commit your experiment is
-intended to use before creating durable evidence:
+## `capture → build → gate`
 
 ```bash
-git clone https://github.com/iemAnshuman/commcanary.git
-cd commcanary
-git checkout <reviewed-commit-sha>
+commcanary capture --output trace.json --chakra-output trace.et \
+  --projection-output trace.projection.json --workload-name serving-decode \
+  -- python examples/instrumented_decode.py
+
+commcanary build trace.et --projection trace.projection.json \
+  --policy study/policy.json --oracle-corpus study/oracle-corpus.json \
+  --active-ledger study/active-study-ledger.json \
+  --application-evidence study/application-evidence.json \
+  --physical-evidence study/physical-evidence.json --runtime-budget 60s \
+  --output serving.canary
+
+commcanary gate serving.canary --baseline baseline.json \
+  --candidate candidate.json --output gate.json --html gate.html \
+  --junit gate.xml --sarif gate.sarif
+```
+
+The instrumented child must emit complete source-bound collective and GEMM
+evidence. A frozen physical study produces the measured inputs to `build`.
+Without a real application corpus, `build` writes a verified blocked bundle,
+exits non-zero, and that bundle cannot be passed to `gate`. The
+[operator quick start](docs/operator-quickstart.md) demonstrates this boundary
+without fabricating evidence.
+
+## Claim status
+
+| Claim | Status |
+|---|---|
+| Chakra physical graph ingestion | Implemented and tested |
+| Dependency-closed candidate construction | Implemented and tested |
+| Training/holdout isolation | Implemented and tested |
+| Exact-work configuration fidelity | Promising but inconclusive |
+| Reduced physical runtime | Unmeasured |
+| Held-out regression safety | Unproven |
+| Production CI gate | Not validated |
+| Multi-node support | Unsupported |
+
+The exact-work study agreed on 26 of 28 configuration pairs and measured
+Kendall tau-b 0.857. Its frozen result is still **inconclusive** because
+confidence intervals crossed decision boundaries and one configuration was
+unstable. It replayed the complete source-derived program, so it measured
+neither physical reduction nor cost savings.
+
+The evidence workflow and measured result are described in the
+[CommCanary v0.4 preprint](https://doi.org/10.5281/zenodo.21939041). Use the
+[concept DOI](https://doi.org/10.5281/zenodo.21939040) to cite the latest
+preprint version and the version DOI above to identify the published v0.4
+record. The manuscript source, evidence binding, and build procedure live in
+[`paper/preprint-0.4/`](paper/preprint-0.4/README.md).
+
+No real reduced-canary application corpus or held-out result is checked in.
+Synthetic fixtures cannot qualify a bundle.
+
+## Start here
+
+- [Product status and evidence boundary](docs/product-status.md)
+- [Preprint and reproducibility package](paper/preprint-0.4/README.md)
+- [Machine-readable public claims](claims/public-claims.yaml)
+- [Independent-operator quick start](docs/operator-quickstart.md)
+- [Physical canary contract](docs/physical-canary.md)
+- [Research history and detailed contracts](RESEARCH_HISTORY.md)
+- [Research specification](RESEARCH_SPEC.md)
+- [Integrity model](docs/integrity.md)
+- [Privacy and exchange](docs/privacy.md)
+- [Artifact evaluation](docs/artifact-evaluation.md)
+- [Roadmap](ROADMAP.md)
+
+CommCanary is not currently published on PyPI. Install only from a reviewed,
+pinned source checkout or a wheel whose digest is recorded with the study.
+
+```bash
 python -m pip install .
-```
-
-Then, from that checkout (for the bundled example traces):
-
-```bash
-commcanary compile examples/traces/llama70b_tp8_trace.json \
-  --output out/workload.canary.json
-commcanary replay out/workload.canary.json \
-  --output out/baseline.report.json --html out/baseline.html --include-samples
-commcanary replay out/workload.canary.json \
-  --output out/candidate.report.json --html out/candidate.html \
-  --latency-floor-us 12 --include-samples
-commcanary compare out/baseline.report.json out/candidate.report.json \
-  --output out/comparison.json --html out/comparison.html
-```
-
-What that prints:
-
-```console
-compiled 10 trace events into 5 canary events; event ratio=2.0x, byte ratio=0.474x, timing=lossless_timing
-replayed 10 events: median=91.977 us p95=107.746 us p99=108.321 us hidden=16.27%
-replayed 10 events: median=121.409 us p95=146.616 us p99=152.095 us hidden=13.25%
-comparison verdict: fail
-- p99 regression 40.4% exceeds 15.0%
-- p95 regression 36.1% exceeds 10.0%
-- median regression 32.0% exceeds 8.0%
-- phase 'decode' p99 regression 41.5% exceeds 15.0%
-- phase 'prefill' p99 regression 16.8% exceeds 15.0%
-- operation 'all_reduce' p99 regression 40.4% exceeds 15.0%
-```
-
-The comparison command exits with status 1 when configured regression
-thresholds are exceeded, which is the whole point of putting it in CI.
-
-Note the two compression numbers in the first line. Event ratio and byte ratio
-are reported separately because a canary with fewer events than its source can
-still serialize to more bytes — as it does here on a ten-event toy trace.
-Calling that "compression" would be a lie with units.
-
-## Prepare a hardware-qualification request
-
-For a model owner handing a workload-shaped artifact to a hardware lab:
-
-```bash
-# Diagnose missing evidence before creating an immutable request.
-commcanary doctor rank0.json rank1.json \
-  --assume-shared-clock \
-  --workload-name private-serving-decode \
-  --output out/readiness.json
-
-# This checked-in policy is a tutorial example, not a product default. Review
-# and freeze workload-specific thresholds before physical execution.
-commcanary verify-policy examples/qualification-policy.json
-
-commcanary prepare-qualification rank0.json rank1.json \
-  --assume-shared-clock \
-  --workload-name private-serving-decode \
-  --policy examples/qualification-policy.json \
-  --output-directory out/qualification-request
-
-# Run by the receiving party before trusting or materializing anything.
-commcanary verify-qualification out/qualification-request
-
-commcanary materialize-qualification out/qualification-request \
-  --output-directory out/qualification-materialization
-
-# Independently rederive and byte-compare the generated program.
-commcanary verify-materialization out/qualification-request \
-  out/qualification-materialization
-
-# Reference execution requires target-compatible PyTorch installed separately.
-# This diagnostic is not yet a qualification observation or verdict.
-python -m torch.distributed.run --standalone --nproc_per_node=2 \
-  --module commcanary execute-materialization \
-  out/qualification-request out/qualification-materialization \
-  --device cuda --backend nccl \
-  --distributed-timeout-seconds 300 \
-  --output out/reference-execution.json
-```
-
-The current v2 request is a closed five-file directory: manifest, source
-trace, canary, fidelity proof, and exact policy bytes. Its request ID binds the
-policy before execution, and its claim remains
-`qualification_verdict: policy_bound_not_issued`. Historical four-file v1
-requests remain read/verify compatible but cannot issue a policy-bound
-decision.
-
-After independent baseline and candidate observations have been produced:
-
-```bash
-commcanary evaluate-qualification examples/qualification-policy.json \
-  baseline.observation.json candidate.observation.json \
-  --output verdict.json
-```
-
-The evaluator can return only `pass`, `fail`, `inconclusive`, or
-`incomparable`. It does not silently substitute library thresholds for the
-explicit policy.
-
-`doctor` exits 0 only for `qualification_ready`; an importable but incomplete
-profile exits 1. Its report distinguishes `observational`, `simulatable`, and
-`qualification_ready`, uses stable failure reason codes with event/rank
-locations, provides a conservative bundle-size lower bound and compute-tensor
-memory bound where possible, and discloses structural privacy exposure. It
-does not predict physical runtime from source kernel durations: target
-measurements are required.
-
-Preparation imports all profiles, requires known overlap, compiles with
-lossless timing by default, requires the canary to cover every source event,
-recomputes source fidelity, and requires every
-collective to carry a complete per-rank contiguous-GEMM recipe derived from the
-same-thread region between collective issue and one explicit wait.
-`all_reduce` and `reduce_scatter` must carry their source-bound reduction
-operator; exact Kineto input/output element counts and split evidence must
-match the encoded operation; and every broadcast must carry its source-bound
-root rank. An unknown or incomplete compute recipe, reduction operator,
-message shape, or broadcast root is a refusal, not permission to fit elapsed
-time, assume SUM, reconstruct a convenient tensor shape, or choose the first
-process-group rank.
-The fixed inventory is:
-
-- `qualification-request.json`;
-- `source.trace.json`;
-- `canary.json`;
-- `fidelity.json`; and
-- `qualification-policy.json`.
-
-The manifest binds the exact bytes of the other four files and the canary's
-source, execution, calibration, and artifact-provenance commitments. Its claim
-boundary is equally explicit: source correspondence is verified, but no
-physical measurement is included, physical fidelity remains unproven, and no
-qualification verdict is issued. The target contract also binds communication
-operation, dtype, reduction-operator, and message-shape inventories derived
-from the full generated program, together with the canonical
-hash and count of exact per-rank compute work, an equal-split-only `all_to_all`
-policy, issue/work/wait structure, and disabled timestamp pacing. GEMM shapes
-and dtypes are explicitly disclosed because they can reveal model structure
-even though weights and prompts are absent.
-
-Materialization writes exactly `replay-program.json` and
-`materialization.json`, with the manifest installed last into another new,
-non-overwriting directory. It takes no target timing calibration: each source
-event becomes asynchronous collective issue, exact rank-local
-`m×k @ k×n` work, and an immediate explicit wait. Start-to-start gaps, Python
-overhead, exposed communication, and idle time never become synthetic compute.
-The manifest binds the canonical work projection, per-rank operation counts,
-source kernel observations, mathematical FLOP count, exact program bytes, and
-the issue/work/wait semantics. It also records
-`upstream_param_compatibility: not_claimed` and
-`execution_adapter: conforming-adapter-required`; deterministic generation is
-not evidence that a GPU run happened. Embedded digests identify content; they
-do not authenticate who produced it.
-
-`execute-materialization` is the candidate in-package adapter, not yet a claim
-that the adapter conforms physically. Every rank revalidates the complete
-request and materialization before importing PyTorch or initializing a process
-group. Preflight checks request/wait lifetimes, rank membership, collective
-shapes, rank-local rectangular GEMM dtype and dimensions, operation counts,
-reduction operators, broadcast-root membership, and
-per-rank/aggregate tensor allocation. Communication tensors are isolated by request identity, so two
-overlapping same-shaped operations cannot race on a reused buffer or evade the
-allocation budget. A positive, resource-bounded distributed timeout is applied to
-default-group initialization and every encoded subgroup, replacing PyTorch's
-backend-dependent long defaults and binding the chosen value into the
-diagnostic. It also requires
-the encoded process groups to cover exactly the launched dense rank domain, so
-an operator cannot add unrepresented idle ranks and change contention. The
-exact-work qualification generator supports `all_reduce`, `all_gather`,
-`reduce_scatter`, `all_to_all`, and `broadcast`; other schedules refuse until
-their causal work can be represented honestly. The executor runs each rank's
-bound rectangular recipe, gathers rank-local issue-to-wait timings, and
-also records whole-program wall time for every rank and measured iteration.
-The decision-facing makespan is the maximum participating-rank duration, not a
-median of individual collective calls. Output is written only on rank 0. Both
-GEMM inputs and its reused output are preallocated
-and included in the rank memory plan; the repeated loop performs no hidden
-GEMM-output allocation. Before warmup or measurement, one separately bounded,
-untimed pass uses rank-dependent zero/one patterns to check every collective
-result under its bound reduction operator and every receive endpoint. The
-executor passes the exact operator to PyTorch rather than relying on its SUM
-default. All ranks exchange their exact check counts, and any mismatch fails
-the run collectively instead of producing a timing-only success.
-Its diagnostic remains deliberately outside the supported format table until
-the GPU-backed conformance gate establishes which physical observation
-semantics CommCanary can defend.
-
-## Fidelity-first compilation
-
-Exact run-length and periodic encodings are used whenever possible. Irregular
-streams are represented by ordered bounded intervals that contain explicit
-error bounds. Compilation can fail closed when approximation exceeds a chosen
-budget:
-
-```bash
-commcanary compile trace.json -o canary.json \
-  --timing-sample-limit 128 \
-  --max-skew-error-us 2 \
-  --max-overlap-error-us 3 \
-  --max-prefix-gap-error-us 10
-```
-
-Require a completely lossless timing representation with:
-
-```bash
-commcanary compile trace.json -o canary.json --lossless-timing
-```
-
-Compiled canaries can also be model-behavior-gated. This is intentionally stricter
-than field-level fidelity: compilation fails unless the generated canary passes
-source verification, deterministic-model checks, and pairwise configuration-ranking
-verification under the verifier's backend set.
-
-```bash
-commcanary compile trace.json -o canary.json --require-behavior-verification
-```
-
-For research minimization, use behavior-search mode. It compiles every timing
-sample limit in the requested range, runs behavior verification for each
-candidate, rejects failures, selects the smallest verified candidate found in
-that declared space by canonical candidate bytes before the fixed search
-summary, and then greedily lowers timing budgets for individual signature
-groups only when the canary remains source-corresponding and preserves declared
-model behavior and rankings:
-
-```bash
-commcanary compile trace.json -o canary.json \
-  --behavior-search \
-  --search-evidence-output search-evidence.json \
-  --behavior-search-min-sample-limit 2 \
-  --timing-sample-limit 128
-```
-
-The canary contains only the search method, declared space and objective,
-selected parameters, final verification summary, and a SHA-256/byte-size
-identity for `search-evidence.json`. The detached sidecar contains every
-uniform-budget candidate and per-group refinement attempt. The final canary
-size, detached evidence size, and source size are separate quantities; search
-does not claim to minimize their sum or the final canary after summary bytes are
-added. It is not a full per-window/Pareto optimizer.
-
-The compiler reports both event compression and serialized-byte compression.
-A smaller event count is not described as compression when the artifact is
-actually larger.
-
-## Sequence motifs and scheduler identity
-
-CommCanary has a replay-equivalent `sequence_motif` representation for exact
-repeated multi-event programs such as `A-B-A-B`, `A-B-C` loops, or
-transformer-layer-like communication blocks. A motif is an artifact-level
-wrapper around child event templates plus a repeat count; replay, validation,
-source verification, and scheduler hashes expand it to the same ordered
-simulator inputs as the flat encoding. Source/provenance fields may differ, but
-flat and motif encodings that execute the same scheduler inputs share the same
-`scheduler_execution_sha256`. Use `--disable-sequence-motifs` to emit only flat
-events.
-
-## Observed tail signal and calibration
-
-A trace event may contain an optional measured value:
-
-```json
-{
-  "observed_exposed_us": 73.2
-}
-```
-
-This field must be present on every selected event or none. It is preserved as
-part of each joint timing record, receives priority during bounded selection,
-and produces a calibration section in replay reports: absolute error, bias,
-and percentage error. Without this signal, tail selection is a structural
-proxy based on skew, gaps, overlap, and change points; it is not claimed to
-preserve measured p99 latency.
-
-## Behavioral verification
-
-`verify-fidelity` answers whether a canary's representation-level claims can be
-recomputed from the source trace. Its `source_coverage` is `full` or `partial`,
-and a verified prefix reports `partial_source_verified` instead of
-`source_verified`. `verify-behavior` answers a different,
-strictly model-relative question: whether the compressed artifact preserves
-workload behavior in CommCanary's deterministic simulator. It replays a
-lossless normalized source canary and the candidate
-canary across multiple backend configurations, then reports four separate
-statuses:
-
-- `representation_fidelity_status`: the compiler-attested timing mode, such as
-  `lossless_timing` or `bounded_approximate`;
-- `source_verified_status`: whether source-to-canary commitments recompute;
-- `source_coverage_status`: whether the candidate covers the full normalized
-  source trace or only a prefix/subset;
-- `model_behavior_preservation_status`: whether p50/p95/p99/max/mean, queue-wait
-  distributions, hidden communication, phase metrics, operation metrics, and
-  tail-event recall are within tolerance;
-- `configuration_ranking_status`: whether pairwise backend rankings are
-  preserved across latency metrics.
-
-```bash
-commcanary verify-behavior trace.json canary.json -o behavior.json \
-  --relative-tolerance-pct 10 \
-  --absolute-tolerance-us 1 \
-  --hidden-tolerance-points 5 \
-  --tail-recall-threshold 0.8 \
-  --ranking-tie-tolerance-us 0.001
-```
-
-`compile --require-behavior-verification` uses this verifier as a fail-closed
-compiler gate. A successful status is `model_behavior_preserved`; it is meant
-for research claims and never establishes physical execution or conformance.
-`verify-behavior` compares against the full normalized source trace by default.
-Canaries generated from a prefix or subset of the trace are labelled
-`partial_source_verified` and cannot receive a model-behavior preservation claim.
-
-A canary with rank-local compute uncertainty can still be replayed, but its
-status is `model_behavior_unproven` rather than `model_behavior_preserved`.
-Every behavior-verification record also carries independent claim dimensions;
-physical execution is `not_observed`, physical conformance is `unproven`,
-physical decision fidelity is `not_measured`, and producer authenticity is
-`unsigned`.
-
-## Replay ablations
-
-Replay supports research ablations that deliberately remove one preservation
-mechanism from the deterministic model:
-
-```bash
-commcanary replay canary.json -o out/ablation.report.json \
-  --ablate arrival_skew \
-  --ablate compute_overlap \
-  --ablate rare_tail_windows
-```
-
-Supported ablations are `arrival_skew`, `compute_overlap`,
-`operation_ordering`, `rare_tail_windows`, `queue_reset_gaps`, `pressure`, and
-`observed_exposed_us`. Ablations are recorded in the replay protocol and are
-therefore covered by `verify-report`. They are not a physical intervention;
-they are simulator controls for paper ablations.
-
-## Point-to-point messages
-
-Point-to-point traffic is represented as `point_to_point` rather than as a fake
-collective. Merged send/recv observations preserve `sender_rank`,
-`receiver_rank`, `tag`, `channel`, `message_sequence`, and rank-local send/recv
-observation metadata. Scheduler identity and resource labelling include these
-fields so reversing sender/receiver or changing a channel is not treated as the
-same execution.
-
-## Ranking-inversion scaffold
-
-The repository includes a synthetic adversarial experiment that demonstrates why
-field-level compression is not enough. It constructs an isolated collective
-baseline, random-sampling, frequency-representative, and clustering controls,
-and a full decode-like workload whose queue-reset gaps and high-overlap tail
-windows change configuration ranking. A canary that is too small is labelled
-unproven; behavior-search finds a compact model-preserving timing budget in the
-declared range, and a lossless compact canary preserves the workload ranking.
-
-```bash
-python examples/research_scaffolding.py
-```
-
-The script writes traces, canaries, and behavior-verification outputs under
-`out/research_scaffold/`.
-
-## Research baselines
-
-Baseline traces are generated explicitly so they can be compiled, replayed, and
-verified under the same simulator contract as CommCanary artifacts:
-
-```bash
-commcanary baseline trace.json -o out/isolated.trace.json --method isolated
-commcanary baseline trace.json -o out/random.trace.json --method random --sample-count 16 --seed 7
-commcanary baseline trace.json -o out/frequency.trace.json --method frequency
-commcanary baseline trace.json -o out/cluster.trace.json --method cluster --cluster-count 8
-commcanary baseline trace.json -o out/stratified.trace.json --method stratified --strata-per-group 4 --seed 7
-```
-
-`isolated` removes workload order, skew, queue-reset gaps, and overlap, matching
-the spirit of an isolated collective microbenchmark. `random` samples source
-events and tiles them to the original event count by default for count-fair
-behavioral comparison. `frequency` preserves operation frequency and order but
-replaces each signature by one representative, removing within-signature tails.
-`cluster` is a stronger negative control: it preserves event count, operation
-order, operation signatures, and several deterministic timing medoids per
-signature, while still discarding exact burst/tail correlations and source
-commitments. `stratified` is the kill-condition control named in
-`RESEARCH_SPEC.md`: events are grouped by operation signature, each group is
-cut into deterministic timing strata, and one seeded random member is drawn
-per stratum; every event is replaced by its stratum's sample. These baselines
-are intentionally not source-verified against the original trace;
-`verify-behavior` should label them unproven unless they actually pass the full
-source, deterministic-model, and ranking gates.
-
-## Decision-preserving reduction baseline
-
-`commcanary reduce` is a ddmin-style generic reducer for comparing against
-behavior-search compilation. Its oracle preserves only the decision: a
-candidate event subset is accepted when compiling and replaying it across the
-configuration set reproduces the full trace's pairwise latency-metric
-rankings. It deliberately does not enforce model-behavior preservation, so it shows
-what decision-only reduction gives up: on the synthetic ranking-inversion
-scaffold it happily collapses 100 events to a single event while keeping the
-ranking, which is precisely why the fail-closed model-behavior verifier gates on
-tail recall, queue waits, hidden communication, and distribution agreement in
-addition to rankings.
-
-```bash
-commcanary reduce trace.json -o out/reduced.trace.json \
-  --ranking-tie-tolerance-us 0.001 \
-  --max-oracle-calls 256
-```
-
-The reduced trace records the oracle-call ledger under
-`workload.reduction` and is labelled not source-verified.
-
-## Ecosystem interop: Kineto import and legacy PARAM-derived export
-
-Chakra already provides the ecosystem's general workload graph: its official
-schema represents compute, memory, communication, dependencies, timing, and
-resource constraints. CommCanary should not replace that interchange layer.
-Its intended boundary is the smaller one Chakra does not supply: reduce a
-shared workload description to a decision-preserving acceptance case, bind it
-to exact source and calibration evidence, and let the receiving party verify
-the result. A future Chakra adapter must consume the official length-delimited
-protobuf execution trace and preserve its dependency/attribute semantics; a
-JSON object with similar names is not compatibility. Until that adapter is
-implemented and tested, Kineto remains the only supported real-profile input.
-
-CommCanary can ingest real collective metadata from a PyTorch profiler
-(Kineto) trace and can emit the historical PARAM comms-replay “basic” JSON
-encoding used by the pinned Rostam research harness:
-
-```bash
-commcanary import-kineto profiler_trace.json -o imported.trace.json \
-  --workload-name llama70b-serve --phase decode
-# Multiple rank profiles retain cross-rank arrivals and rank-local overlap.
-# This explicit assertion is appropriate only when the profiles share a clock.
-commcanary import-kineto rank0.json rank1.json -o imported.trace.json \
-  --assume-shared-clock
-# The next step succeeds only when every collective linked to complete CUDA
-# kernel evidence and multi-rank arrival calibration; otherwise it refuses.
-commcanary compile imported.trace.json -o imported.canary.json
-commcanary export-param imported.canary.json -o param_comms_trace.json
-```
-
-This is not current upstream PARAM interoperability. Upstream removed `basic`
-and Kineto trace parsing in
-[PARAM PR #155](https://github.com/facebookresearch/param/pull/155); its
-current communication replayer accepts Chakra host execution traces. The
-legacy commit pinned by `experiments/rostam/patches/param-patch-contract.json`
-accepts basic JSON but hardwires blocking replay, so CommCanary's overlap
-campaign uses a separate explicit-wait reference replayer. For that reason,
-qualification manifests call the output
-`commcanary.source-bound-compute-recipe.v2`, require a conforming adapter, and
-make no upstream PARAM compatibility claim. The encoding does not convert
-inter-communication gaps into work. It binds the exact per-rank contiguous
-GEMMs observed between asynchronous issue and the corresponding explicit wait,
-then reproduces issue, work, and wait in that order. Pipelined or unsupported
-compute schedules need a dependency graph and refuse rather than being
-serialized into a different program. This is deliberately narrower than
-Chakra's graph semantics.
-[Chakra import/current-replay interop](https://github.com/mlcommons/chakra) is
-an open product requirement, not something inferred from similar field names.
-
-The Kineto import reads `record_param_comms` events (torch >= 2.2): collective
-name, dtype, element counts, process-group name and ranks, and single-rank
-timestamps rebased to the trace start. Raw monotonic and wall-clock origins are
-used transiently for explicit multi-rank alignment but are not retained in the
-shareable trace. One profile remains an observational single-rank import: it
-does not invent cross-rank arrival skew or measured exposed latency.
-With multiple rank profiles, records are matched by invocation ordinal inside
-the exact process-group rank domain. Every participating rank must contribute
-one compatible record. `--assume-shared-clock` is an explicit zero-offset
-claim; profiles from separate clocks instead require one additive
-`--clock-offset-us RANK=OFFSET` value per imported rank. With neither claim the
-merged trace remains inspectable, marks arrival skew unknown, and cannot be
-compiled.
-
-`record_param_comms` omits the broadcast root. For a broadcast, the importer
-recovers `root_rank` only from an interval-containing `c10d::broadcast_` CPU
-event on the same thread, using the concrete dispatcher input corresponding to
-`BroadcastOptions.rootRank`. The root must be a member of the recorded process
-group and every rank-local contribution must agree. Missing, malformed,
-out-of-group, or conflicting evidence remains unknown or fails; owner-side
-qualification and legacy PARAM-derived export then refuse instead of guessing.
-Both broadcasts in the public issue #131462 pair resolve to rank 0 and retain
-that value through trace, canary, materialization, and reference-executor
-preflight.
-
-`record_param_comms` also does not carry a canonical reduction operator. For
-`all_reduce` and `reduce_scatter`, the importer derives `reduction_op` only when
-every uniquely linked NCCL communication kernel has one recognized, consistent
-operator token (`sum`, `product`, `min`, `max`, or `avg`). Generic,
-unrecognized, ambiguously linked, or incomplete kernel evidence leaves the
-operator unknown. A general trace remains inspectable without this optional
-field, but owner-side qualification refuses to silently execute an unknown
-operator as SUM. Multi-rank merging preserves the operator only when every
-participant derives the same value. The public issue #131462 pair derives SUM
-for all five reduction events and preserves it through materialization.
-
-Kineto's input/output element counts and split lists are also retained as
-normalized source evidence. Multi-rank merging requires exact agreement before
-coalescing. Qualification independently checks the counts against the operation
-and process-group size, checks the stored byte count against dtype width, and
-refuses any skipped zero/missing-size event or explicit split vector. The
-current reference executor supports only source-verified equal-split
-`all_to_all`; observational import can retain an unsupported shape without
-turning it into a different executable. All seven events in the public issue
-#131462 pair have exact materializable shapes.
-
-Kineto dtype names are normalized to an explicit canonical dtype on every
-trace event. Dtype remains part of compilation grouping, source fidelity, and
-execution commitments, then legacy PARAM-derived export uses it per event to
-derive element counts. `export-param --dtype ...` is an explicit whole-trace override for
-legacy or deliberately transformed inputs; omission no longer silently turns
-typed Kineto events into float32.
-
-The CLI reads and hashes each bounded profile in one pass. The imported trace
-records only its exact byte SHA-256, byte size, and distributed rank (when
-present) under `system.kineto_source_profiles`; it never records the source
-path or filename. Multi-rank identities are sorted by rank. Retain the original
-profiles separately if another party must verify those commitments: the trace
-binds the bytes but does not embed them, and a hash is identification rather
-than authenticity.
-
-For a
-collective whose external correlation id links to complete NCCL kernel
-activities, the importer measures `compute_overlap_us` as the union of time
-where non-communication kernels run concurrently on another stream of the same
-device. Same-stream work, another device's kernels, and other communication
-kernels do not count; overlapping compute intervals are unioned rather than
-double-counted. Missing, malformed, or non-unique linkage leaves that event at
-`compute_overlap_unknown: true`, and `compile` fails closed unless every event
-is known. The output records derived/unknown counts plus a reason on every
-event. This derivation is unit-tested against Kineto-shaped events and has been
-exercised by the same-node diagnostic and predeclared decision gate described
-in [`ROADMAP.md`](ROADMAP.md). The latter produced an `inconclusive` policy
-outcome, so it still does not establish cross-configuration decision fidelity.
-As a
-format reality check, both ranks in the public 2-GPU ResNet-50 profile attached
-to [PyTorch issue #131462](https://github.com/pytorch/pytorch/issues/131462)
-merge from 14 rank-local records into 7 logical events with 7/7 known overlap
-and compile losslessly under the explicit shared-clock assumption. The merge
-retains different per-rank overlap values and exposes cross-rank arrival
-offsets from 0.28–5.26 ms. That proves the adapter preserves real profiler
-evidence; it does not prove that replay ranks hardware correctly.
-
-Truncated rank lists from non-uniform process groups are only reconstructed
-from an explicit global rank start/stride; otherwise the import fails closed
-rather than fabricate group membership. Collectives without a CommCanary op
-mapping (for example `reduce`, `gather`) are imported as `custom_op` events
-rather than dropped or mislabelled.
-
-The legacy PARAM-derived export expands the canary's full event program (motifs, patterns,
-and run-length weights included) into one entry per logical occurrence with
-element counts, process-group ids, and cumulative `startTime_ns` timestamps,
-so `--use-timestamp` replay reproduces inter-op gaps. Sharded collectives use
-PARAM's size conventions (`all_gather` gathers `world_size` shards of
-`in_msg_size`; `reduce_scatter` scatters into `out_msg_size` shards;
-`all_to_all` requires equal input/output shards divisible by `world_size`).
-Every point-to-point transfer exports as a matched send/recv entry pair carrying
-`src_rank`/`dst_rank`, because PARAM executes each side only on its own rank.
-Ops with no PARAM equivalent — including `send`/`recv` events without peer
-ranks — fail closed unless `--skip-unsupported` is passed.
-Qualification preparation never permits that escape hatch: missing dtype,
-unsupported dtype/operation, incompatible process-group membership, or
-byte counts not exactly divisible by dtype width or sharded-collective sizing
-fails before a bundle directory is created.
-
-## Trace timing semantics
-
-A trace must use one unambiguous ordering mode:
-
-1. all events have `start_us`; events are chronologically sorted and gaps are
-   derived from timestamps;
-2. no events have `start_us`; input order is retained and `gap_us`, or
-   `compute_before_us` as a fallback, defines readiness;
-3. mixed timestamp availability is accepted only when **every** event supplies
-   an explicit `gap_us`, making input order authoritative.
-
-Conflicting `start_us` and `gap_us` values are rejected rather than guessed.
-Sub-microsecond gaps are stored to nanosecond decimal precision, and pattern
-records preserve their exact total duration.
-
-## Capture API
-
-```python
-from commcanary.capture import record_collective
-
-record_collective(
-    op="all_reduce",
-    bytes=128 * 1024,
-    ranks=list(range(8)),
-    dtype="bfloat16",
-    phase="decode",
-    collective_id="decode-token-42-tp-allreduce",
-    rank_arrival_us={str(rank): rank * 2.5 for rank in range(8)},
-    compute_overlap_us=18.0,
-    observed_exposed_us=67.4,
-)
-```
-
-For distributed capture, each logical occurrence needs a globally stable,
-unique `collective_id`. Per-process shards include rank, PID, and recorder UUID,
-so independent recorders cannot overwrite one another. Merging is fail-closed:
-it rejects mixed sessions, duplicate or missing rank contributions, conflicting
-collective metadata, incompatible clock calibration, and partially measured
-observed latency.
-
-Cross-process arrival timestamps are combined only when an explicit clock
-offset/calibration is supplied. Otherwise the merged trace marks cross-rank
-skew unknown, and compilation refuses to turn that uncertainty into zero skew.
-
-```bash
-commcanary capture --output trace.json --workload-name llama70b -- \
-  python examples/instrumented_decode.py
-```
-
-Direct, non-sharded output files are single-owner across processes. For a child
-that may fail after writing useful partial shards, preserve a bounded checksum
-bundle without recording its environment or raw command line:
-
-```bash
-commcanary capture --output trace.json --preserve-on-failure failed-capture -- \
-  python examples/instrumented_decode.py
-```
-
-## Reports and comparison
-
-Reports contain:
-
-- median, p95, p99, maximum, and mean exposed latency;
-- arrival-skew, queue-wait, and average-rank-wait statistics;
-- communication hidden by modeled overlap;
-- phase and operation breakdowns;
-- source-normalized, scheduler-execution, calibration-evaluation, artifact, and
-  replay-protocol fingerprints;
-- compiler fidelity metadata, source commitments for approximate intervals, and
-  sequence-motif metadata;
-- model calibration when observed latency is available.
-
-Report validation reconciles metrics and breakdowns with included samples. Even
-without samples, breakdown counts, weighted means, maxima, names, and quantile
-ordering are checked. `verify-report` goes further: it replays the declared
-canary with the declared backend and protocol, then compares canary identity,
-replay protocol, backend settings, workload, canary-summary metadata, metrics,
-breakdowns, calibration, and samples when present. Comparison output localises
-the largest phase- and operation-level regressions in addition to applying
-global thresholds.
-
-## Formats
-
-- `commcanary.trace.v1`
-- `commcanary.canary.v2`
-- `commcanary.report.v2`
-- `commcanary.compare.v2`
-- `commcanary.fidelity_verification.v1`
-- `commcanary.behavior_verification.v1`
-- `commcanary.report_verification.v1`
-- `commcanary.qualification_request.v2` (current policy-bound writer)
-- `commcanary.qualification_request.v1` (legacy read/verify support)
-- `commcanary.qualification_materialization.v1`
-- `commcanary.qualification_policy.v1`
-- `commcanary.qualification_observation.v1`
-- `commcanary.qualification_verdict.v1`
-
-Behavior-search candidate ledgers use the explicitly experimental
-`commcanary.behavior_search_evidence.experimental.v1` sidecar and are not part
-of the stable `format_capabilities()` matrix.
-
-Exact read/write/validation/migration support and the published JSON Schemas are
-listed in [`docs/formats/compatibility.md`](docs/formats/compatibility.md).
-
-Replay bandwidth is interpreted as **Gbit/s**.
-
-## Development and verification
-
-```bash
-python -m pip install -e ".[dev]"
 python -m tools.verify --fast
 ```
 
-`python -m tools.verify` additionally builds wheel and sdist artifacts, installs
-the exact wheel outside the checkout with source-path overrides removed, and
-runs installed-package tests. `python -m tools.verify --reproducible` checks two
-fixed-epoch builds byte-for-byte without pretending an unreleased changelog is
-final; `--release` additionally checks release identity. CI invokes the same
-gate; `PYTHONPATH=src` is not part of the supported verification path.
-
-Contributor workflow, platform guarantees, security reporting, and artifact
-redaction guidance are documented in [CONTRIBUTING.md](CONTRIBUTING.md),
-[docs/platform-support.md](docs/platform-support.md),
-[SECURITY.md](SECURITY.md), and [docs/privacy.md](docs/privacy.md). The stable
-[Python API](docs/api.md) and [CLI contract](docs/cli.md) are documented
-separately; maintainers use the [release runbook](docs/release.md). Durable
-engineering choices live in the [ADR index](docs/adr/README.md), and the
-[artifact-evaluation guide](docs/artifact-evaluation.md) names the exact
-handoff between local verification and authorized cluster execution.
-The enforced package DAG, component ownership, data flow, and extension points
-are in [docs/architecture.md](docs/architecture.md).
-
-## Important limitations
-
-The published Rostam evidence covers a narrow campaign on one 4×A100 PCIe
-node. Its exact-work decision verdict is reproducible and `inconclusive`; it
-does not establish a reduced canary, a cost benefit, or a portable hardware
-number. The repository now contains an unexecuted, separately versioned design
-with eight independent repetitions per configuration and simultaneous
-policy-margin uncertainty. Its 64 configuration/repetition cells are separate
-scheduler allocations and are not treated as paired blocks. It is
-implementation, not new evidence. Multi-node, NVLink-class,
-multi-model, and multi-generation-hardware evaluation; Chakra ET/current PARAM
-or Nsight ingestion; dependency-aware compute-kernel synthesis; and full
-per-window/per-motif Pareto minimisation remain open.
-“Model-free” means the artifact omits weights and application code; it does not
-by itself prove privacy or absence of trace leakage.
+Apache-2.0 covers the code. The CommCanary name and marks are reserved as
+described in [NOTICE](NOTICE).

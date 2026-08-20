@@ -192,6 +192,12 @@ invalidate a canary.
 
 SHA-256 detects changed content relative to a trusted digest or a trusted source.
 It does not identify the producer, prove authorization, or prevent an attacker
-from replacing an artifact and all nearby hashes. CommCanary currently provides
-no signature, certificate, transparency log, or external attestation. Use a
-signature or supply-chain attestation when producer authenticity is required.
+from replacing an artifact and all nearby hashes.
+
+The optional detached Ed25519 signing surface binds a payload to a specific
+public key. A valid signature proves that the signer possessed the matching
+private key and that the payload has not changed since signing. It identifies
+the producer only when the receiver obtained that public key through a trusted
+channel. CommCanary provides no certificate authority, transparency log, or
+external attestation. Use a certificate-based signature or supply-chain
+attestation when a pre-shared trust anchor is insufficient.

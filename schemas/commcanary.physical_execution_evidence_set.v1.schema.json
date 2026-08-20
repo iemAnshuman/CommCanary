@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.physical_execution_evidence_set.v1.schema.json",
+  "title": "CommCanary physical execution evidence set v1",
+  "type": "object",
+  "required": ["format", "evidence_set_id", "runner_oci_digest", "measurements"],
+  "properties": {
+    "format": {"const": "commcanary.physical_execution_evidence_set.v1"},
+    "evidence_set_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "runner_oci_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "measurements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "method", "measurement"],
+        "properties": {
+          "candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+          "method": {"enum": ["reduced_decision_canary", "independent_exact_replay", "random_sampling", "stratified_sampling", "ddmin", "communication_only_microbenchmark"]},
+          "measurement": {"$ref": "https://commcanary.dev/schemas/commcanary.physical_execution_measurement.v1.schema.json"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
+

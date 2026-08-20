@@ -1,0 +1,164 @@
+{
+  "schema": "commcanary.paper.verified-metrics.v1",
+  "paper": {
+    "concept_doi": "10.5281/zenodo.21939040",
+    "evidence_commit": "c133ad3fb5883100cb8622b597d5b6233b5efca1",
+    "title": "CommCanary 0.4v: Fail Closed Evidence for Decision Fidelity Evaluation of Collective Trace Replay",
+    "version": "0.4",
+    "version_doi": "10.5281/zenodo.21939041"
+  },
+  "source_files": {
+    "experiments/rostam/results/exact-work-artifacts/publication/qualification-exact-20260730-r3-primary/aggregate.json": "b42d4aea0451812cb1a7ff3d15a36cbcfaeadc47e0a8163725c7163b3bb80218",
+    "experiments/rostam/results/exact-work-artifacts/publication/qualification-exact-20260730-r3-primary/paper-fragment.md": "c35446ce7c252c682bf83db8966ca6d4d521c3782eb192ba039037c04ca371cd",
+    "experiments/rostam/results/publications/decision-gate-20260801-r3-analysis-1300d12-primary/aggregate.json": "5e153de3976cb913ae3321e1329adce2ea591277429522b4c859db44d35d4998",
+    "experiments/rostam/results/publications/decision-gate-20260801-r3-analysis-1300d12-primary/decision-fidelity-verdict.json": "3da7a5bf1af833276af84f448f9278f9e2bac1b0e7bdee5a1c365bb0a4dce29a",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.csv": "b5ff79a23abaf8bb5c5260c9c30ddef88858c82ce47c859d623d50f911af1257",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json": "7a43e57ec4576f2f67e74d419bd793b6c639eccaec01fbdf769bdc0946220e2f",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/paper-fragment.md": "a53451c780b57b3d9fe3b49549f200c048a34e54b74ef99584490cb0c5e2c57d"
+  },
+  "trusted_comparison": {
+    "configuration_count": 8,
+    "pair_count": 28,
+    "selected_cells": 280,
+    "representations": [
+      {
+        "agreement_count": 18,
+        "agreement_pct": 64.28571428571429,
+        "id": "W-micro",
+        "kendall_tau_b": 0.49
+      },
+      {
+        "agreement_count": 16,
+        "agreement_pct": 57.14285714285714,
+        "id": "W-canary",
+        "kendall_tau_b": 0.204
+      },
+      {
+        "agreement_count": 15,
+        "agreement_pct": 53.57142857142857,
+        "id": "W-canary-overlap",
+        "kendall_tau_b": 0.677
+      },
+      {
+        "agreement_count": 20,
+        "agreement_pct": 71.42857142857143,
+        "id": "W-shared-overlap",
+        "kendall_tau_b": 0.708
+      }
+    ],
+    "trusted_join_sha256": "11d2fa88af25881a3ac5c2d40999b673fe6ce321c8e243351b7640b2c1601177"
+  },
+  "exact_work_gate": {
+    "bootstrap_resamples": 2000,
+    "bootstrap_seed": 7411,
+    "configuration_count": 8,
+    "false_negative_count": 1,
+    "false_positive_count": 1,
+    "kendall_tau_b": 0.8571428571428571,
+    "median_absolute_relative_error_pct": 1.54731774015244,
+    "outcome": "inconclusive",
+    "p95_absolute_relative_error_pct": 4.049839877864252,
+    "pair_count": 28,
+    "pairwise_agreement_count": 26,
+    "pairwise_agreement_pct": 92.85714285714286,
+    "selected_cells": 8,
+    "stability_limit_pct": 20.0,
+    "tree_ll_relative_iqr_pct": {
+      "exact_work": 32.277478618942034,
+      "source": 47.473100749918466,
+      "stratified": 50.42857142857143
+    },
+    "representative_normalized_intervals": [
+      {
+        "high": 0.46743295019157044,
+        "label": "2.19.3 default vs ring LL",
+        "low": -1.8237547892720305,
+        "point": -1.279693486590037
+      },
+      {
+        "high": 1.3539791141519604,
+        "label": "2.19.3 default vs ring simple",
+        "low": -0.17284839755131448,
+        "point": 0.6265754411235126
+      },
+      {
+        "high": 5.336694274396831,
+        "label": "2.19.3 default vs tree simple",
+        "low": 2.448685631976952,
+        "point": 3.8242707958228275
+      },
+      {
+        "high": 5.370120652945328,
+        "label": "2.20.5 default vs tree LL",
+        "low": 0.19162526614620712,
+        "point": 2.405961674946774
+      },
+      {
+        "high": 6.592720306513398,
+        "label": "ring LL vs tree LL",
+        "low": 1.4319923371647514,
+        "point": 4.191570881226051
+      },
+      {
+        "high": -0.13437057991513843,
+        "label": "tree LL vs tree LL128",
+        "low": -4.564886845827433,
+        "point": -2.326732673267328
+      }
+    ]
+  },
+  "same_node_diagnostic": {
+    "configuration_count": 1,
+    "deterministic_check_count": 32,
+    "replay_iqr_us": 8.9725,
+    "replay_median_us": 1541.0015,
+    "selected_cells": 1,
+    "signed_difference_pct": 7.4533578967,
+    "signed_difference_us": 106.8895,
+    "source_iqr_us": 9.216,
+    "source_median_us": 1434.112,
+    "world_size": 4
+  },
+  "campaign_identities": [
+    {
+      "campaign": "rostam-core",
+      "completeness": "46d8012b3594c18c96ee1a3f1e063ceeaf5642068c6a6aa895e655bcfb257bdd",
+      "manifest": "3bd321ec960c2bce0e6c0ff9aba8bb2be89cb19bdb99011a838cbd79068835b8",
+      "repository_commit": "2855275288e67a1a2d0bbefff0740841fdf0ecf0",
+      "run": "core-20260724-r7",
+      "selection": "d01db822c8e909fe2dbfac157bf62eeeb370a3eef45168f4eb1ff5023fbd4e3a"
+    },
+    {
+      "campaign": "rostam-shared-replay",
+      "completeness": "b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db",
+      "manifest": "a402a4ec73ea3a182ab6bd5ec92e896600b16510dc4c1621c6defe9382ee149c",
+      "repository_commit": "2855275288e67a1a2d0bbefff0740841fdf0ecf0",
+      "run": "shared-replay-20260720-r2",
+      "selection": "a1e876861f7f9a315cb00a11a67414e6125078a68306c0b07a4a5d9f14b98d64"
+    },
+    {
+      "campaign": "rostam-overlap",
+      "completeness": "5b153d0452df5033261d81f01db74211a0cb87015694b25190d8aa69650507fd",
+      "manifest": "5d5eb9f4822e14f86023106742efdd48823b20b6a7cb866c3370367aced31d17",
+      "repository_commit": "2855275288e67a1a2d0bbefff0740841fdf0ecf0",
+      "run": "overlap-20260724-r1",
+      "selection": "e012e40613f57db8dc38d519dd85b85864f99dd3f95724b8cf0f7c62996239d9"
+    },
+    {
+      "campaign": "rostam-decision-gate",
+      "completeness": "6377a65bb05761427ae0f384f0ad07a14430285fc50e344155c44e4e3f11ce8d",
+      "manifest": "1b1909b3e8561b035c0ee4f9e9c39e497c82d737f8a61e348b1cf6792d06e842",
+      "repository_commit": "4585318ac244f218e438de06c0ccd38c0c88cbbf",
+      "run": "decision-gate-20260801-r3",
+      "selection": "c675e42e34e44794a5dd8f12d3d4f4214e440c8b27643b9b4101edb1625391a0"
+    },
+    {
+      "campaign": "rostam-qualification-exact",
+      "completeness": "593772c0902024443dd3e457f0e59003eea41a59014821417f629f5a34ff97b8",
+      "manifest": "c0bc2e6a9ecb1da691a3caa083bd5842f054c770300a855a9ac69500a2834552",
+      "repository_commit": "9b1e58aef91eebc14a65a11cc46e2eb500d814b5",
+      "run": "qualification-exact-20260730-r3",
+      "selection": "bf23480f39dd49794aa3d81b23a13d5576388563aeef12e8e77681877dd4ce9b"
+    }
+  ]
+}

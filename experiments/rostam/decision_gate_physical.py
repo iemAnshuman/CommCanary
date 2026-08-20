@@ -2,8 +2,8 @@
 """Run the predeclared same-allocation physical decision-fidelity gate.
 
 Every rank verifies the policy-bound qualification request and materialization
-before importing PyTorch.  The runner then interleaves the source program, the
-lossless exact-work materialization, two practical baselines, and two causal
+before importing PyTorch.  The runner then interleaves a trace-derived
+reference, the exact materialization control, two practical baselines, and two causal
 ablations inside one process group.  All representations use the same CUDA
 event timing method and allocation; rank 0 emits one strict JSON document for
 the manifest-owned physical adapter.
@@ -16,10 +16,13 @@ until every frozen configuration has one selected terminal attempt.
 from __future__ import annotations
 
 import argparse
+import csv
 import ctypes
+import hashlib
 import json
 import math
 import os
+import socket
 import statistics
 from dataclasses import dataclass
 from datetime import timedelta
@@ -39,7 +42,10 @@ from .decision_gate_schedule import (
     REPLICATED_ORDER_METHOD,
     REPRESENTATION_IDS,
     representation_order,
+    warmup_representation_order,
 )
+from .harness import canonical_sha256, utc_timestamp
+from .lib.cell_entrypoint import CellEntrypointError, _run_bounded_probe
 from .qualification_physical import stage_qualification_inputs
 
 DECISION_GATE_STDOUT_SCHEMA = "commcanary.rostam.decision-gate.stdout.v1"
@@ -58,10 +64,25 @@ REPRESENTATION_METADATA = {
 }
 REPLICATED_REPRESENTATION_METADATA = {
     **REPRESENTATION_METADATA,
-    "exact_work": ("positive_conformance_control", "verified-materialization-issue-rank-work-wait"),
+    "source": ("trace_derived_reference", "direct-source-issue-rank-work-wait"),
+    "exact_work": ("exact_materialization_control", "verified-materialization-issue-rank-work-wait"),
 }
 DEFAULT_DISTRIBUTED_TIMEOUT_SECONDS = 300
 _MAX_PROC_MAPS_BYTES = 4 * 1024 * 1024
+_CYCLE_TELEMETRY_SCHEMA = "commcanary.rostam.decision-gate-cycle-telemetry.v1"
+_CYCLE_TELEMETRY_METHOD = "bounded-between-six-row-cycles.v1"
+_CYCLE_TELEMETRY_GPU_FIELDS = (
+    "index",
+    "uuid",
+    "performance_state",
+    "temperature_c",
+    "power_draw_w",
+    "sm_clock_mhz",
+    "memory_clock_mhz",
+    "throttle_reasons_active",
+    "ecc_corrected_volatile_total",
+    "ecc_uncorrected_volatile_total",
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +102,27 @@ class GateEvent:
         return self.pg_id, self.ranks, self.elements, self.dtype
 
 
+@dataclass(frozen=True)
+class CompiledOp:
+    """One schema-free instruction compiled before warmup and timing."""
+
+    kind: str
+    request: int
+    pg_id: Optional[int] = None
+    recipe: Optional[Tuple[str, int, int, int]] = None
+
+
+@dataclass(frozen=True, eq=False)
+class RuntimeOp:
+    """One instruction bound to preallocated runtime objects."""
+
+    kind: str
+    request: int
+    group: Any = None
+    tensor: Any = None
+    operands: Optional[Tuple[Any, Any, Any]] = None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request-manifest", type=Path, required=True)
@@ -95,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-program-sha256", required=True)
     parser.add_argument("--expected-policy-id", required=True)
     parser.add_argument("--iterations", type=int, default=20)
-    parser.add_argument("--warmup", type=int, default=5)
+    parser.add_argument("--warmup", type=int, default=6)
     parser.add_argument("--configuration-repetition", type=int)
     parser.add_argument(
         "--distributed-timeout-seconds",
@@ -246,6 +288,141 @@ def plan_events(plan: QualificationExecutionPlan) -> Tuple[GateEvent, ...]:
     return tuple(result)
 
 
+def compile_event_program(
+    events: Sequence[GateEvent],
+    *,
+    rank: int,
+    mode: str = "overlap",
+) -> Tuple[CompiledOp, ...]:
+    """Compile one representation without retaining mappings or schema rows."""
+
+    if mode not in {"overlap", "isolated", "no_overlap", "no_rank_skew"}:
+        raise SystemExit(f"unsupported decision-gate compile mode {mode!r}")
+    compiled: List[CompiledOp] = []
+    for event in events:
+        if rank not in event.ranks:
+            raise SystemExit(f"decision-gate rank {rank} is outside request {event.request}")
+        recipe_rank = event.ranks[0] if mode == "no_rank_skew" else rank
+        recipe_index = event.ranks.index(recipe_rank)
+        collective_kind = "collective_blocking" if mode in {"isolated", "no_overlap"} else "collective_start"
+        compiled.append(
+            CompiledOp(
+                kind=collective_kind,
+                request=event.request,
+                pg_id=event.pg_id,
+            )
+        )
+        if mode != "isolated":
+            compiled.extend(
+                CompiledOp(kind="gemm", request=event.request, recipe=recipe) for recipe in event.recipes[recipe_index]
+            )
+        if collective_kind == "collective_start":
+            compiled.append(CompiledOp(kind="collective_wait", request=event.request))
+    return tuple(compiled)
+
+
+def matching_source_and_exact_programs(
+    source: Sequence[GateEvent],
+    materialized: Sequence[GateEvent],
+    *,
+    rank: int,
+) -> Tuple[CompiledOp, ...]:
+    """Compile both evaluated paths and refuse any instruction-level mismatch."""
+
+    if tuple(source) != tuple(materialized):
+        raise SystemExit("decision-gate source and exact-work event programs disagree")
+    source_program = compile_event_program(source, rank=rank)
+    exact_program = compile_event_program(materialized, rank=rank)
+    if source_program != exact_program:
+        raise SystemExit("decision-gate source and exact-work compiled programs disagree")
+    return source_program
+
+
+def _bind_runtime_program(
+    program: Sequence[CompiledOp],
+    *,
+    groups: Mapping[int, Any],
+    communication: Mapping[int, Any],
+    gemms: Mapping[Tuple[str, int, int, int], Tuple[Any, Any, Any]],
+) -> Tuple[RuntimeOp, ...]:
+    """Bind every lookup before a program can enter warmup or timing."""
+
+    bound: List[RuntimeOp] = []
+    tensor_owners: Dict[int, int] = {}
+    for operation in program:
+        if operation.kind in {"collective_start", "collective_blocking"}:
+            if operation.pg_id is None or operation.pg_id not in groups or operation.request not in communication:
+                raise SystemExit("decision-gate compiled collective has an unbound runtime object")
+            tensor = communication[operation.request]
+            tensor_identity = id(tensor)
+            prior_owner = tensor_owners.setdefault(tensor_identity, operation.request)
+            if prior_owner != operation.request:
+                raise SystemExit("decision-gate distinct requests alias one communication buffer")
+            bound.append(
+                RuntimeOp(
+                    kind=operation.kind,
+                    request=operation.request,
+                    group=groups[operation.pg_id],
+                    tensor=tensor,
+                )
+            )
+        elif operation.kind == "gemm":
+            if operation.recipe is None or operation.recipe not in gemms:
+                raise SystemExit("decision-gate compiled GEMM has no preallocated operands")
+            bound.append(
+                RuntimeOp(
+                    kind=operation.kind,
+                    request=operation.request,
+                    operands=gemms[operation.recipe],
+                )
+            )
+        elif operation.kind == "collective_wait":
+            bound.append(RuntimeOp(kind=operation.kind, request=operation.request))
+        else:
+            raise SystemExit(f"unsupported compiled decision-gate operation {operation.kind!r}")
+    return tuple(bound)
+
+
+def _run_runtime_program(
+    program: Sequence[RuntimeOp],
+    *,
+    dist: Any,
+    torch: Any,
+    wait_callback: Optional[Any] = None,
+) -> None:
+    """Execute a prebound program without schema access or mapping traversal."""
+
+    pending: Dict[int, Any] = {}
+    for operation in program:
+        if operation.kind == "gemm":
+            if operation.operands is None:  # pragma: no cover - guarded by binding
+                raise SystemExit("decision-gate GEMM operands disappeared")
+            left, right, output = operation.operands
+            torch.mm(left, right, out=output)
+        elif operation.kind == "collective_blocking":
+            dist.all_reduce(operation.tensor, op=dist.ReduceOp.SUM, group=operation.group)
+        elif operation.kind == "collective_start":
+            if operation.request in pending:
+                raise SystemExit("decision-gate compiled program reused a pending request")
+            pending[operation.request] = dist.all_reduce(
+                operation.tensor,
+                op=dist.ReduceOp.SUM,
+                group=operation.group,
+                async_op=True,
+            )
+        elif operation.kind == "collective_wait":
+            work = pending.pop(operation.request, None)
+            if work is None:
+                raise SystemExit("decision-gate compiled wait has no pending request")
+            work.wait()
+            if wait_callback is not None:
+                wait_callback(operation.request)
+        else:  # pragma: no cover - guarded by binding
+            raise SystemExit(f"unsupported bound decision-gate operation {operation.kind!r}")
+    if pending:
+        raise SystemExit("decision-gate compiled program retained pending requests")
+
+
 def stratified_indices(events: Sequence[GateEvent]) -> Tuple[int, ...]:
     """Select the first source event in every collective-shape stratum."""
 
@@ -291,6 +468,10 @@ def result_payload(
     correctness_checks_per_rank: Sequence[int],
     runtime: Mapping[str, Any],
     configuration_repetition: Optional[int] = None,
+    backend_smoke_checks_per_rank: Optional[Sequence[int]] = None,
+    source_output_commitment_sha256_by_rank: Optional[Sequence[str]] = None,
+    exact_work_output_commitment_sha256_by_rank: Optional[Sequence[str]] = None,
+    telemetry_checkpoints: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     if len(gathered) != world_size:
         raise SystemExit("decision-gate timing inventory does not cover the launched world")
@@ -338,6 +519,15 @@ def result_payload(
                 "max_us": round(max(rounded_maxima), 3),
             },
         }
+    measured_orders = [
+        list(
+            representation_order(
+                index,
+                configuration_repetition=configuration_repetition,
+            )
+        )
+        for index in range(iterations)
+    ]
     execution: Dict[str, Any] = {
         "world_size": world_size,
         "iterations": iterations,
@@ -346,21 +536,64 @@ def result_payload(
         "order_method": (
             DECISION_GATE_ORDER_METHOD if configuration_repetition is None else DECISION_GATE_REPLICATED_ORDER_METHOD
         ),
-        "representation_order_by_iteration": [
-            list(
-                representation_order(
-                    index,
-                    configuration_repetition=configuration_repetition,
-                )
-            )
-            for index in range(iterations)
-        ],
+        "representation_order_by_iteration": measured_orders,
         "source_event_count": source_event_count,
         "stratified_method": STRATIFIED_METHOD,
         "stratified_source_event_indices": list(selected_indices),
     }
     if configuration_repetition is not None:
+        if telemetry_checkpoints is None:
+            raise SystemExit("replicated decision-gate cycle telemetry is incomplete")
+        warmup_orders = [
+            list(
+                warmup_representation_order(
+                    index,
+                    configuration_repetition=configuration_repetition,
+                )
+            )
+            for index in range(warmup)
+        ]
         execution["configuration_repetition"] = configuration_repetition
+        execution["representation_order_by_warmup"] = warmup_orders
+        execution["representation_schedule_sha256"] = canonical_sha256(
+            {
+                "warmup": warmup_orders,
+                "measured": measured_orders,
+            }
+        )
+    if configuration_repetition is None:
+        correctness = {
+            "status": "passed",
+            "semantics": "one-source-value-sum-check-per-collective-shape",
+            "checks_per_rank": list(correctness_checks_per_rank),
+            "total_check_count": sum(correctness_checks_per_rank),
+        }
+    else:
+        if (
+            backend_smoke_checks_per_rank is None
+            or source_output_commitment_sha256_by_rank is None
+            or exact_work_output_commitment_sha256_by_rank is None
+            or len(backend_smoke_checks_per_rank) != world_size
+            or len(correctness_checks_per_rank) != world_size
+            or len(source_output_commitment_sha256_by_rank) != world_size
+            or len(exact_work_output_commitment_sha256_by_rank) != world_size
+            or list(source_output_commitment_sha256_by_rank) != list(exact_work_output_commitment_sha256_by_rank)
+        ):
+            raise SystemExit("replicated decision-gate correctness evidence is incomplete")
+        correctness = {
+            "status": "passed",
+            "semantics": "complete-source-and-exact-work-output-commitment-comparison",
+            "checks_per_rank": list(correctness_checks_per_rank),
+            "total_check_count": sum(correctness_checks_per_rank),
+            "source_output_commitment_sha256_by_rank": list(source_output_commitment_sha256_by_rank),
+            "exact_work_output_commitment_sha256_by_rank": list(exact_work_output_commitment_sha256_by_rank),
+            "backend_smoke_check": {
+                "status": "passed",
+                "semantics": "one-blocking-sum-check-per-collective-shape",
+                "checks_per_rank": list(backend_smoke_checks_per_rank),
+                "total_check_count": sum(backend_smoke_checks_per_rank),
+            },
+        }
     return {
         "schema": (
             DECISION_GATE_STDOUT_SCHEMA if configuration_repetition is None else DECISION_GATE_REPLICATED_STDOUT_SCHEMA
@@ -379,12 +612,8 @@ def result_payload(
         },
         "execution": execution,
         "runtime": dict(runtime),
-        "correctness": {
-            "status": "passed",
-            "semantics": "one-source-value-sum-check-per-collective-shape",
-            "checks_per_rank": list(correctness_checks_per_rank),
-            "total_check_count": sum(correctness_checks_per_rank),
-        },
+        "correctness": correctness,
+        **({} if telemetry_checkpoints is None else {"telemetry_checkpoints": dict(telemetry_checkpoints)}),
         "representations": representations,
         "claims": {
             "physical_execution": "same_allocation_self_reported",
@@ -473,6 +702,195 @@ def _normalized_torch_version(torch: Any) -> str:
     return version
 
 
+def _cycle_telemetry_snapshot(label: str) -> Dict[str, Any]:
+    """Capture one bounded between-cycle GPU, node, ECC, and Xid snapshot."""
+
+    query_prefix = "index,uuid,pstate,temperature.gpu,power.draw,clocks.current.sm,clocks.current.memory,"
+    query_suffix = ",ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total"
+    raw_gpu: Optional[str] = None
+    for throttle_field in ("clocks_event_reasons.active", "clocks_throttle_reasons.active"):
+        try:
+            raw_gpu = _run_bounded_probe(
+                (
+                    "nvidia-smi",
+                    f"--query-gpu={query_prefix}{throttle_field}{query_suffix}",
+                    "--format=csv,noheader,nounits",
+                )
+            )
+            break
+        except CellEntrypointError:
+            continue
+    if raw_gpu is None:
+        raise SystemExit("decision-gate cycle telemetry cannot query GPU throttle/ECC state")
+    try:
+        parsed_rows = list(csv.reader(raw_gpu.splitlines(), strict=True))
+    except csv.Error as exc:
+        raise SystemExit("decision-gate cycle GPU telemetry is not valid CSV") from exc
+    if not parsed_rows:
+        raise SystemExit("decision-gate cycle GPU telemetry is empty")
+    gpus: List[Dict[str, Any]] = []
+    for row_index, row in enumerate(parsed_rows):
+        fields = [value.strip() for value in row]
+        if len(fields) != len(_CYCLE_TELEMETRY_GPU_FIELDS):
+            raise SystemExit(f"decision-gate cycle GPU row {row_index} has an invalid field count")
+        try:
+            index = int(fields[0])
+            temperature_c = int(fields[3])
+            power_draw_w = float(fields[4])
+            sm_clock_mhz = int(fields[5])
+            memory_clock_mhz = int(fields[6])
+            throttle_bits = int(fields[7], 16)
+            ecc_corrected = int(fields[8])
+            ecc_uncorrected = int(fields[9])
+        except ValueError as exc:
+            raise SystemExit(f"decision-gate cycle GPU row {row_index} has invalid numeric telemetry") from exc
+        if (
+            index != row_index
+            or not fields[1]
+            or not fields[2]
+            or not fields[7].lower().startswith("0x")
+            or not -50 <= temperature_c <= 200
+            or not math.isfinite(power_draw_w)
+            or power_draw_w < 0.0
+            or min(sm_clock_mhz, memory_clock_mhz, throttle_bits, ecc_corrected, ecc_uncorrected) < 0
+        ):
+            raise SystemExit(f"decision-gate cycle GPU row {row_index} is outside the supported domain")
+        gpus.append(
+            {
+                "index": index,
+                "uuid": fields[1],
+                "performance_state": fields[2],
+                "temperature_c": temperature_c,
+                "power_draw_w": power_draw_w,
+                "sm_clock_mhz": sm_clock_mhz,
+                "memory_clock_mhz": memory_clock_mhz,
+                "throttle_reasons_active": f"0x{throttle_bits:016x}",
+                "ecc_corrected_volatile_total": ecc_corrected,
+                "ecc_uncorrected_volatile_total": ecc_uncorrected,
+            }
+        )
+    node = socket.gethostname().split(".", 1)[0]
+    try:
+        raw_node = _run_bounded_probe(("scontrol", "show", "node", "--oneliner", node))
+        raw_kernel = _run_bounded_probe(("journalctl", "--dmesg", "--boot", "--no-pager", "--grep", "NVRM.*Xid"))
+    except CellEntrypointError as exc:
+        raise SystemExit(f"decision-gate cycle telemetry probe failed: {exc}") from exc
+    state_fields = [part.split("=", 1)[1] for part in raw_node.split() if part.startswith("State=")]
+    if len(state_fields) != 1 or not state_fields[0]:
+        raise SystemExit("decision-gate cycle node telemetry lacks one parsed State")
+    xid_lines = [line.strip() for line in raw_kernel.splitlines() if "NVRM" in line and "Xid" in line]
+    return {
+        "label": label,
+        "captured_at": utc_timestamp(),
+        "gpus": gpus,
+        "node_state": {
+            "method": "scontrol show node --oneliner HOSTNAME",
+            "node": node,
+            "state": state_fields[0],
+        },
+        "xid": {
+            "method": "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid",
+            "event_count": len(xid_lines),
+            "window_sha256": hashlib.sha256("\n".join(xid_lines).encode("utf-8")).hexdigest(),
+        },
+    }
+
+
+def _initialize_representation_signatures(
+    events: Sequence[GateEvent],
+    *,
+    rank: int,
+    communication: Mapping[int, Any],
+) -> None:
+    """Fill every request with a request/rank/lane-specific exact signature."""
+
+    supported_dtypes = {"float16", "bfloat16", "float32", "float64"}
+    if len(events) > 8:
+        raise SystemExit("decision-gate representation signature domain supports at most eight requests")
+    for event_index, event in enumerate(events):
+        if event.dtype not in supported_dtypes:
+            raise SystemExit(
+                f"decision-gate representation validation does not support signature dtype {event.dtype!r}"
+            )
+        rank_index = event.ranks.index(rank)
+        tensor = communication[event.request]
+        period = min(4, event.elements)
+        for lane in range(period):
+            # Multiples of four keep all inputs exact in bfloat16 over the
+            # bounded eight-event/four-lane decision-gate domain.
+            value = 4 + event_index * 8 + rank_index * 4 + lane * 64
+            tensor[lane::period].fill_(value)
+
+
+def _expected_representation_output(
+    event: GateEvent,
+    *,
+    event_index: int,
+    tensor: Any,
+) -> Any:
+    expected = tensor.new_empty(tensor.shape)
+    period = min(4, event.elements)
+    rank_sum = len(event.ranks) * (len(event.ranks) - 1) // 2
+    for lane in range(period):
+        value = len(event.ranks) * (4 + event_index * 8 + lane * 64) + rank_sum * 4
+        expected[lane::period].fill_(value)
+    return expected
+
+
+def _tensor_commitment(tensor: Any, *, torch: Any) -> str:
+    byte_view = tensor.detach().contiguous().view(torch.uint8).reshape(-1)
+    digest = hashlib.sha256()
+    for offset in range(0, int(byte_view.numel()), 64 * 1024):
+        chunk = byte_view[offset : offset + 64 * 1024].cpu().tolist()
+        digest.update(bytes(chunk))
+    return digest.hexdigest()
+
+
+def _validate_complete_representation(
+    label: str,
+    program: Sequence[RuntimeOp],
+    events: Sequence[GateEvent],
+    *,
+    rank: int,
+    communication: Mapping[int, Any],
+    dist: Any,
+    torch: Any,
+) -> Tuple[int, str]:
+    """Execute and validate every result through the actual representation loop."""
+
+    _initialize_representation_signatures(events, rank=rank, communication=communication)
+    event_by_request = {event.request: (index, event) for index, event in enumerate(events)}
+    if len(event_by_request) != len(events):
+        raise SystemExit("decision-gate representation validation requires unique requests")
+    commitments: List[Tuple[int, str]] = []
+
+    def validate_wait(request: int) -> None:
+        item = event_by_request.get(request)
+        if item is None:
+            raise SystemExit(f"decision-gate {label} waited for an unknown request {request}")
+        event_index, event = item
+        tensor = communication[request]
+        expected = _expected_representation_output(event, event_index=event_index, tensor=tensor)
+        if not bool(tensor.eq(expected).all().item()):
+            raise SystemExit(f"decision-gate {label} correctness failed for request {request}")
+        commitments.append((request, _tensor_commitment(tensor, torch=torch)))
+
+    _run_runtime_program(
+        program,
+        dist=dist,
+        torch=torch,
+        wait_callback=validate_wait,
+    )
+    if len(commitments) != len(events):
+        raise SystemExit(f"decision-gate {label} did not validate every request")
+    commitment = canonical_sha256(
+        {
+            "outputs": [{"request": request, "sha256": digest} for request, digest in commitments],
+        }
+    )
+    return len(commitments), commitment
+
+
 def _execute(
     *,
     plan: QualificationExecutionPlan,
@@ -485,7 +903,7 @@ def _execute(
     warmup: int,
     timeout_seconds: int,
     configuration_repetition: int,
-) -> Tuple[Sequence[Mapping[str, Any]], Sequence[int], Mapping[str, Any]]:
+) -> Tuple[Sequence[Mapping[str, Any]], Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
     try:
         import torch  # type: ignore[import-not-found]
         import torch.distributed as dist  # type: ignore[import-not-found]
@@ -519,93 +937,97 @@ def _execute(
                             torch.empty((m, n), device="cuda", dtype=dtype_map[dtype]),
                         )
 
-        def compute(recipes: Sequence[Tuple[str, int, int, int]]) -> None:
-            for recipe in recipes:
-                left, right, output = gemms[recipe]
-                torch.mm(left, right, out=output)
-
-        def event_program(events: Sequence[GateEvent], mode: str) -> None:
-            for event in events:
-                tensor = communication[event.request]
-                if mode in {"isolated", "no_overlap"}:
-                    dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=groups[event.pg_id])
-                    if mode == "no_overlap":
-                        compute(event.recipes[rank])
-                    continue
-                work = dist.all_reduce(
-                    tensor,
-                    op=dist.ReduceOp.SUM,
-                    group=groups[event.pg_id],
-                    async_op=True,
-                )
-                if mode == "no_rank_skew":
-                    compute(event.recipes[0])
-                else:
-                    compute(event.recipes[rank])
-                work.wait()
-
-        def exact_program() -> None:
-            pending: Dict[int, Any] = {}
-            for entry in plan.entries:
-                if entry.get("compute") == "gemm_recipe":
-                    compute(
-                        _recipe_tuple(entry["recipe_by_rank"], ranks=tuple(entry["global_ranks"]), field="plan")[rank]
-                    )
-                    continue
-                comms = entry.get("comms")
-                if comms == "init":
-                    continue
-                if comms == "wait":
-                    request = int(entry["req"])
-                    pending.pop(request).wait()
-                    continue
-                request = int(entry["req"])
-                pending[request] = dist.all_reduce(
-                    communication[request],
-                    op=dist.ReduceOp.SUM,
-                    group=groups[int(entry["pg_id"])],
-                    async_op=True,
-                )
-            if pending:
-                raise SystemExit("decision-gate exact replay retained pending requests")
-
         selected = tuple(source[index] for index in selected_indices)
+        materialized = plan_events(plan)
+        shared_compiled = matching_source_and_exact_programs(source, materialized, rank=rank)
+        compiled_programs = {
+            "source": shared_compiled,
+            "exact_work": shared_compiled,
+            "stratified": compile_event_program(selected, rank=rank),
+            "isolated": compile_event_program(source, rank=rank, mode="isolated"),
+            "no_overlap": compile_event_program(source, rank=rank, mode="no_overlap"),
+            "no_rank_skew": compile_event_program(source, rank=rank, mode="no_rank_skew"),
+        }
+        shared_runtime = _bind_runtime_program(
+            shared_compiled,
+            groups=groups,
+            communication=communication,
+            gemms=gemms,
+        )
+        runtime_programs = {
+            representation: (
+                shared_runtime
+                if representation in {"source", "exact_work"}
+                else _bind_runtime_program(
+                    program,
+                    groups=groups,
+                    communication=communication,
+                    gemms=gemms,
+                )
+            )
+            for representation, program in compiled_programs.items()
+        }
 
         def run_representation(representation: str) -> None:
-            if representation == "source":
-                event_program(source, "source")
-            elif representation == "exact_work":
-                exact_program()
-            elif representation == "stratified":
-                event_program(selected, "stratified")
-            elif representation == "isolated":
-                event_program(source, "isolated")
-            elif representation == "no_overlap":
-                event_program(source, "no_overlap")
-            elif representation == "no_rank_skew":
-                event_program(source, "no_rank_skew")
-            else:  # pragma: no cover - closed constant vocabulary
+            program = runtime_programs.get(representation)
+            if program is None:  # pragma: no cover - closed constant vocabulary
                 raise SystemExit(f"unsupported decision-gate representation {representation!r}")
+            _run_runtime_program(program, dist=dist, torch=torch)
 
-        checks = 0
-        expected = world_size * (world_size + 1) // 2
+        telemetry_snapshots: List[Mapping[str, Any]] = []
+
+        def capture_telemetry(label: str) -> None:
+            dist.barrier()
+            payload: List[Any] = [None]
+            if rank == 0:
+                payload[0] = _cycle_telemetry_snapshot(label)
+            dist.broadcast_object_list(payload, src=0)
+            if not isinstance(payload[0], Mapping) or payload[0].get("label") != label:
+                raise SystemExit("decision-gate cycle telemetry broadcast is inconsistent")
+            telemetry_snapshots.append(dict(payload[0]))
+            dist.barrier()
+
+        backend_checks = 0
         seen_strata = set()
         for event in source:
             if event.stratum in seen_strata:
                 continue
             seen_strata.add(event.stratum)
             tensor = communication[event.request]
-            tensor.fill_(rank + 1)
+            local_rank_index = event.ranks.index(rank)
+            tensor.fill_(local_rank_index + 1)
             dist.all_reduce(tensor, op=dist.ReduceOp.SUM, group=groups[event.pg_id])
+            expected = len(event.ranks) * (len(event.ranks) + 1) // 2
             if not bool(tensor.eq(expected).all().item()):
-                raise SystemExit(f"decision-gate correctness check failed for request {event.request}")
-            checks += 1
+                raise SystemExit(f"decision-gate backend smoke check failed for request {event.request}")
+            backend_checks += 1
+
+        representation_checks = 0
+        commitments: Dict[str, str] = {}
+        for label in ("source", "exact_work"):
+            torch.cuda.synchronize()
+            dist.barrier()
+            check_count, commitment = _validate_complete_representation(
+                label,
+                runtime_programs[label],
+                source,
+                rank=rank,
+                communication=communication,
+                dist=dist,
+                torch=torch,
+            )
+            torch.cuda.synchronize()
+            dist.barrier()
+            representation_checks += check_count
+            commitments[label] = commitment
+        if commitments["source"] != commitments["exact_work"]:
+            raise SystemExit("decision-gate source and exact-work output commitments disagree")
 
         timings: Dict[str, List[float]] = {name: [] for name in REPRESENTATION_IDS}
-        for pass_index in range(-warmup, iterations):
-            order_index = pass_index if pass_index >= 0 else pass_index + warmup
-            order = representation_order(
-                order_index,
+        capture_telemetry("before_warmup")
+        for warmup_index in range(warmup):
+            order = warmup_representation_order(
+                warmup_index,
                 configuration_repetition=configuration_repetition,
             )
             for representation in order:
@@ -613,35 +1035,86 @@ def _execute(
                     tensor.zero_()
                 torch.cuda.synchronize()
                 dist.barrier()
-                if pass_index < 0:
-                    run_representation(representation)
-                    torch.cuda.synchronize()
-                else:
-                    started = torch.cuda.Event(enable_timing=True)
-                    ended = torch.cuda.Event(enable_timing=True)
-                    started.record()
-                    run_representation(representation)
-                    ended.record()
-                    ended.synchronize()
-                    timings[representation].append(float(started.elapsed_time(ended) * 1000.0))
+                run_representation(representation)
+                torch.cuda.synchronize()
                 dist.barrier()
+        capture_telemetry("before_measured_cycle_1")
+        for iteration in range(iterations):
+            order = representation_order(
+                iteration,
+                configuration_repetition=configuration_repetition,
+            )
+            for representation in order:
+                for tensor in communication.values():
+                    tensor.zero_()
+                torch.cuda.synchronize()
+                dist.barrier()
+                started = torch.cuda.Event(enable_timing=True)
+                ended = torch.cuda.Event(enable_timing=True)
+                started.record()
+                run_representation(representation)
+                ended.record()
+                ended.synchronize()
+                timings[representation].append(float(started.elapsed_time(ended) * 1000.0))
+                dist.barrier()
+            if (iteration + 1) % 6 == 0:
+                capture_telemetry(f"after_measured_cycle_{(iteration + 1) // 6}")
+        capture_telemetry("final")
 
         gathered: List[Any] = [None] * world_size
         dist.all_gather_object(gathered, {"rank": rank, "timings_us": timings})
         gathered_checks: List[Any] = [None] * world_size
-        dist.all_gather_object(gathered_checks, {"rank": rank, "check_count": checks})
-        normalized_checks = []
+        dist.all_gather_object(
+            gathered_checks,
+            {
+                "rank": rank,
+                "backend_smoke_check_count": backend_checks,
+                "representation_check_count": representation_checks,
+                "source_output_commitment_sha256": commitments["source"],
+                "exact_work_output_commitment_sha256": commitments["exact_work"],
+            },
+        )
+        normalized_backend_checks = []
+        normalized_representation_checks = []
+        source_commitments = []
+        exact_commitments = []
         for expected_rank, raw in enumerate(gathered_checks):
-            if not isinstance(raw, Mapping) or raw.get("rank") != expected_rank or raw.get("check_count") != checks:
+            if not isinstance(raw, Mapping) or raw.get("rank") != expected_rank:
                 raise SystemExit("decision-gate correctness inventory is inconsistent")
-            normalized_checks.append(checks)
+            backend_count = raw.get("backend_smoke_check_count")
+            representation_count = raw.get("representation_check_count")
+            source_commitment = raw.get("source_output_commitment_sha256")
+            exact_commitment = raw.get("exact_work_output_commitment_sha256")
+            if (
+                backend_count != backend_checks
+                or representation_count != representation_checks
+                or not isinstance(source_commitment, str)
+                or not isinstance(exact_commitment, str)
+                or source_commitment != exact_commitment
+            ):
+                raise SystemExit("decision-gate correctness inventory is inconsistent")
+            normalized_backend_checks.append(backend_count)
+            normalized_representation_checks.append(representation_count)
+            source_commitments.append(source_commitment)
+            exact_commitments.append(exact_commitment)
+        correctness = {
+            "backend_smoke_checks_per_rank": normalized_backend_checks,
+            "representation_checks_per_rank": normalized_representation_checks,
+            "source_output_commitment_sha256_by_rank": source_commitments,
+            "exact_work_output_commitment_sha256_by_rank": exact_commitments,
+        }
         runtime = {
             "torch_version": _normalized_torch_version(torch),
             "torch_cuda_version": str(torch.version.cuda),
             "runtime_nccl_version_code": _runtime_nccl_version_code(_selected_nccl_library()),
             "distributed_backend": str(dist.get_backend()),
         }
-        return gathered, normalized_checks, runtime
+        telemetry = {
+            "schema": _CYCLE_TELEMETRY_SCHEMA,
+            "method": _CYCLE_TELEMETRY_METHOD,
+            "snapshots": [dict(snapshot) for snapshot in telemetry_snapshots],
+        }
+        return gathered, correctness, runtime, telemetry
     finally:
         if dist.is_initialized():
             dist.destroy_process_group()
@@ -649,17 +1122,24 @@ def _execute(
 
 def run(args: argparse.Namespace) -> int:
     iterations = _strict_positive(args.iterations, "iterations", maximum=1000)
-    if isinstance(args.warmup, bool) or not isinstance(args.warmup, int) or not 0 <= args.warmup <= 100:
-        raise SystemExit("warmup must be an integer in [0, 100]")
+    if (
+        isinstance(args.warmup, bool)
+        or not isinstance(args.warmup, int)
+        or not 1 <= args.warmup <= 100
+        or args.warmup % 6
+    ):
+        raise SystemExit("replicated warmup must be a positive multiple of six in [1, 100]")
+    if iterations % 6:
+        raise SystemExit("replicated iterations must contain complete six-row cycles")
     timeout_seconds = _strict_positive(
         args.distributed_timeout_seconds,
         "distributed-timeout-seconds",
         maximum=3600,
     )
     configuration_repetition = args.configuration_repetition
-    if configuration_repetition is not None and (
-        isinstance(configuration_repetition, bool) or not 0 <= configuration_repetition <= 999
-    ):
+    if configuration_repetition is None:
+        raise SystemExit("new decision-gate v1 physical execution is prohibited; v1 is analysis-only")
+    if isinstance(configuration_repetition, bool) or not 0 <= configuration_repetition <= 999:
         raise SystemExit("configuration-repetition must be an integer in [0, 999]")
     rank, world_size, local_rank = distributed_execution_environment(os.environ)
     sources = {
@@ -700,7 +1180,7 @@ def run(args: argparse.Namespace) -> int:
     if source != materialized:
         raise SystemExit("decision-gate source and materialized event programs disagree")
     selected_indices = stratified_indices(source)
-    gathered, correctness, runtime = _execute(
+    gathered, correctness, runtime, telemetry = _execute(
         plan=plan,
         source=source,
         selected_indices=selected_indices,
@@ -710,7 +1190,7 @@ def run(args: argparse.Namespace) -> int:
         iterations=iterations,
         warmup=args.warmup,
         timeout_seconds=timeout_seconds,
-        configuration_repetition=configuration_repetition or 0,
+        configuration_repetition=configuration_repetition,
     )
     if rank == 0:
         payload = result_payload(
@@ -724,9 +1204,13 @@ def run(args: argparse.Namespace) -> int:
             source_event_count=len(source),
             selected_indices=selected_indices,
             gathered=gathered,
-            correctness_checks_per_rank=correctness,
+            correctness_checks_per_rank=correctness["representation_checks_per_rank"],
             runtime=runtime,
             configuration_repetition=configuration_repetition,
+            backend_smoke_checks_per_rank=correctness["backend_smoke_checks_per_rank"],
+            source_output_commitment_sha256_by_rank=correctness["source_output_commitment_sha256_by_rank"],
+            exact_work_output_commitment_sha256_by_rank=correctness["exact_work_output_commitment_sha256_by_rank"],
+            telemetry_checkpoints=telemetry,
         )
         print(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False), flush=True)
     return 0

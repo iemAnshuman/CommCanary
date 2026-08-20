@@ -27,6 +27,54 @@ PROGRAM_SHA256 = "3" * 64
 POLICY_ID = "4" * 64
 
 
+def _cycle_telemetry() -> dict:
+    labels = [
+        "before_warmup",
+        "before_measured_cycle_1",
+        "after_measured_cycle_1",
+        "after_measured_cycle_2",
+        "after_measured_cycle_3",
+        "after_measured_cycle_4",
+        "final",
+    ]
+    return {
+        "schema": "commcanary.rostam.decision-gate-cycle-telemetry.v1",
+        "method": "bounded-between-six-row-cycles.v1",
+        "snapshots": [
+            {
+                "label": label,
+                "captured_at": f"2026-08-04T00:00:{index:02d}.000000Z",
+                "gpus": [
+                    {
+                        "index": gpu,
+                        "uuid": f"GPU-{gpu}",
+                        "performance_state": "P0",
+                        "temperature_c": 50 + gpu,
+                        "power_draw_w": 120.0 + gpu,
+                        "sm_clock_mhz": 1410,
+                        "memory_clock_mhz": 1215,
+                        "throttle_reasons_active": "0x0000000000000000",
+                        "ecc_corrected_volatile_total": 0,
+                        "ecc_uncorrected_volatile_total": 0,
+                    }
+                    for gpu in range(4)
+                ],
+                "node_state": {
+                    "method": "scontrol show node --oneliner HOSTNAME",
+                    "node": "toranj1",
+                    "state": "ALLOCATED",
+                },
+                "xid": {
+                    "method": "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid",
+                    "event_count": 0,
+                    "window_sha256": "0" * 64,
+                },
+            }
+            for index, label in enumerate(labels)
+        ],
+    }
+
+
 def _parameters() -> dict:
     return {
         "adapter": "torch-json",
@@ -120,11 +168,11 @@ def _replicated_payload(configuration_repetition: int) -> dict:
         policy={"format": "commcanary.qualification_policy.v1", "policy_id": POLICY_ID},
         world_size=4,
         iterations=24,
-        warmup=5,
+        warmup=6,
         source_event_count=8,
         selected_indices=(0, 1),
         gathered=gathered,
-        correctness_checks_per_rank=(2, 2, 2, 2),
+        correctness_checks_per_rank=(16, 16, 16, 16),
         runtime={
             "torch_version": "2.4.1",
             "torch_cuda_version": "12.1",
@@ -132,13 +180,19 @@ def _replicated_payload(configuration_repetition: int) -> dict:
             "distributed_backend": "nccl",
         },
         configuration_repetition=configuration_repetition,
+        backend_smoke_checks_per_rank=(2, 2, 2, 2),
+        source_output_commitment_sha256_by_rank=("a" * 64,) * 4,
+        exact_work_output_commitment_sha256_by_rank=("a" * 64,) * 4,
+        telemetry_checkpoints=_cycle_telemetry(),
     )
 
 
 def _adapt_replicated(payload: dict, *, repetition: int) -> dict:
     parameters = _parameters()
     parameters["iterations"] = 24
-    parameters["warmup"] = 5
+    parameters["warmup"] = 6
+    parameters["expected_backend_smoke_checks_per_rank"] = [2, 2, 2, 2]
+    parameters["expected_correctness_checks_per_rank"] = [16, 16, 16, 16]
     return adapt_physical_measurement(
         measurement_schema=DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA,
         producer_schema=DECISION_GATE_REPLICATED_PRODUCER_SCHEMA,
@@ -193,7 +247,8 @@ def test_replicated_decision_gate_binds_block_schedule_and_positive_control() ->
 
     assert scalar.physical is not None
     assert scalar.physical.attributes["execution"]["configuration_repetition"] == 2
-    assert scalar.physical.attributes["representations"]["exact_work"]["category"] == ("positive_conformance_control")
+    assert scalar.physical.attributes["representations"]["source"]["category"] == "trace_derived_reference"
+    assert scalar.physical.attributes["representations"]["exact_work"]["category"] == ("exact_materialization_control")
 
 
 def test_replicated_decision_gate_rejects_cross_block_substitution() -> None:

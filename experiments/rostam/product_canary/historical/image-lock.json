@@ -1,0 +1,55 @@
+{
+  "format": "commcanary.historical_vllm_image_lock.v1",
+  "source_issue": {
+    "issue_id": "vllm-2971",
+    "url": "https://github.com/vllm-project/vllm/issues/2971"
+  },
+  "images": [
+    {
+      "id": "vllm-0.2.7",
+      "repository": "docker.io/vllm/vllm-openai",
+      "tag_observed": "v0.2.7",
+      "manifest_digest": "sha256:f3d407c71db2e7eded6b28b9131c5d91cf20cd495f6af3e1c6a9ce2df238c6e8",
+      "expected_vllm_version": "0.2.7",
+      "digest_source": "https://hub.docker.com/layers/vllm/vllm-openai/v0.2.7/images/sha256-f3d407c71db2e7eded6b28b9131c5d91cf20cd495f6af3e1c6a9ce2df238c6e8"
+    },
+    {
+      "id": "vllm-0.3.2",
+      "repository": "docker.io/vllm/vllm-openai",
+      "tag_observed": "v0.3.2",
+      "manifest_digest": "sha256:5a49491c120ee3254f0b9e098f77476ceef745f168ba4dd7f21bc65f514faab8",
+      "expected_vllm_version": "0.3.2",
+      "digest_source": "https://hub.docker.com/layers/vllm/vllm-openai/v0.3.2/images/sha256-5a49491c120ee3254f0b9e098f77476ceef745f168ba4dd7f21bc65f514faab8"
+    },
+    {
+      "id": "vllm-0.3.3",
+      "repository": "docker.io/vllm/vllm-openai",
+      "tag_observed": "v0.3.3",
+      "manifest_digest": "sha256:4aea20de3b421f7775cfdc6468a04a29d0fcfc3603ad3b18aab4ef1f4652769d",
+      "expected_vllm_version": "0.3.3",
+      "digest_source": "https://hub.docker.com/layers/vllm/vllm-openai/v0.3.3/images/sha256-4aea20de3b421f7775cfdc6468a04a29d0fcfc3603ad3b18aab4ef1f4652769d"
+    }
+  ],
+  "conditions": [
+    {
+      "id": "vllm-0.2.7-default",
+      "image_id": "vllm-0.2.7",
+      "enforce_eager": false
+    },
+    {
+      "id": "vllm-0.3.2-default",
+      "image_id": "vllm-0.3.2",
+      "enforce_eager": false
+    },
+    {
+      "id": "vllm-0.3.3-default",
+      "image_id": "vllm-0.3.3",
+      "enforce_eager": false
+    },
+    {
+      "id": "vllm-0.3.3-enforce-eager",
+      "image_id": "vllm-0.3.3",
+      "enforce_eager": true
+    }
+  ]
+}

@@ -1,0 +1,601 @@
+       CommCanary 0.4v: Fail Closed Evidence for Decision Fidelity
+               Evaluation of Collective Trace Replay.
+                                                      Anshuman Agrawal
+                                                        CommCanary Project
+
+
+
+Abstract                                                                target still has to be stated. A tuning workﬂow usually asks
+                                                                        which conﬁguration should be selected. Small timing error is
+Collective communication traces can replace expensive dis-              not enough if the replay reverses two close conﬁgurations. High
+tributed workloads in controlled experiments, but replaying the         point agreement is also insuﬃcient when the measurements are
+right calls does not guarantee the same conﬁguration choice.            unstable or uncertainty spans the decision boundary.
+CommCanary provides a fail closed workﬂow for freezing, se-                This work asks whether collective trace replay preserves the
+lecting, archiving, and independently checking collective trace         pairwise conﬁguration decisions of a full workload, and whether
+replay evidence. Its publication path binds a campaign to im-           the evidence path refuses a positive claim when completeness,
+mutable attempts, an explicit selection, a completeness verdict,        uncertainty, or stability is inadequate.
+a hash identiﬁed archive, and deterministic analysis. Missing              CommCanary handles the evidence question ﬁrst. A cam-
+or unstable evidence withholds the claim.                               paign is frozen before execution. Each expected cell writes
+   We compare four replay representations with a full workload          immutable attempts. A separate selection identiﬁes one termi-
+on one node with four NVIDIA A100 GPUs and eight NCCL                   nal attempt for each cell. A completeness verdict checks that the
+conﬁgurations. The trusted join contains all 280 selected cells.        selected matrix is present, unambiguous, and successful. The
+Communication only replay does not preserve the measured                raw evidence is archived and hashed. Publication ﬁles are gen-
+workload decision. W-canary reaches 57.1% pair agreement,               erated deterministically from that selection. A failed boundary
+below the 64.3% of W-micro. Adding compute and communi-                 stops the claim path.
+cation concurrency changes the ranking. W-shared-overlap                   We use this workﬂow in two experiments. The ﬁrst joins
+reaches 71.4% agreement and 𝜏𝑏 = 0.708, but still disagrees on          three complete campaigns into 280 selected cells that cover
+8 of 28 pairs.                                                          eight NCCL conﬁgurations and seven workload proﬁles. It
+   A separate exact work gate reports 26 of 28 agreeing pairs,          compares four replay representations with the full workload.
+or 92.86%, with 𝜏𝑏 = 0.857, one false negative, one false posi-         Communication only W-canary agrees on 16 of 28 conﬁgura-
+tive, 1.55% median absolute relative error, and 4.05% p95 error.        tion pairs, or 57.1%. The isolated W-micro agrees on 18, or
+The persisted verdict is inconclusive, not pass. Bootstrap inter-       64.3%. A shared trace replay with concurrent compute reaches
+vals cross frozen decision boundaries, and one conﬁguration             20, or 71.4%. Concurrency changes the measured ranking, but
+exceeds the relative IQR stability limit. The evidence supports         no proxy preserves all decisions.
+a measured negative result about communication only replay                 The second experiment reconstructs the source derived work
+and an independently veriﬁable publication workﬂow. It does             exactly and evaluates it with a policy frozen before analysis.
+not qualify CommCanary as a production gate, prove general              Exact work reaches 26 of 28 pair agreement with low relative
+decision preservation, or establish savings from a reduced phys-        timing error. Every point criterion passes. The gate still returns
+ical canary.                                                            inconclusive because pair intervals cross tie boundaries and the
+                                                                        nccl-2.20.5-tree-ll conﬁguration is unstable in three rep-
+                                                                        resentations. A favorable estimate is therefore recorded without
+1 Introduction                                                          being promoted to a supported qualiﬁcation claim.
+                                                                           The paper contributes four items:
+Distributed machine learning and high performance comput-
+ing systems often require a choice among collective algorithms,          1. a fail closed evidence model for physical collective replay
+protocols, or library versions. That choice depends on more                 experiments, with immutable attempts, explicit selection,
+than message size. Process arrival times, network topology,                 completeness, archive binding, and deterministic publica-
+endpoint resource use, operation order, and overlap with compu-             tion;
+tation can all change the ranking. MPI implementations there-           2. a complete 280 cell comparison showing that faithful com-
+fore select among multiple collective algorithms, and NCCL                 munication only replay is insuﬃcient for the measured de-
+exposes algorithm and protocol choices whose performance                   cision and that compute and communication concurrency
+depends on workload context [1–4]. A microbenchmark can                    changes the ranking;
+measure a collective precisely while omitting the execution
+conditions that determine the application choice.                       3. a predeclared exact work gate that reports strong point esti-
+   Execution traces provide another way to study a workload.               mates and the ﬁnal inconclusive verdict; and
+A trace can record operations and dependencies; a simulator or          4. an explicit separation between publication evidence, diag-
+replay engine can then execute the recorded structure without              nostic evidence, incomplete integration records, and work
+rerunning the original application [5–10]. The relevant ﬁdelity            that has not run.
+
+
+                                                                    1
+  All physical observations come from a single node with four                  Eight conﬁgurations produce 28 pair decisions. We also report
+A100 GPUs. The results do not establish multi-node behavior,                   Kendall’s tie adjusted statistic [13]:
+expert parallel replay, congestion ﬁdelity, CUDA graph ﬁdelity,
+                                                                                                              𝑁𝑐 − 𝑁𝑑
+vendor qualiﬁcation, production CI readiness, or runtime sav-                             𝜏𝑏 = √                                        .     (3)
+ings from a reduced canary.                                                                        (𝑁 𝑐 + 𝑁 𝑑 + 𝑇𝑅 )(𝑁 𝑐 + 𝑁 𝑑 + 𝑇𝐹 )
+
+                                                                               Here 𝑁 𝑐 and 𝑁 𝑑 count concordant and discordant pairs, while
+2 Background and problem deﬁnition                                             𝑇𝑅 and 𝑇𝐹 count pairs tied on only one side. Exact agree-
+                                                                               ment requires the same three way label. Kendall 𝜏𝑏 discounts
+2.1 Collective conﬁguration depends on context                                 some tie disagreements. Reporting both exposes cases where
+                                                                               a representation preserves the non-tied order but changes many
+Collective operations deﬁne group communication semantics                      decisions into ties.
+while leaving implementation strategy open [1]. Classic MPI                       The trusted join uses its analyzer’s frozen IQR rule. A pair
+work shows that no single algorithm dominates across message                   is tied when its median diﬀerence is smaller than either con-
+sizes, process counts, and systems [3, 4]. NCCL provides topol-                ﬁguration’s IQR. The exact work gate is a separate experiment
+ogy aware GPU collectives and allows algorithm and protocol                    with a pair speciﬁc tie band, bootstrap intervals, and a stability
+selection [2]. Our conﬁguration set contains two NCCL ver-                     requirement. Its thresholds are not applied retroactively to the
+sions at default settings and six choices formed by crossing                   trusted join.
+Ring or Tree with LL, LL128, or Simple on NCCL 2.20.5.
+   An isolated microbenchmark is useful for transport charac-
+terization and regression isolation. It intentionally removes ap-              2.4    Point estimates and verdicts
+plication context. Concurrent compute and communication can                    Performance samples can be autocorrelated, multimodal, or
+contend for endpoint resources and change the critical path [11].              sensitive to machine state. Scientiﬁc benchmarking practice
+Arrival skew, explicit waits, dependencies, and buﬀer lifetimes                calls for a complete method, repeated observations, and explicit
+can also change which conﬁguration is preferred. The mi-                       uncertainty [14]. The exact work gate uses percentile bootstrap
+crobenchmark ranking is therefore an experimental result, not                  intervals [15] and a relative IQR stability limit. A point estimate
+a default model of the full workload ranking.                                  can pass while its interval overlaps a tie or reversal region. In
+                                                                               that case, the policy returns insuﬃcient evidence rather than
+2.2 Trace replay and surrogate workloads                                       pass.
+
+Trace systems support diﬀerent goals. ScalaTrace compresses
+and replays communication traces [9]. LogGOPSim combines                       3     CommCanary evidence model
+traces with an analytical communication model [10]. ASTRA-
+SIM explores distributed training systems through workload                     3.1    Fail closed publication path
+and network models [7, 8]. Chakra deﬁnes an execution trace
+schema for operations and dependencies, while Mystique de-                     Figure 1 shows the publication path. The boundaries remain
+rives portable AI benchmarks from execution traces [5, 6].                     separate because each answers a diﬀerent question.
+PARAM supplies communication benchmark and replay tool-                        1. The campaign manifest freezes the matrix, environment
+ing used by the experiment path [12].                                             identities, producer identities, policies, and expected cells
+   Trace portability does not decide the claim target. CommCa-                    before measurement.
+nary tests decision ﬁdelity: whether a replay supports the same
+conﬁguration choice as the source workload under a frozen pol-                 2. Each cell owns an immutable sequence of attempts. A retry
+icy. The contribution is not a new trace format or simulator.                     appends a new attempt.
+It is a decision level evaluation coupled to a physical evidence               3. A selection names the terminal attempt used for every ex-
+boundary that can withhold the claim.                                             pected cell and is itself hashed.
+                                                                               4. A completeness verdict checks cardinality, identity, termi-
+2.3 Decision ﬁdelity                                                              nal status, and declared artifacts.
+Let 𝐶 be the measured conﬁgurations and 𝑅 a representation                     5. An archive descriptor binds the retained raw evidence to
+such as the full workload, a microbenchmark, or a replay. For                     exact bytes.
+each unordered pair (𝑎, 𝑏), a policy maps timing distributions
+to                                                                             6. The analyzer emits aggregate JSON and CSV, a paper frag-
+              𝑑 𝑅 (𝑎, 𝑏) ∈ {𝑎 ≺ 𝑏, 𝑎 ∼ 𝑏, 𝑏 ≺ 𝑎},          (1)                    ment, and policy verdicts from the selected evidence.
+                                                                                  The absence of a completeness verdict is not an empty valid
+where ≺ means faster and ∼ means an operational tie. Agree-
+                                                                               sample. A parser’s ability to compute a number does not autho-
+ment between representation 𝑅 and the full workload 𝐹 is
+                                                                               rize publication. Synthetic ﬁxtures test software behavior but
+                   (          ) −1 ∑                                           do not enter physical claims. Operational notes may explain
+                       |𝐶 |
+       𝐴(𝑅, 𝐹) =                       1[𝑑 𝑅 (𝑎, 𝑏) = 𝑑 𝐹 (𝑎, 𝑏)].   (2)       an attempt, but they cannot replace an aggregate or persisted
+                        2        𝑎<𝑏                                           verdict.
+
+
+                                                                           2
+   Frozen campaign           Immutable attempts       Explicit selection   Completeness verdict           Hash bound archive    Publication
+
+    manifest and policy         terminal records        IDs and hashes         expected equals selected       raw evidence     tables and figures
+
+
+
+
+                          Any missing identity, hash mismatch, incomplete selection, or absent archive stops the claim path.
+
+
+                                       Fail closed: publication requires every boundary to pass.
+
+
+
+Figure 1: CommCanary publication path. Campaign identity, immutable attempts, selection, completeness, archive binding, and publication are
+separate gates. Missing or inconsistent evidence stops the claim path.
+
+
+3.2 Evidence grades                                                             lection, and NCCL 2.20.5 with Ring or Tree crossed with LL,
+                                                                                LL128, or Simple. The campaign identity freezes the versions
+Table 1 separates the material used in this paper. Publication
+                                                                                and environment. These conﬁgurations are not a representa-
+evidence has a complete hash bound campaign and generated
+                                                                                tive sample of all NCCL behavior; they are the eight choices
+analysis. Diagnostic evidence supports a narrow observation
+                                                                                evaluated here.
+without issuing a qualiﬁcation verdict. Failed integrations re-
+main engineering records and are excluded from quantitative
+results. Product studies that have not run are future work.                     4.3     Representations
+                                                                                The trusted join contains seven workload proﬁles. Four are
+3.3 Independent regeneration                                                    compared directly with the full workload.
+The evidence commit retains primary and reproduction
+directories for the exact work gate. Their aggregate.csv,                       W-micro. An isolated collective microbenchmark. It removes
+aggregate.json,        decision-fidelity-verdict.json,                          workload computation and timing context.
+and paper-fragment.md ﬁles have identical Git blob
+identities. This conﬁrms that the checked in deterministic                      W-canary. A faithful communication only replay of the
+publication path produced the same bytes for the retained                       recorded collective requests and explicit waits. It preserves
+inputs. It does not show that physical measurements reproduce                   communication structure but omits concurrent source compu-
+on another machine, and it does not turn a focused analyzer                     tation.
+check into release readiness.
+                                                                                W-canary-overlap. A conﬁguration speciﬁc overlap replay
+                                                                                that places compute around communication according to the
+4 Experimental methodology                                                      captured schedule.
+
+4.1 Campaign inventory and hardware scope                                       W-shared-overlap. An overlap replay driven by one shared
+Table 2 lists the three evidence packages. The main comparison                  trace. The replayed work remains ﬁxed while the NCCL con-
+joins three campaigns from one four GPU A100 node. Eight                        ﬁguration changes.
+conﬁgurations, seven workload proﬁles, and ﬁve selected rep-                       The full workload, W-full, is the reference. The diﬀerence
+etitions produce 280 cells. Each cell contributes 100 retained                  between the overlap representations matters because a conﬁgu-
+samples after warmup. The exact work gate has one cell per con-                 ration speciﬁc trace can encode conﬁguration dependent timing.
+ﬁguration and 20 measured iterations for every representation                   A shared trace controls that source of variation. Neither replay
+after ﬁve warmups. The diagnostic contains one conﬁguration                     is presented as a reduced physical canary, and the measured
+and compares source and replay on the same node.                                campaigns establish no runtime or artifact size advantage over
+   All claims are conditioned on the measured node, workload,                   the full workload.
+conﬁguration set, and campaign identity. No result is extrapo-
+lated to NVSwitch, another accelerator generation, a multi-node                 4.4     Trusted join analysis
+fabric, or concurrent cluster traﬃc.
+                                                                                Before aggregation, the analyzer validates result schemas, se-
+                                                                                lected attempts, campaign identities, and completeness. It com-
+4.2 Conﬁgurations                                                               putes retained timing distributions for each workload and con-
+The ﬁnite decision set contains NCCL 2.19.3 with default al-                    ﬁguration cell. Conﬁguration order follows generated medians.
+gorithm and protocol selection, NCCL 2.20.5 with default se-                    Pair labels use the frozen IQR tie rule from Section 2.3. We
+
+
+                                                                           3
+                                                      Table 1: Claim boundary by evidence grade.
+
+Grade                         Included material                                                    Permitted interpretation
+Publication evidence          280 cell trusted join and 8 cell exact work gate                     Supports the measured comparison and gate observations
+                                                                                                   only.
+Diagnostic                    Same node source and replay timing with deterministic                Supports reconstruction debugging; no qualiﬁcation ver-
+                              checks                                                               dict or general claim.
+Failed or incomplete in-      Attempts without a complete hash bound publication pack-             Excluded from quantitative results. An operational failure
+tegration                     age                                                                  is not scientiﬁc evidence.
+Future work                   Real vLLM or SGLang corpus, held out physical canary,                Not evaluated and not implied by the present artifacts.
+                              additional nodes and congestion studies
+
+                          Table 2: Campaign inventory. Complete means that the manifest bound completeness verdict passed.
+
+Package                       Hardware scope              Matrix and sampling                              Selection                                 Claim status
+Trusted comparison join       One node; 4 A100 GPUs       8 conﬁgurations, 7 proﬁles, 5 selected repeti-   280 of 280 cells                          Complete compara-
+                                                          tions per cell, 100 retained samples per cell                                              tive evidence
+Exact work gate               One node; 4 A100 GPUs       8 conﬁgurations, 28 unordered pairs, 20 mea-     8 of 8 cells                              Point criteria pass; ﬁ-
+                                                          sured iterations after 5 warmups                                                           nal verdict inconclu-
+                                                                                                                                                     sive
+Exact work diagnostic         Same node; four ranks       1 conﬁguration, 20 source and replay samples,    1 of 1 cell                               Complete diagnostic;
+                                                          32 deterministic checks                                                                    no qualiﬁcation ver-
+                                                                                                                                                     dict
+
+
+
+
+report the 28 exact pair labels and 𝜏𝑏 . Quantitative tables from                        Table 3: Agreement with W-full over eight conﬁgurations.
+the historical paper draft are excluded because their original
+complete evidence was not retained.                                                          Representation                   Pair agreement      Kendall 𝜏𝑏
+                                                                                             W-micro                           18/28 (64.3%)             0.490
+4.5 Exact work decision gate                                                                 W-canary                          16/28 (57.1%)             0.204
+                                                                                             W-canary-overlap                  15/28 (53.6%)             0.677
+The exact work experiment evaluates source derived execution,                                W-shared-overlap                  20/28 (71.4%)             0.708
+veriﬁed exact work materialization, and control representations.
+Its policy was frozen before evaluation. The domain is a single-
+node, four A100 program with one inﬂight all reduce at a time,
+                                                                                                       W-micro                                    18/28
+explicit waits, and source observed contiguous GEMM work.
+   Every representation has ﬁve warmups and 20 measured itera-
+tions. The policy uses an independent 95% percentile bootstrap                                        W-canary                                 16/28
+with 2,000 resamples and seed 7411. A conﬁguration is unsta-
+ble when relative IQR exceeds 20%. For source medians 𝑚 𝑎
+and 𝑚 𝑏 , the pair tie band is                                                              W-canary-overlap                                 15/28
+
+
+             𝛿(𝑎, 𝑏) = max(10 𝜇s, 0.05 min(𝑚 𝑎 , 𝑚 𝑏 )).                 (4)
+                                                                                            W-shared-overlap                                           20/28
+
+Point criteria require at least 80% pair agreement, 𝜏𝑏 of at least
+                                                                                                                  0          20      40      60         80       100
+0.7, no more than one false negative and one false positive,
+                                                                                                                          Pairwise agreement with W full (%)
+median and p95 absolute relative errors below 10% and 15%,
+and at least two additional agreeing pairs over each control.
+                                                                                    Figure 2: Exact three way pair agreement with the full workload
+   Passing these point criteria is necessary but not suﬃcient. A
+                                                                                    decision. No measured proxy reaches 80%.
+pass can be withheld when bootstrap intervals cross decision
+regions or when the stability condition fails.                                      is therefore insuﬃcient for this measured decision. Under exact
+                                                                                    labels it performs worse than the isolated microbenchmark.
+                                                                                       The disagreement concerns conﬁguration selection, not only
+5 Results                                                                           absolute latency. W-canary places the full workload’s worst
+                                                                                    measured conﬁguration near the front of its ranking. A re-
+5.1 Communication only replay does not pre-                                         play can match call count and byte count while changing the
+    serve the decision                                                              interference and synchronization that produce the ordering.
+Table 3 and Figures 2 and 3 report the trusted join. W-canary
+agrees with W-full on 16 of 28 pairs, or 57.1%, with 𝜏𝑏 =
+0.204. W-micro agrees on 18 pairs, or 64.3%, with 𝜏𝑏 = 0.490.
+Replaying the request and wait structure without computation
+
+
+                                                                                4
+                                                                          ration, an interval above +1 supports the ﬁrst, and an interval
+                                                                          contained within [−1, +1] supports a tie. Crossing those re-
+               W-micro                      0.490                         gions leaves the label unsupported.
+                                                                             Second, nccl-2.20.5-tree-ll exceeds the 20% relative
+              W-canary          0.204
+                                                                          IQR limit in source at 47.5%, exact work at 32.3%, and the
+                                                                          stratiﬁed control at 50.4%. The instability appears in more than
+                                                                          the candidate representation. The campaign cannot support a
+      W-canary-overlap                              0.677                 clean qualiﬁcation involving that conﬁguration under the frozen
+                                                                          policy.
+                                                                             The supported reading is asymmetric. Exact work is promis-
+      W-shared-overlap                                0.708
+                                                                          ing and closer to the source decisions than the controls in this
+                      0.0     0.2     0.4     0.6      0.8    1.0
+                                                                          campaign. The evidence does not show that the gate passed,
+                              Kendall tau b against W full
+                                                                          that decision preservation is proven, or that exact work is a
+                                                                          qualiﬁed production oracle.
+Figure 3: Tie adjusted Kendall correlation with the full workload
+ordering. Correlation and exact three way agreement answer diﬀerent       5.5    Same node diagnostic
+questions.
+                                                                          A separate one cell diagnostic compares retained source and
+5.2 Concurrency changes the ranking                                       replay timing for one exact work capsule. The source median
+                                                                          is 1,434.112 𝜇s and the replay median is 1,541.0015 𝜇s. The
+Adding overlap changes both pair agreement and tie structure.
+                                                                          signed diﬀerence is +106.8895 𝜇s, or +7.4533578967%. All
+W-canary-overlap agrees on 15 of 28 pairs, or 53.6%, while
+                                                                          32 deterministic checks pass across four ranks. Table 5 states
+its 𝜏𝑏 is 0.677. The low exact agreement and higher rank
+                                                                          the complete narrow claim.
+correlation are consistent with many pairs becoming policy ties.
+                                                                             The diagnostic conﬁrms deterministic reconstruction checks
+The remaining non-tied order is more concordant even though
+                                                                          and a same node timing comparison. It has no multi-
+the exact labels diﬀer.
+                                                                          conﬁguration full workload matrix. It cannot issue a qualiﬁ-
+   W-shared-overlap is the strongest measured proxy at 20 of
+                                                                          cation verdict or substitute for the inconclusive decision gate.
+28 agreement, or 71.4%, with 𝜏𝑏 = 0.708. It gains two agreeing
+pairs over W-micro and four over W-canary. Holding the con-
+current work constant while changing the NCCL conﬁguration                6     Interpretation
+materially changes the result. Eight pair decisions still disagree
+with W-full, so the experiment does not qualify overlap replay.           6.1    A trace encodes a causal hypothesis
+   The trusted join is descriptive and predates the separate exact
+work policy. We do not apply a new threshold after observing              A communication trace selects the workload properties assumed
+the result. The complete ordering instead motivates the prede-            to determine the conﬁguration choice. The communication
+clared gate.                                                              only representation assumes that collective type, size, order,
+                                                                          and synchronization are suﬃcient. The trusted join rejects
+                                                                          that assumption for the measured case. The operation stream
+5.3 Exact work has strong point estimates                                 can be faithful at the communication interface while omitting
+Exact work agrees on 26 of 28 pairs, or 92.86%, with 𝜏𝑏 = 0.857.          concurrent work that changes endpoint contention and critical
+It records one false negative and one false positive. Median              path timing.
+absolute relative error is 1.55%, and p95 error is 4.05%. It                 The overlap results narrow the diagnosis. Adding concur-
+gains seven agreeing pairs over the isolated control and sixteen          rency does not improve every metric. The conﬁguration speciﬁc
+over the stratiﬁed control. Every point criterion passes, as              overlap replay has fewer exact matches than the microbench-
+Table 4 records.                                                          mark because its tie structure changes. The shared trace variant
+   These estimates show that exact work reconstruction is sub-            performs best when concurrent work is held constant across
+stantially closer to the source ordering than the controls in this        conﬁgurations. The overlap schedule, its dependence on con-
+campaign. They do not determine the ﬁnal claim because a                  ﬁguration, and the tie policy all aﬀect the claim. Including
+pair decision also requires a supported interval and stable input         overlap is necessary for this case but is not a complete ﬁdelity
+measurements.                                                             recipe.
+
+
+5.4 The predeclared verdict is inconclusive                               6.2    Decision ﬁdelity diﬀers from timing ﬁdelity
+The persisted outcome is inconclusive. Two conditions prevent             Absolute error and decision ﬁdelity can diverge. Two conﬁgura-
+pass.                                                                     tions may diﬀer by less than measurement variability. A replay
+   First, bootstrap intervals for several exact work pair diﬀer-          can have small percentage error and reverse them, or a common
+ences cross the frozen decision regions. Figure 4 normalizes              timing bias and preserve their order. We therefore report pair
+representative diﬀerences and 95% intervals by each pair’s tie            labels, rank correlation, false negative and false positive counts,
+threshold. An interval below −1 supports the second conﬁgu-               and timing errors separately.
+
+
+                                                                      5
+ Table 4: Predeclared exact work point criteria. Every point row passes, but the ﬁnal verdict also requires supported uncertainty and stability.
+
+                                     Criterion                                  Observed              Required      Point status
+                                     Pair agreement                               92.86%            at least 80%       pass
+                                     Kendall 𝜏𝑏                                     0.857            at least 0.7      pass
+                                     False negatives                                     1              at most 1      pass
+                                     False positives                                     1              at most 1      pass
+                                     Median absolute relative error                1.55%           at most 10%         pass
+                                     p95 absolute relative error                   4.05%           at most 15%         pass
+                                     Agreement advantage over isolated             7 pairs       at least 2 pairs      pass
+                                     Agreement advantage over stratiﬁed           16 pairs       at least 2 pairs      pass
+
+
+                                          second faster boundary              first faster boundary
+
+                                                                                                                                              frozen 20% limit
+            2.19.3 default vs ring LL
+
+
+
+        2.19.3 default vs ring simple                                                                                    source                             47.5%
+
+
+
+       2.19.3 default vs tree simple
+                                                                                                                     exact work                     32.3%
+
+            2.20.5 default vs tree LL
+
+
+
+                   ring LL vs tree LL                                                                                  stratified                            50.4%
+
+
+               tree LL vs tree LL128                                                                                                0   10 20 30 40 50 60
+
+
+                                           -4            -2           0              2            4            6                    Relative IQR for tree LL (%)
+                                                       Exact work difference / pair tie threshold
+
+
+Figure 4: Why the exact work verdict is inconclusive. Representative 95% intervals cross decision regions, and the tree LL conﬁguration violates
+the frozen stability limit.
+
+
+ Table 5: Exact work diagnostic. No qualiﬁcation verdict is issued.                      an incomplete favorable subset.
+                                                                                            The exact work verdict is the direct example. A threshold
+Item                        Result                                                       only summary would report that every numeric row passed.
+Source median               1,434.1120 𝜇s                                                Because uncertainty and stability are policy conditions, the
+Replay median               1,541.0015 𝜇s                                                retained conclusion is inconclusive.
+Signed diﬀerence            +106.8895 𝜇s (+7.4534%)
+Source / replay IQR         9.2160 / 8.9725 𝜇s
+                                                                                         6.4   Unsupported conclusions
+Deterministic checks        32 passed across 4 ranks
+Claim status                diagnostic; physical ﬁdelity unproven; verdict               The evidence does not show that a reduced physical canary is
+                            not issued                                                   cheaper than the full workload. The replay proxies are not a
+                                                                                         completed product corpus, and no held out physical regression
+  This distinction explains the exact work outcome. The low                              study is present. The checked in publication package has no
+median and p95 errors are favorable, but the gate asks whether                           real vLLM or SGLang application campaign. Exact work is a
+each operational decision is supported under uncertainty. A                              positive reconstruction control, not evidence that minimization
+92.86% point agreement is not a 92.86% probability that the                              succeeded.
+replay is correct. The interval can invalidate the point label.                             Communication only replay is not universally useless. The
+                                                                                         result shows insuﬃciency for one measured single-node, four
+6.3 Fail closed evidence changes the default                                             A100 decision matrix. Such replay can still help with debug-
+                                                                                         ging, transport isolation, or reproduction of a call sequence
+Experiment scripts often make it easy to produce a number.                               when the claim remains at that level.
+Missing runs can disappear during aggregation, and retries can
+overwrite failures. A fail closed path makes incompleteness
+visible, preserves failed attempts, and requires explicit selection
+before analysis. It adds operational work and metadata, but it
+lets a later reader distinguish a complete negative result from
+
+
+                                                                                 6
+7 Threats to validity and limitations                                   Campaigns retain their own manifest, selection, completeness,
+                                                                        archive, and repository identities. The outer evidence commit
+Single system and workload. All physical data comes from                and the source tree used to prepare the paper are separate states.
+one four A100 PCIe node and one source derived workload fam-               The trusted join is under experiments/rostam/
+ily. GPU topology, CPU placement, software versions, thermal            results/publications/.               The exact work diag-
+state, and site conﬁguration may aﬀect the ranking. The result          nostic      is    under     experiments/rostam/results/
+does not generalize to multi-node systems, NVSwitch, other              exact-work-artifacts/publication/.                 The authori-
+GPU generations, or vendor qualiﬁcation.                                tative directory names are:
+                                                                          • trusted-join-core-shared-overlap-primary/;
+Finite conﬁguration set. The decision object contains eight
+                                                                         • decision-gate-20260801-r3-
+NCCL conﬁgurations. It does not cover every environment
+                                                                           analysis-1300d12-primary/;
+variable, channel count, topology override, message size, or
+collective library. Adding conﬁgurations changes the number              • the corresponding repro directory; and
+and diﬃculty of pair decisions.                                           • qualification-exact-20260730-r3-primary/.
+                                                                           The supplied scripts/ directory regenerates every vector
+Tie policy sensitivity. The trusted join uses an IQR rule. The          ﬁgure from evidence/verified_metrics.json. That com-
+exact work gate uses a pair speciﬁc absolute or relative band           pact snapshot records veriﬁed values and their paper binding.
+with bootstrap uncertainty. Both policies were frozen for their         It does not replace the immutable result directories. Reproduc-
+experiments, but another operational tie deﬁnition could change         ing physical timings still requires the recorded hardware and
+the labels. Exact counts and 𝜏𝑏 are reported so that the eﬀect is       software environment; deterministic analysis does not imply
+visible.                                                                hardware independent measurements.
+                                                                           No commit, push, issue, Zenodo publication, DOI reserva-
+Measurement dependence. Repeated timings within one                     tion, or release metadata change is part of this source tree. A
+process may be dependent. The independent percentile boot-              focused analyzer or test run must not be described as full release
+strap is a predeclared approximation, not a universal model of          readiness.
+system noise. A block or hierarchical bootstrap may be prefer-
+able when temporal dependence is strong. Replication across
+nodes and days remains future work.                                     9    Related work
+                                                                        Collective algorithms and tuning. MPI deﬁnes collective
+Shared implementation. A defect shared by source cap-
+                                                                        semantics but leaves the algorithm to the implementation [1].
+ture, materialization, and veriﬁcation could evade deterministic
+                                                                        MPICH studies show why message size and process count aﬀect
+checks. Hash binding proves byte identity, not semantic correct-
+                                                                        algorithm selection [3]. Performance models seek to predict or
+ness. Independent producers, diﬀerential implementations, and
+                                                                        tune these choices [4]. NCCL provides GPU collectives and
+application invariants would provide stronger controls.
+                                                                        conﬁgurable algorithms and protocols [2]; NCCL Tests supplies
+                                                                        operation level measurements [16]. CommCanary uses the full
+Researcher choices. Explicit selection and completeness re-             workload decision as the reference and tests whether a trace
+duce post hoc cell dropping, but campaign design, conﬁguration          representation preserves it.
+choice, and policy thresholds remain researcher decisions. The
+exact work gate freezes thresholds before analysis. The trusted
+                                                                        Trace representation and replay. ScalaTrace retains replay
+join is reported as a measured comparison, not as a formal gate
+                                                                        capability while compressing communication traces [9]. Log-
+deﬁned after the result.
+                                                                        GOPSim simulates trace driven communication at scale [10].
+                                                                        ASTRA-SIM models distributed learning workloads and net-
+Publication boundary. The paper uses generated artifacts                works [7, 8]. Chakra provides an execution trace graph, Mys-
+retained at a speciﬁc evidence commit. Older narrative mea-             tique derives portable benchmarks from execution traces, and
+surements without complete evidence are excluded. This avoids           PARAM provides benchmark and replay machinery [5, 6, 12].
+unsupported reuse, although it omits historical observations that       CommCanary focuses on a failure mode that these represen-
+cannot now be independently reconstructed.                              tations do not remove: a valid communication trace can still
+                                                                        change the conﬁguration decision when it omits causal work-
+                                                                        load context.
+8 Artifact availability and reproducibil-
+  ity                                                                   Compute and communication concurrency. Earlier work
+                                                                        measures the resource interaction between computation and col-
+The source repository is available at https://github.com/               lective communication and develops overlap mechanisms [11].
+iemAnshuman/CommCanary. The paper binds evidence inspec-                CommCanary does not introduce another overlap engine. The
+tion to commit                                                          experiments show that removing or changing overlap alters
+       c133ad3fb5883100cb8622b597d5b6233b5efca1.                        which NCCL conﬁguration appears preferable in the measured
+                                                                        case.
+
+                                                                    7
+Reduction and workload minimization. Delta debugging                     [5] Srinivas Sridharan, Taekyung Heo, Louis Feng, Zhaodong
+removes input while preserving a predicate [17]. A future re-                Wang, Matt Bergeron, Wenyin Fu, Shengbao Zheng, Brian
+duced canary can use a similar objective: remove trace regions               Coutinho, Saeed Rashidi, Changhai Man, and Tushar Kr-
+while preserving a decision ﬁdelity predicate. The publication               ishna. Chakra: Advancing performance benchmarking
+evidence contains no completed reduced physical canary or cost               and co-design using standardized execution traces. arXiv
+result, so minimization remains a design direction.                          preprint arXiv:2305.14516, 2023. doi: 10.48550/arXiv.
+                                                                             2305.14516.
+Statistical comparison. Benchmarking guidance warns
+                                                                         [6] Mingyu Liang, Wenyin Fu, Louis Feng, Zhongyi Lin,
+against selective statistics and incomplete variability re-
+                                                                             Pavani Panakanti, Shengbao Zheng, Srinivas Sridharan,
+ports [14]. We pair exact decisions with Kendall’s statistic [13]
+                                                                             and Christina Delimitrou. Mystique: Enabling accurate
+and use a predeclared bootstrap procedure [15]. Uncertainty
+                                                                             and scalable generation of production AI benchmarks. In
+and stability are verdict conditions rather than annotations
+                                                                             Proceedings of the 50th Annual International Symposium
+added after a point estimate.
+                                                                             on Computer Architecture, ISCA ’23. ACM, 2023. doi:
+                                                                             10.1145/3579371.3589072.
+10     Conclusion                                                        [7] Saeed Rashidi, Srinivas Sridharan, Sudarshan Srinivasan,
+                                                                             and Tushar Krishna. ASTRA-SIM: Enabling SW/HW co-
+The 280 cell comparison gives a clear negative result for com-
+                                                                             design exploration for distributed DL training platforms.
+munication only replay on the measured single-node, four A100
+                                                                             In 2020 IEEE International Symposium on Performance
+system. W-canary reaches 57.1% pair agreement, below the
+                                                                             Analysis of Systems and Software, ISPASS, pages 81–92.
+isolated microbenchmark. Compute and communication con-
+                                                                             IEEE, 2020. doi: 10.1109/ISPASS48437.2020.00018.
+currency changes the ranking. The strongest shared overlap
+replay reaches 71.4% but disagrees on eight pairs.                       [8] William Won, Taekyung Heo, Saeed Rashidi, Srini-
+   Exact work is much closer to the source ordering. Its 92.86%              vas Sridharan, Sudarshan Srinivasan, and Tushar Kr-
+agreement, 𝜏𝑏 = 0.857, and low relative errors pass every point              ishna. ASTRA-sim2.0: Modeling hierarchical networks
+threshold. The ﬁnal outcome remains inconclusive because pair                and disaggregated systems for large-model training at
+uncertainty crosses decision boundaries and one conﬁguration                 scale. arXiv preprint arXiv:2303.14006, 2023. doi:
+violates the stability limit.                                                10.48550/arXiv.2303.14006.
+   The supported contribution is an independently veriﬁable,
+fail closed evidence workﬂow and a measured result about the             [9] Michael Noeth, Prasun Ratn, Frank Mueller, Martin
+role of concurrency. Production qualiﬁcation, reduced canary                 Schulz, and Bronis R. de Supinski. ScalaTrace: Scal-
+savings, held out regression safety, application product studies,            able compression and replay of communication traces
+and generalization beyond the measured system remain open.                   for high-performance computing. Journal of Parallel
+                                                                             and Distributed Computing, 69(8):696–710, 2009. doi:
+                                                                             10.1016/j.jpdc.2008.09.001.
+References
+                                                                        [10] Torsten Hoeﬂer, Timo Schneider, and Andrew Lumsdaine.
+ [1] Message Passing Interface Forum. MPI: A message                         LogGOPSim: Simulating large-scale applications in the
+     passing interface standard, version 4.1. Technical re-                  LogGOPS model. In Proceedings of the 19th ACM In-
+     port, Message Passing Interface Forum, November 2023.                   ternational Symposium on High Performance Distributed
+     URL https://www.mpi-forum.org/docs/mpi-4.1/                             Computing, HPDC ’10, pages 597–604. ACM, 2010. doi:
+     mpi41-report.pdf.                                                       10.1145/1851476.1851564.
+
+ [2] NVIDIA Corporation. NVIDIA Collective Communi-                     [11] Saeed Rashidi, Matthew Denton, Srinivas Sridharan, Su-
+     cations Library (NCCL). Oﬃcial software repository                      darshan Srinivasan, Amoghavarsha Suresh, Jade Nie, and
+     and documentation, 2026. URL https://github.com/                        Tushar Krishna. Enabling compute communication over-
+     NVIDIA/nccl. Accessed 2026-08-14.                                       lap in distributed deep learning training platforms. In Pro-
+                                                                             ceedings of the 48th Annual International Symposium on
+ [3] Rajeev Thakur, Rolf Rabenseifner, and William Gropp.                    Computer Architecture, ISCA ’21, pages 540–553. IEEE,
+     Optimization of collective communication operations in                  2021. doi: 10.1109/ISCA52012.2021.00049.
+     MPICH. The International Journal of High Performance
+     Computing Applications, 19(1):49–66, 2005. doi: 10.                [12] Meta Platforms, Inc.     PARAM.        Oﬃcial soft-
+     1177/1094342005051521.                                                  ware repository for communication benchmark and re-
+                                                                             play tooling, 2023.    URL https://github.com/
+ [4] Sathish S. Vadhiyar, Graham E. Fagg, and Jack J. Don-                   facebookresearch/param. Accessed 2026-08-14.
+     garra. Towards an accurate model for collective com-
+     munications. The International Journal of High Per-                [13] Maurice G. Kendall. A new measure of rank correlation.
+     formance Computing Applications, 18(1):159–167, 2004.                   Biometrika, 30(1–2):81–93, 1938. doi: 10.1093/biomet/
+     doi: 10.1177/1094342004041297.                                          30.1-2.81.
+
+
+
+                                                                    8
+[14] Torsten Hoeﬂer and Roberto Belli. Scientiﬁc benchmark-                 B Trusted join regeneration
+     ing of parallel computing systems: Twelve ways to tell
+     the masses when reporting performance results. In Pro-                 The generated publication fragment retains the analyzer invoca-
+     ceedings of the International Conference for High Perfor-              tion with its exact argument order. The complete command is
+     mance Computing, Networking, Storage and Analysis, SC                  also included in this source tree at evidence/trusted_join_
+     ’15. ACM, 2015. doi: 10.1145/2807591.2807644.                          regeneration.txt. It binds the core campaign, the primary
+                                                                            selection and completeness verdict, both joined evidence direc-
+[15] Bradley Efron. Bootstrap methods: Another look at the                  tories, the output directory, conﬁguration identities, and median
+     jackknife. The Annals of Statistics, 7(1):1–26, 1979. doi:             thresholds.
+     10.1214/aos/1176344552.
+[16] NVIDIA Corporation. NCCL Tests: Performance and
+     correctness tests for NCCL operations. Oﬃcial software                 C Claim ledger
+     repository, 2026. URL https://github.com/NVIDIA/
+                                                                            Supported comparative claim. The trusted join contains 280 of
+     nccl-tests. Accessed 2026-08-14.                                       280 selected successful cells. Over the measured eight conﬁguration
+[17] Andreas Zeller and Ralf Hildebrandt. Simplifying and                   set, W-shared-overlap has the highest proxy agreement at 71.4%.
+     isolating failure-inducing input. IEEE Transactions on                 Communication only W-canary reaches 57.1%.
+     Software Engineering, 28(2):183–200, 2002. doi: 10.
+                                                                            Supported gate observation. Exact work has 26 of 28 point
+     1109/32.988498.
+                                                                            agreement, 𝜏𝑏 = 0.857, one false negative, one false positive, 1.55%
+                                                                            median absolute relative error, and 4.05% p95 error. The persisted
+                                                                            outcome is inconclusive.
+A Campaign identities
+                                                                            Supported diagnostic claim. One same node exact work capsule
+Table 6 lists abbreviated campaign identities. Full SHA-256 val-            has a 1,434.112 𝜇s source median and a 1,541.0015 𝜇s replay median.
+ues remain in the evidence snapshot and authoritative repository            All 32 deterministic checks pass. No qualiﬁcation verdict is issued.
+artifacts. M, S, C, and R denote manifest, selection, complete-
+ness verdict, and repository commit.                                        Not supported. The paper does not support production qualiﬁca-
+                                                                            tion, a passing decision gate, reduced canary cost savings, held out
+     Table 6: Abbreviated manifest bound campaign identities.               safety, real vLLM or SGLang validation, multi-node or congestion
+Run and campaign                  Bound identities
+                                                                            ﬁdelity, CUDA graph ﬁdelity, general vendor qualiﬁcation, or general-
+                                                                            ization beyond the measured single-node four A100 scope.
+core-20260724-r7                  M 3bd321ec960c; S d01db822c8e9;   C
+rostam-core                       46d8012b3594; R 2855275288e6
+shared-replay-20260720-r2         M a402a4ec73ea; S a1e876861f7f;   C
+rostam-shared-replay              b6cd1aae4cfb; R 2855275288e6
+overlap-20260724-r1               M 5d5eb9f4822e; S e012e40613f5;   C
+rostam-overlap                    5b153d0452df; R 2855275288e6
+decision-gate-20260801-r3         M 1b1909b3e856; S c675e42e34e4;   C
+rostam-decision-gate              6377a65bb057; R 4585318ac244
+qualification-exact-20260730-r3   M c0bc2e6a9ecb; S bf23480f39dd;   C
+rostam-qualification-exact        593772c09020; R 9b1e58aef91e
+
+
+
+
+                                                                        9
+

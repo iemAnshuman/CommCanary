@@ -1,0 +1,5 @@
+python -m experiments.rostam.analyze verify --run-directory experiments/rostam/results/core-20260724-r7 --selection-id primary --verdict-sha256 46d8012b3594c18c96ee1a3f1e063ceeaf5642068c6a6aa895e655bcfb257bdd --output-directory experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary --join-evidence experiments/rostam/results/shared-replay-20260720-r2 primary b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db --join-evidence experiments/rostam/results/overlap-20260724-r1 primary 5b153d0452df5033261d81f01db74211a0cb87015694b25190d8aa69650507fd --baseline-config nccl-2.19.3-default --candidate-config nccl-2.20.5-default --median-threshold-pct 8.0 --median-absolute-threshold-us 1.0
+
+The generated publication fragment at the bound repository commit is
+authoritative for the exact analyzer command and argument order. This compact
+copy is included for paper-source orientation and is not an execution approval.

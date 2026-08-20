@@ -48,7 +48,19 @@
         "  qualification_materialization: commcanary.qualification_materialization.v1",
         "  qualification_policy: commcanary.qualification_policy.v1",
         "  qualification_observation: commcanary.qualification_observation.v1",
-        "  qualification_verdict: commcanary.qualification_verdict.v1"
+    "  qualification_verdict: commcanary.qualification_verdict.v1",
+    "  chakra_projection: commcanary.chakra_projection.v1",
+    "  physical_canary_policy: commcanary.physical_canary_policy.v1",
+    "  physical_oracle_corpus: commcanary.physical_oracle_corpus.v1",
+    "  physical_decision_canary: physical_decision_canary.v1",
+    "  physical_gate_observation: commcanary.physical_gate_observation.v1",
+    "  physical_gate_result: commcanary.physical_gate_result.v1",
+    "  physical_execution_measurement: commcanary.physical_execution_measurement.v1",
+    "  physical_execution_evidence_set: commcanary.physical_execution_evidence_set.v1",
+    "  application_measurement: commcanary.application_measurement.v1",
+    "  application_oracle: commcanary.application_oracle.v1",
+    "  application_evidence_set: commcanary.application_evidence_set.v1",
+    "  active_physical_study_ledger: commcanary.active_physical_study_ledger.v1"
       ],
       "stdout_prefix": "commcanary "
     }

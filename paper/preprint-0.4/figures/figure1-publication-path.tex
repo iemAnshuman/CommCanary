@@ -1,0 +1,19 @@
+
+\begin{tikzpicture}[
+  x=1cm,y=1cm,>=latex,
+  box/.style={draw=paperblue,rounded corners=2pt,minimum width=2.05cm,
+    minimum height=1.05cm,align=center,fill=paperblue!3,font=\sffamily\scriptsize},
+  label/.style={font=\sffamily\tiny,text=papergray,align=center}
+]
+\node[box] (a) at (0,0) {\textbf{Frozen campaign}\\manifest and policy};
+\node[box] (b) at (2.35,0) {\textbf{Immutable attempts}\\terminal records};
+\node[box] (c) at (4.70,0) {\textbf{Explicit selection}\\IDs and hashes};
+\node[box] (d) at (7.05,0) {\textbf{Completeness verdict}\\expected equals selected};
+\node[box] (e) at (9.40,0) {\textbf{Hash-bound archive}\\raw evidence};
+\node[box] (f) at (11.75,0) {\textbf{Publication}\\tables and figures};
+\foreach \x/\y in {a/b,b/c,c/d,d/e,e/f} {\draw[->,paperblue] (\x) -- (\y);}
+\node[label,text=paperorange] at (5.875,-0.95)
+  {Any missing identity, hash mismatch, incomplete selection, or absent archive stops the claim path.};
+\node[font=\sffamily\small\bfseries,text=paperblue] at (5.875,-1.55)
+  {Fail closed: publication requires every boundary to pass.};
+\end{tikzpicture}

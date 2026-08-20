@@ -12,6 +12,8 @@ CommandHandler = Callable[[Any], int]
 @dataclass(frozen=True)
 class CommandHandlers:
     doctor: CommandHandler
+    build: CommandHandler
+    gate: CommandHandler
     compile: CommandHandler
     replay: CommandHandler
     compare: CommandHandler
@@ -98,6 +100,74 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         help="optional machine-readable readiness report",
     )
     doctor_parser.set_defaults(func=handlers.doctor)
+
+    build_parser = sub.add_parser(
+        "build",
+        help="synthesize a dependency-closed physical Chakra canary",
+    )
+    build_parser.add_argument("chakra_trace", help="MLCommons Chakra execution trace (.et or .et.gz)")
+    build_parser.add_argument(
+        "--projection",
+        required=True,
+        help="source-bound commcanary.chakra_projection.v1 JSON",
+    )
+    build_parser.add_argument(
+        "--policy",
+        required=True,
+        help="predeclared commcanary.physical_canary_policy.v1 JSON",
+    )
+    build_parser.add_argument(
+        "--oracle-corpus",
+        help="measured application/candidate corpus; omission emits an explicitly blocked measurement candidate",
+    )
+    build_parser.add_argument(
+        "--active-ledger",
+        help="complete measured active-search ledger bound to --oracle-corpus",
+    )
+    build_parser.add_argument(
+        "--application-evidence",
+        help="complete application evidence set required by --active-ledger; withheld in private exchange mode",
+    )
+    build_parser.add_argument(
+        "--physical-evidence",
+        help="complete candidate execution evidence required by --active-ledger; withheld in private exchange mode",
+    )
+    build_parser.add_argument(
+        "--runtime-budget",
+        help="optional acknowledgement such as 60s; must equal the bound policy budget",
+    )
+    build_parser.add_argument(
+        "--mode",
+        choices=("internal", "private_exchange", "full_audit"),
+        default="internal",
+    )
+    build_parser.add_argument(
+        "--owner-private-key",
+        help="unencrypted Ed25519 PEM key used only to sign a private_exchange manifest",
+    )
+    build_parser.add_argument(
+        "--owner-public-key",
+        help="independently distributable Ed25519 PEM key paired with --owner-private-key",
+    )
+    build_parser.add_argument("--output", "-o", required=True, help="new immutable bundle directory")
+    build_parser.set_defaults(func=handlers.build)
+
+    gate_parser = sub.add_parser(
+        "gate",
+        help="apply a qualified physical canary policy to baseline and candidate observations",
+    )
+    gate_parser.add_argument("canary_bundle")
+    gate_parser.add_argument("--baseline", required=True)
+    gate_parser.add_argument("--candidate", required=True)
+    gate_parser.add_argument("--output", "-o", required=True)
+    gate_parser.add_argument("--html")
+    gate_parser.add_argument("--junit")
+    gate_parser.add_argument("--sarif")
+    gate_parser.add_argument(
+        "--owner-public-key",
+        help="trusted owner Ed25519 public key required for a private_exchange bundle",
+    )
+    gate_parser.set_defaults(func=handlers.gate)
 
     compile_parser = sub.add_parser("compile", help="compile a trace into a compact canary")
     compile_parser.add_argument("trace")
@@ -249,6 +319,19 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     )
     _add_kineto_profile_arguments(import_parser)
     import_parser.add_argument("--output", "-o", required=True)
+    import_parser.add_argument(
+        "--chakra-output",
+        help="also emit an executable MLCommons Chakra ET for the qualified physical domain",
+    )
+    import_parser.add_argument(
+        "--projection-output",
+        help="source-bound semantic projection for --chakra-output",
+    )
+    import_parser.add_argument(
+        "--opaque-attributes-reviewed",
+        action="store_true",
+        help="record that the owner reviewed opaque Chakra attributes before exchange",
+    )
     import_parser.set_defaults(func=handlers.import_kineto)
 
     qualification_parser = sub.add_parser(
@@ -391,6 +474,19 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     capture_parser.add_argument("--output", "-o", required=True)
     capture_parser.add_argument("--workload-name", default="instrumented-workload")
     capture_parser.add_argument("--allow-empty", action="store_true")
+    capture_parser.add_argument(
+        "--chakra-output",
+        help="also emit an executable MLCommons Chakra ET for the qualified physical domain",
+    )
+    capture_parser.add_argument(
+        "--projection-output",
+        help="source-bound semantic projection for --chakra-output",
+    )
+    capture_parser.add_argument(
+        "--opaque-attributes-reviewed",
+        action="store_true",
+        help="record that the owner reviewed opaque Chakra attributes before exchange",
+    )
     capture_parser.add_argument(
         "--preserve-on-failure",
         metavar="DIR",

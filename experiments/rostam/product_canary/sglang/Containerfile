@@ -1,0 +1,11 @@
+FROM docker.io/lmsysorg/sglang@sha256:015f39a45844be5a7b35270c56dc4d9ebcfe9b0c21a3b4f877a4ee22e795bd7a
+
+LABEL org.opencontainers.image.title="CommCanary SGLang physical runner" \
+      org.opencontainers.image.description="Digest-bound SGLang application oracle and Chakra physical runner" \
+      dev.commcanary.base_oci_digest="sha256:015f39a45844be5a7b35270c56dc4d9ebcfe9b0c21a3b4f877a4ee22e795bd7a"
+
+COPY commcanary.whl /tmp/commcanary.whl
+
+RUN python3 -m pip install --no-cache-dir --no-deps /tmp/commcanary.whl \
+    && python3 -I -S -c 'import os,sys; assert "" not in sys.path and os.getcwd() not in sys.path' \
+    && rm -f /tmp/commcanary.whl

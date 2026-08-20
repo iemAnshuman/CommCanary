@@ -4,8 +4,9 @@
 > overlap, exact-work diagnostic, and August 1 decision-gate evidence is under
 > `experiments/rostam/results/`. The exact-work gate reached 26/28 pair
 > agreement, but its predeclared verdict remains `inconclusive`. A separately
-> versioned replicated-campaign design now exists; it has not run and adds no
-> physical evidence.
+> versioned replicated-campaign design exists but is retired: its two central
+> labels now share one compiled runtime tuple, so a large physical run would
+> add environmental-noise measurements rather than product evidence.
 
 Goal: physical evidence for the paper's central claim. Does a minimized,
 behavior-verified canary preserve the *decision* (configuration ranking and
@@ -14,17 +15,19 @@ setting where an isolated collective microbenchmark misleads?
 
 ## Current product boundary
 
-The August 1 gate executed the full source-derived program twice: directly and
-through verified exact-work materialization. It tests the exact qualification
-capsule's reconstruction fidelity. It does not test whether a smaller physical
-canary preserves the decision or reduces runtime or artifact size.
+The August 1 gate executed the full trace-derived program twice: directly and
+through verified exact-work materialization. Its historical `source` wire key
+is a trace-derived reference, not application ground truth. The follow-up
+runner now compiles the reference and exact materialization into one shared
+instruction path. This is a conformance assertion and measurement-floor
+control, not a reason to run an eight-by-eight campaign.
 
 The next reduced-canary experiment must add a representation that actually
 executes the reduced artifact and compare it with exact replay, stratified and
 random sampling, and ddmin. Decision fidelity, regression sensitivity,
 physical runtime, and serialized size are separate outcomes. Until such a
-campaign passes, exact-work remains a positive conformance control rather than
-evidence for distillation.
+campaign passes, exact materialization remains a small conformance control
+rather than evidence for distillation.
 
 ## New publication-grade evidence checkpoint
 

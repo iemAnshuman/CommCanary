@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
+from ..decision_gate_schedule import CONFIGURATION_ORDER_METHOD
 from ..harness import (
     CHECKSUM_MAX_BYTES,
     DEFAULT_JSON_LIMITS,
@@ -286,11 +287,33 @@ def _ordered_cells(manifest: Any) -> Tuple[Any, ...]:
     if len(cells) != len(manifest.cells):
         raise SubmissionPlanError("manifest contains duplicate cell ownership")
     configurations = [item.id for item in manifest.campaign.configurations]
+    policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
+    schedule_raw = policy.get("configuration_order_by_repetition")
+    if schedule_raw is None:
+        configuration_rows = [configurations] * manifest.campaign.repetitions
+    else:
+        if policy.get("configuration_order_method") != CONFIGURATION_ORDER_METHOD:
+            raise SubmissionPlanError("campaign configuration schedule method is unsupported")
+        if not isinstance(schedule_raw, list) or len(schedule_raw) != manifest.campaign.repetitions:
+            raise SubmissionPlanError("campaign configuration schedule does not cover every repetition")
+        configuration_rows = []
+        expected = set(configurations)
+        for repetition, row in enumerate(schedule_raw):
+            if (
+                not isinstance(row, list)
+                or any(not isinstance(item, str) for item in row)
+                or len(row) != len(configurations)
+                or set(row) != expected
+            ):
+                raise SubmissionPlanError(
+                    f"campaign configuration schedule row {repetition} is not an exact configuration permutation"
+                )
+            configuration_rows.append(list(row))
     workloads = _topological_workloads(manifest.campaign.workloads)
     result = []
     for repetition in range(manifest.campaign.repetitions):
         for workload_id in workloads:
-            for configuration_id in configurations:
+            for configuration_id in configuration_rows[repetition]:
                 key = (configuration_id, workload_id, repetition)
                 if key not in cells:
                     raise SubmissionPlanError(f"manifest matrix is missing cell ownership {key!r}")
@@ -877,6 +900,11 @@ def submit_frozen_plan(plan: SubmissionPlan, *, execute: bool) -> Tuple[Dict[str
                 raise SubmissionPlanError(f"scheduler dependency {dependency_cell!r} lacks a submitted job ID")
             dependency_job_ids.append(jobs[dependency_cell])
         argv = list(cell.sbatch_argv)
+        export_indices = [index for index, value in enumerate(argv) if value.startswith("--export=")]
+        if len(export_indices) != 1 or "," in plan.plan_id:
+            raise SubmissionPlanError("planned SLURM export boundary is invalid")
+        export_index = export_indices[0]
+        argv[export_index] = f"{argv[export_index]},COMMCANARY_SUBMISSION_CHUNK={plan.plan_id}"
         if dependency_job_ids:
             argv.append(f"--dependency=afterok:{':'.join(dependency_job_ids)}")
         wrapper_path = _safe_path(Path(cell.wrapper_path), "planned SLURM wrapper", regular_file=True)

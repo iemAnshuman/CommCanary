@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/physical_decision_canary.v1.schema.json",
+  "title": "CommCanary physical decision canary manifest v1",
+  "type": "object",
+  "required": ["format", "bundle_id", "status", "publication_mode", "supported_domain", "source_et", "projection_id", "executable_projection_id", "policy_id", "gate_policy", "runner", "corpus_id", "active_ledger_id", "application_evidence_set_id", "physical_evidence_set_id", "baseline_subject_sha256", "selection", "certificate_id", "ledger_id", "leakage_assessment_id", "artifacts", "scientific_roles", "authenticity"],
+  "properties": {
+    "format": {"const": "physical_decision_canary.v1"},
+    "bundle_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "status": {"enum": ["blocked_missing_physical_oracle_corpus", "blocked_synthetic_evidence", "blocked_incomplete_baseline_corpus", "blocked_no_decision_preserving_training_candidate", "failed_held_out_validation", "failed_privacy_policy", "qualified_physical_decision_canary"]},
+    "publication_mode": {"enum": ["internal", "private_exchange", "full_audit"]},
+    "supported_domain": {"const": "single-node-tensor-parallel-dense-decoder-all-reduce-gemm-overlap.v1"},
+    "source_et": {
+      "type": "object",
+      "required": ["sha256", "size_bytes", "metadata_version"],
+      "properties": {
+        "sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "size_bytes": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"},
+        "metadata_version": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}
+      },
+      "additionalProperties": false
+    },
+    "projection_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "executable_projection_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "policy_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "gate_policy": {"$ref": "https://commcanary.dev/schemas/commcanary.physical_canary_policy.v1.schema.json"},
+    "runner": {
+      "type": "object",
+      "required": ["oci_digest", "execution_protocol", "world_size"],
+      "properties": {
+        "oci_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "execution_protocol": {"const": "chakra-et-collective-graph.v1"},
+        "world_size": {"type": "integer", "minimum": 2, "maximum": 65536}
+      },
+      "additionalProperties": false
+    },
+    "corpus_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "active_ledger_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "application_evidence_set_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "physical_evidence_set_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "baseline_subject_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "selection": {"type": "object"},
+    "certificate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "ledger_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "leakage_assessment_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "artifacts": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sha256", "size_bytes"],
+        "properties": {
+          "sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+          "size_bytes": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "scientific_roles": {"type": "object"},
+    "authenticity": {
+      "type": "object",
+      "required": ["producer_signature", "private_exchange", "owner_public_key_sha256", "signature_artifact"],
+      "properties": {
+        "producer_signature": {"enum": ["absent", "detached_ed25519"]},
+        "private_exchange": {"enum": ["not_applicable", "owner_signed_source_withheld"]},
+        "owner_public_key_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "signature_artifact": {"type": ["string", "null"], "enum": [null, "owner-signature.json"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

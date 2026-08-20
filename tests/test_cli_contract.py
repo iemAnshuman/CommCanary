@@ -55,6 +55,8 @@ def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture
     assert raised.value.code == EXIT_SUCCESS
     output = capsys.readouterr().out
     for command in (
+        "build",
+        "gate",
         "compile",
         "replay",
         "compare",

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.application_measurement.v1.schema.json",
+  "title": "CommCanary application measurement v1",
+  "type": "object",
+  "required": ["format", "measurement_id", "runner", "subject_sha256", "subject_configuration", "perturbation_id", "application", "workload", "samples", "summary", "environment", "environment_sha256", "profile", "telemetry", "telemetry_assessment"],
+  "properties": {
+    "format": {"const": "commcanary.application_measurement.v1"},
+    "measurement_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "runner": {
+      "type": "object",
+      "required": ["oci_digest", "execution_protocol"],
+      "properties": {
+        "oci_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "execution_protocol": {"enum": ["vllm-offline-tensor-parallel.v1", "sglang-offline-tensor-parallel.v1"]}
+      },
+      "additionalProperties": false
+    },
+    "subject_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "subject_configuration": {"$ref": "#/$defs/subjectConfiguration"},
+    "perturbation_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+    "application": {
+      "type": "object",
+      "required": ["name", "engine", "engine_version", "ground_truth_kind", "model_sha256", "model_files"],
+      "properties": {
+        "name": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "engine": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "engine_version": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "ground_truth_kind": {"const": "application_ground_truth"},
+        "model_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "model_files": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fileIdentity"}}
+      },
+      "additionalProperties": false
+    },
+    "workload": {
+      "type": "object",
+      "required": ["batch_size", "input_length", "output_length", "tensor_parallel_size", "warmups", "iterations", "seed", "load_format", "dtype", "prefix_caching", "worker_multiprocessing_method"],
+      "properties": {
+        "batch_size": {"type": "integer", "minimum": 1},
+        "input_length": {"type": "integer", "minimum": 1},
+        "output_length": {"type": "integer", "minimum": 1},
+        "tensor_parallel_size": {"type": "integer", "minimum": 2, "maximum": 65536},
+        "warmups": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+        "iterations": {"type": "integer", "minimum": 1},
+        "seed": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+        "load_format": {"const": "dummy"},
+        "dtype": {"const": "bfloat16"},
+        "prefix_caching": {"const": false},
+        "worker_multiprocessing_method": {"const": "spawn"}
+      },
+      "additionalProperties": false
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["batch_latency_ms", "output_token_throughput_per_second", "total_token_throughput_per_second", "observed_gpu_memory_used_bytes"],
+        "properties": {
+          "batch_latency_ms": {"type": "number", "exclusiveMinimum": 0},
+          "output_token_throughput_per_second": {"type": "number", "exclusiveMinimum": 0},
+          "total_token_throughput_per_second": {"type": "number", "exclusiveMinimum": 0},
+          "observed_gpu_memory_used_bytes": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["median_batch_latency_ms", "p99_batch_latency_ms", "median_output_token_throughput_per_second", "median_total_token_throughput_per_second", "max_observed_gpu_memory_used_bytes"],
+      "properties": {
+        "median_batch_latency_ms": {"type": "number", "exclusiveMinimum": 0},
+        "p99_batch_latency_ms": {"type": "number", "exclusiveMinimum": 0},
+        "median_output_token_throughput_per_second": {"type": "number", "exclusiveMinimum": 0},
+        "median_total_token_throughput_per_second": {"type": "number", "exclusiveMinimum": 0},
+        "max_observed_gpu_memory_used_bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "environment": {
+      "type": "object",
+      "required": ["hostname", "platform", "python", "torch", "cuda", "nccl", "visible_gpu_count", "slurm_job_id", "slurm_node", "nccl_configuration", "runtime_configuration"],
+      "properties": {
+        "hostname": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "platform": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "python": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "torch": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "cuda": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "nccl": {"type": "array", "minItems": 2, "items": {"type": "integer", "minimum": 0}},
+        "visible_gpu_count": {"type": "integer", "minimum": 2, "maximum": 65536},
+        "slurm_job_id": {"type": ["string", "null"]},
+        "slurm_node": {"type": ["string", "null"]},
+        "nccl_configuration": {
+          "type": "object",
+          "required": ["NCCL_ALGO", "NCCL_PROTO", "NCCL_NET", "NCCL_P2P_DISABLE", "NCCL_SHM_DISABLE"],
+          "properties": {
+            "NCCL_ALGO": {"type": ["string", "null"]},
+            "NCCL_PROTO": {"type": ["string", "null"]},
+            "NCCL_NET": {"type": ["string", "null"]},
+            "NCCL_P2P_DISABLE": {"type": ["string", "null"]},
+            "NCCL_SHM_DISABLE": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        },
+        "runtime_configuration": {
+          "type": "object",
+          "required": ["CUDA_LAUNCH_BLOCKING"],
+          "properties": {
+            "CUDA_LAUNCH_BLOCKING": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "environment_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "profile": {
+      "type": "object",
+      "required": ["captured", "excluded_from_timed_samples", "artifact_sha256", "files"],
+      "properties": {
+        "captured": {"type": "boolean"},
+        "excluded_from_timed_samples": {"const": true},
+        "artifact_sha256": {"anyOf": [{"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}, {"type": "null"}]},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/fileIdentity"}}
+      },
+      "additionalProperties": false
+    },
+    "telemetry": {
+      "type": "array",
+      "minItems": 4,
+      "items": {"$ref": "https://commcanary.dev/schemas/commcanary.physical_execution_measurement.v1.schema.json#/$defs/telemetrySnapshot"}
+    },
+    "telemetry_assessment": {"$ref": "https://commcanary.dev/schemas/commcanary.physical_execution_measurement.v1.schema.json#/$defs/telemetryAssessment"}
+  },
+  "$defs": {
+    "subjectConfiguration": {
+      "type": "object",
+      "required": ["runner_oci_digest", "application_engine", "application_engine_version", "engine_configuration", "perturbation_environment"],
+      "properties": {
+        "runner_oci_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "application_engine": {"enum": ["vllm", "sglang"]},
+        "application_engine_version": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "engine_configuration": {
+          "oneOf": [
+            {"$ref": "#/$defs/vllmConfiguration"},
+            {"$ref": "#/$defs/sglangConfiguration"}
+          ]
+        },
+        "perturbation_environment": {
+          "type": "object",
+          "required": ["NCCL_ALGO", "NCCL_PROTO", "NCCL_NET", "NCCL_P2P_DISABLE", "NCCL_SHM_DISABLE", "CUDA_LAUNCH_BLOCKING"],
+          "properties": {
+            "NCCL_ALGO": {"type": ["string", "null"]},
+            "NCCL_PROTO": {"type": ["string", "null"]},
+            "NCCL_NET": {"type": ["string", "null"]},
+            "NCCL_P2P_DISABLE": {"type": ["string", "null"]},
+            "NCCL_SHM_DISABLE": {"type": ["string", "null"]},
+            "CUDA_LAUNCH_BLOCKING": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "vllmConfiguration": {
+      "type": "object",
+      "required": ["kind", "enforce_eager", "disable_custom_all_reduce", "gpu_memory_utilization", "kv_cache_memory_bytes", "max_num_batched_tokens", "max_num_seqs"],
+      "properties": {
+        "kind": {"const": "vllm.v1"},
+        "enforce_eager": {"type": "boolean"},
+        "disable_custom_all_reduce": {"type": "boolean"},
+        "gpu_memory_utilization": {"type": "number", "minimum": 0.1, "maximum": 0.95},
+        "kv_cache_memory_bytes": {"type": "integer", "minimum": 1},
+        "max_num_batched_tokens": {"type": "integer", "minimum": 1},
+        "max_num_seqs": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "sglangConfiguration": {
+      "type": "object",
+      "required": ["kind", "disable_cuda_graph", "disable_custom_all_reduce", "disable_overlap_schedule", "mem_fraction_static", "max_running_requests", "max_total_tokens", "chunked_prefill_size", "max_prefill_tokens"],
+      "properties": {
+        "kind": {"const": "sglang.v1"},
+        "disable_cuda_graph": {"type": "boolean"},
+        "disable_custom_all_reduce": {"type": "boolean"},
+        "disable_overlap_schedule": {"type": "boolean"},
+        "mem_fraction_static": {"type": "number", "minimum": 0.1, "maximum": 0.95},
+        "max_running_requests": {"type": "integer", "minimum": 1},
+        "max_total_tokens": {"type": "integer", "minimum": 1},
+        "chunked_prefill_size": {"type": "integer", "minimum": 1},
+        "max_prefill_tokens": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "fileIdentity": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "bytes": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+        "sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

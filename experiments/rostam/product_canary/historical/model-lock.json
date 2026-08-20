@@ -1,0 +1,16 @@
+{
+  "format": "commcanary.historical_vllm_model_lock.v1",
+  "repository": "teknium/OpenHermes-2.5-Mistral-7B",
+  "revision": "24c0bea14d53e6f67f1fbe2eca5bfe7cae389b33",
+  "revision_source": "https://huggingface.co/teknium/OpenHermes-2.5-Mistral-7B/commit/24c0bea14d53e6f67f1fbe2eca5bfe7cae389b33",
+  "required_files": [
+    "added_tokens.json",
+    "config.json",
+    "model-00001-of-00002.safetensors",
+    "model-00002-of-00002.safetensors",
+    "model.safetensors.index.json",
+    "special_tokens_map.json",
+    "tokenizer.model",
+    "tokenizer_config.json"
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.chakra_projection.v1.schema.json",
+  "title": "CommCanary Chakra projection v1",
+  "type": "object",
+  "required": ["format", "projection_id", "source_et", "capture_provenance", "supported_domain", "nodes", "regions", "privacy_review"],
+  "properties": {
+    "format": {"const": "commcanary.chakra_projection.v1"},
+    "projection_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "source_et": {
+      "type": "object",
+      "required": ["sha256", "bytes", "metadata_version"],
+      "properties": {
+        "sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "bytes": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"},
+        "metadata_version": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}
+      },
+      "additionalProperties": false
+    },
+    "capture_provenance": {
+      "type": "object",
+      "required": ["adapter", "source_format", "source_sha256"],
+      "properties": {
+        "adapter": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "source_format": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+        "source_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "supported_domain": {"const": "single-node-tensor-parallel-dense-decoder-all-reduce-gemm-overlap.v1"},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["node_id", "chakra_node_type", "operation", "executed_flops", "tensor_bytes", "phase", "feature_tags", "disclosures", "execution"],
+        "properties": {
+          "node_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"},
+          "chakra_node_type": {"enum": [4, 7]},
+          "operation": {"enum": ["gemm", "all_reduce"]},
+          "executed_flops": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+          "tensor_bytes": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+          "phase": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+          "feature_tags": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}},
+          "disclosures": {"$ref": "#/$defs/disclosures"},
+          "execution": {"$ref": "#/$defs/execution"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["region_id", "node_ids", "feature_tags", "disclosures"],
+        "properties": {
+          "region_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+          "node_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"}},
+          "feature_tags": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}},
+          "disclosures": {"$ref": "#/$defs/disclosures"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "privacy_review": {
+      "type": "object",
+      "required": ["opaque_chakra_attributes_reviewed", "reviewed_disclosures"],
+      "properties": {
+        "opaque_chakra_attributes_reviewed": {"type": "boolean"},
+        "reviewed_disclosures": {"$ref": "#/$defs/disclosures"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "execution": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["dtype", "rank_recipes"],
+          "properties": {
+            "dtype": {"enum": ["float16", "bfloat16", "float32", "float64"]},
+            "rank_recipes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["rank", "m", "n", "k"],
+                "properties": {
+                  "rank": {"type": "integer", "minimum": 0},
+                  "m": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"},
+                  "n": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"},
+                  "k": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/positiveInteger"}
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["dtype", "ranks", "reduction"],
+          "properties": {
+            "dtype": {"enum": ["float16", "bfloat16", "float32", "float64", "int8", "uint8", "int16", "int32", "int64"]},
+            "ranks": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+            "reduction": {"const": "sum"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "disclosures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["model_family", "hidden_dimension", "parallelism_degree", "batch_token_geometry", "topology"]}
+    }
+  },
+  "additionalProperties": false
+}

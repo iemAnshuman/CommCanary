@@ -14,7 +14,11 @@ from experiments.rostam.analysis.decision_fidelity import (
     evaluate_decision_fidelity,
     validate_decision_fidelity_policy,
 )
-from experiments.rostam.analysis.decision_fidelity_v2 import _bootstrap_vector, _simultaneous_intervals
+from experiments.rostam.analysis.decision_fidelity_v2 import (
+    _bootstrap_vector,
+    _outcome_for_states,
+    _simultaneous_intervals,
+)
 from experiments.rostam.analysis.pipeline import ANALYSIS_SCHEMA
 from experiments.rostam.analysis.schemas import PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2
 from experiments.rostam.decision_gate_schedule import frozen_schedule_inventory
@@ -94,7 +98,7 @@ def _environment(repetition: int, configuration_index: int) -> Dict[str, Any]:
             },
         }
 
-    return {
+    result = {
         "schema": "commcanary.rostam.runtime-observation.v3",
         "invariants": invariants,
         "telemetry": {
@@ -104,15 +108,72 @@ def _environment(repetition: int, configuration_index: int) -> Dict[str, Any]:
         },
         "probe_policy": {"timeout_seconds": 10, "max_output_bytes_per_stream": 65_536},
         "platform_sha256": canonical_sha256(platform),
-        "observation_sha256": canonical_sha256(
-            {"configuration_repetition": repetition, "configuration_index": configuration_index}
-        ),
+        "observation_sha256": "",
+    }
+    result["observation_sha256"] = canonical_sha256(
+        {
+            "invariants": result["invariants"],
+            "telemetry": result["telemetry"],
+            "probe_policy": result["probe_policy"],
+        }
+    )
+    return result
+
+
+def _cycle_telemetry(node: str) -> Dict[str, Any]:
+    labels = [
+        "before_warmup",
+        "before_measured_cycle_1",
+        "after_measured_cycle_1",
+        "after_measured_cycle_2",
+        "after_measured_cycle_3",
+        "after_measured_cycle_4",
+        "final",
+    ]
+    return {
+        "schema": "commcanary.rostam.decision-gate-cycle-telemetry.v1",
+        "method": "bounded-between-six-row-cycles.v1",
+        "snapshots": [
+            {
+                "label": label,
+                "captured_at": f"2026-08-04T00:00:{snapshot:02d}.000000Z",
+                "gpus": [
+                    {
+                        "index": gpu,
+                        "uuid": f"GPU-{gpu}",
+                        "performance_state": "P0",
+                        "temperature_c": 50 + gpu,
+                        "power_draw_w": 120.0 + gpu,
+                        "sm_clock_mhz": 1410,
+                        "memory_clock_mhz": 1215,
+                        "throttle_reasons_active": "0x0000000000000000",
+                        "ecc_corrected_volatile_total": 0,
+                        "ecc_uncorrected_volatile_total": 0,
+                    }
+                    for gpu in range(4)
+                ],
+                "node_state": {
+                    "method": "scontrol show node --oneliner HOSTNAME",
+                    "node": node,
+                    "state": "ALLOCATED",
+                },
+                "xid": {
+                    "method": "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid",
+                    "event_count": 0,
+                    "window_sha256": "0" * 64,
+                },
+            }
+            for snapshot, label in enumerate(labels)
+        ],
     }
 
 
 def _policy() -> Tuple[Dict[str, Any], bytes]:
     policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     policy["measurement"]["configuration_repetitions"] = 5
+    policy["measurement"]["configuration_order_by_repetition"] = policy["measurement"][
+        "configuration_order_by_repetition"
+    ][:5]
     policy["measurement"]["representation_schedule"] = frozen_schedule_inventory(
         configuration_repetitions=5,
         iterations=24,
@@ -167,12 +228,30 @@ def _aggregate(policy: Dict[str, Any], policy_bytes: bytes) -> Dict[str, Any]:
                             representation: {"timings_us": [medians[representation]] * 24}
                             for representation in REPRESENTATIONS
                         },
+                        "telemetry_checkpoints": _cycle_telemetry(f"toranj{repetition % 2}"),
                     },
                     "decision_gate_runtime": {
                         "hostname": f"toranj{repetition % 2}.example",
                         "job_id": f"job-{repetition:02d}-{index:02d}",
                     },
                     "decision_gate_environment": _environment(repetition, index),
+                    "decision_gate_scheduler": {
+                        "schema": "commcanary.rostam.scheduler-evidence.v1",
+                        "method": "scontrol show job --oneliner JOBID",
+                        "planned_position": policy["measurement"]["configuration_order_by_repetition"][
+                            repetition
+                        ].index(configuration),
+                        "scheduler_start_time": (
+                            "2026-08-04T01:"
+                            f"{repetition:02d}:"
+                            f"{policy['measurement']['configuration_order_by_repetition'][repetition].index(configuration):02d}"
+                        ),
+                        "node": f"toranj{repetition % 2}",
+                        "elapsed_from_repetition_start_seconds": float(
+                            policy["measurement"]["configuration_order_by_repetition"][repetition].index(configuration)
+                        ),
+                        "chunk_identifier": f"p-{repetition:024x}",
+                    },
                 }
             )
     campaign = {
@@ -217,6 +296,22 @@ def test_v2_evaluator_uses_independent_repetitions_and_simultaneous_intervals() 
     assert verdict["evidence"]["configuration_repetition_count"] == 5
     assert verdict["evidence"]["distinct_job_count"] == 40
     assert verdict["evidence"]["environment_observation_count"] == 40
+    assert verdict["evidence"]["cycle_telemetry_summary"] == {
+        "cell_count": 40,
+        "snapshots_per_cell": [7],
+        "minimum_temperature_c": 50,
+        "maximum_temperature_c": 53,
+        "minimum_power_draw_w": 120.0,
+        "maximum_power_draw_w": 123.0,
+        "minimum_sm_clock_mhz": 1410,
+        "maximum_sm_clock_mhz": 1410,
+        "minimum_memory_clock_mhz": 1215,
+        "maximum_memory_clock_mhz": 1215,
+        "performance_states": ["P0"],
+        "maximum_ecc_corrected_delta": 0,
+        "maximum_ecc_uncorrected_delta": 0,
+        "maximum_xid_event_delta": 0,
+    }
     assert verdict["uncertainty"]["method"].endswith("standardized-max.v3")
     assert set(verdict["uncertainty"]["metric_intervals"]["exact_work"]) == {
         "pairwise_ranking_agreement",
@@ -228,11 +323,11 @@ def test_v2_evaluator_uses_independent_repetitions_and_simultaneous_intervals() 
         "median_execution_time_ratio_to_source",
     }
     assert all(row["status"] == "pass" for row in verdict["criteria"])
-    assert verdict["product_interpretation"]["mode"] == "exact_qualification_capsule"
+    assert verdict["product_interpretation"]["mode"] == "exact_materialization_conformance_control"
     assert verdict["product_interpretation"]["reduced_canary_claim"] == "not_evaluated"
     assert verdict_id == canonical_sha256(identity_projection)
     assert _verdict_summary(verdict, Path("verdict.json")) == {
-        "mode": "exact_qualification_capsule",
+        "mode": "exact_materialization_conformance_control",
         "outcome": "pass",
         "output": "verdict.json",
         "verdict_id": verdict["verdict_id"],
@@ -300,6 +395,27 @@ def test_v2_zero_variance_bootstrap_must_match_the_observation() -> None:
             confidence=0.95,
             pair_count=28,
         )
+
+
+@pytest.mark.parametrize(
+    ("issues", "statuses", "unstable", "pairs", "expected"),
+    (
+        ([], ["fail", "inconclusive"], False, False, "fail"),
+        ([], ["fail", "pass"], True, False, "fail"),
+        ([{"code": "missing"}], ["fail"], False, False, "incomparable"),
+        ([], ["pass", "pass"], False, False, "pass"),
+    ),
+)
+def test_v2_outcome_precedence_is_policy_frozen(issues, statuses, unstable, pairs, expected) -> None:
+    assert (
+        _outcome_for_states(
+            issues=issues,
+            criterion_statuses=statuses,
+            unstable=unstable,
+            inconclusive_pairs=pairs,
+        )
+        == expected
+    )
 
 
 def test_v2_bootstrap_resamples_repetitions_independently_and_keeps_williams_cycles() -> None:
@@ -378,8 +494,17 @@ def test_v2_evaluator_rejects_platform_drift_between_repetitions() -> None:
     _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
     environment = aggregate["selected_cells"][0]["decision_gate_environment"]
     environment["invariants"]["gpus"][0]["uuid"] = "GPU-replaced"
+    for snapshot in aggregate["selected_cells"][0]["decision_gate"]["telemetry_checkpoints"]["snapshots"]:
+        snapshot["gpus"][0]["uuid"] = "GPU-replaced"
     platform = {key: value for key, value in environment["invariants"].items() if key != "nccl_library_sha256"}
     environment["platform_sha256"] = canonical_sha256(platform)
+    environment["observation_sha256"] = canonical_sha256(
+        {
+            "invariants": environment["invariants"],
+            "telemetry": environment["telemetry"],
+            "probe_policy": environment["probe_policy"],
+        }
+    )
 
     verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
 
@@ -395,6 +520,64 @@ def test_v2_evaluator_enforces_predeclared_telemetry_ranges() -> None:
 
     with pytest.raises(DecisionFidelityError, match="temperature_c"):
         evaluate_decision_fidelity(aggregate, policy_bytes)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    (
+        (lambda snapshot: snapshot["gpus"][0].__setitem__("sm_clock_mhz", 100), "sm_clock_mhz"),
+        (
+            lambda snapshot: snapshot["gpus"][0].__setitem__("throttle_reasons_active", "0x0000000000000001"),
+            "identity or state",
+        ),
+        (lambda snapshot: snapshot["gpus"][0].__setitem__("ecc_corrected_volatile_total", 1), "ECC or Xid"),
+        (lambda snapshot: snapshot["node_state"].__setitem__("state", "DRAIN"), "node_state"),
+    ),
+)
+def test_v2_evaluator_enforces_between_cycle_telemetry(mutation, message: str) -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    final = aggregate["selected_cells"][0]["decision_gate"]["telemetry_checkpoints"]["snapshots"][-1]
+    mutation(final)
+
+    with pytest.raises(DecisionFidelityError, match=message):
+        evaluate_decision_fidelity(aggregate, policy_bytes)
+
+
+def test_v2_evaluator_rejects_xid_events_between_cycles() -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    final = aggregate["selected_cells"][0]["decision_gate"]["telemetry_checkpoints"]["snapshots"][-1]
+    final["xid"]["event_count"] = 1
+    final["xid"]["window_sha256"] = "1" * 64
+
+    with pytest.raises(DecisionFidelityError, match="ECC or Xid"):
+        evaluate_decision_fidelity(aggregate, policy_bytes)
+
+
+def test_v2_evaluator_recomputes_environment_observation_identity() -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    original = copy.deepcopy(aggregate["selected_cells"][0]["decision_gate_environment"])
+    for index, row in enumerate(aggregate["selected_cells"]):
+        row["decision_gate_environment"] = copy.deepcopy(original)
+        row["decision_gate_environment"]["observation_sha256"] = f"{index:064x}"
+
+    with pytest.raises(DecisionFidelityError, match="observation_sha256 does not recompute"):
+        evaluate_decision_fidelity(aggregate, policy_bytes)
+
+
+def test_v2_evaluator_marks_over_window_repetition_incomparable() -> None:
+    _verdict, _policy_value, policy_bytes, aggregate = _evaluate()
+    target = next(
+        row
+        for row in aggregate["selected_cells"]
+        if row["repetition"] == 0 and row["decision_gate_scheduler"]["planned_position"] == 7
+    )
+    target["decision_gate_scheduler"]["scheduler_start_time"] = "2026-08-04T03:00:00"
+    target["decision_gate_scheduler"]["elapsed_from_repetition_start_seconds"] = 7200.0
+
+    verdict = evaluate_decision_fidelity(aggregate, policy_bytes)
+
+    assert verdict["outcome"] == "incomparable"
+    assert "repetition_time_window_exceeded" in [issue["code"] for issue in verdict["issues"]]
 
 
 def test_v2_policy_validator_refuses_silent_method_substitution() -> None:

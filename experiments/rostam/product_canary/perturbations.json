@@ -1,0 +1,225 @@
+{
+  "format": "commcanary.product_perturbation_plan.v1",
+  "study_name": "single-node-tp4-dense-decoder-v1",
+  "baseline": {
+    "id": "baseline",
+    "split": "baseline",
+    "description": "Digest-pinned runner defaults with no performance perturbation.",
+    "environment": {
+      "NCCL_ALGO": null,
+      "NCCL_PROTO": null,
+      "NCCL_NET": null,
+      "NCCL_P2P_DISABLE": null,
+      "NCCL_SHM_DISABLE": null,
+      "CUDA_LAUNCH_BLOCKING": null
+    },
+    "engine_configuration_overrides": {},
+    "physical_runner_arguments": {
+      "disable_overlap": false,
+      "rank_skew_us": 0.0
+    },
+    "historical_reference": null
+  },
+  "training": [
+    {
+      "id": "nccl-tree",
+      "split": "training",
+      "description": "Force the NCCL tree algorithm.",
+      "environment": {
+        "NCCL_ALGO": "Tree",
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-ring",
+      "split": "training",
+      "description": "Force the NCCL ring algorithm.",
+      "environment": {
+        "NCCL_ALGO": "Ring",
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-simple",
+      "split": "training",
+      "description": "Force the NCCL Simple protocol.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": "Simple",
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-p2p-disabled",
+      "split": "training",
+      "description": "Disable NCCL peer-to-peer transport on the single node.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": "1",
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "cuda-launch-blocking",
+      "split": "training",
+      "description": "Force synchronous CUDA launch behavior.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": "1"
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-shm-disabled",
+      "split": "training",
+      "description": "Disable NCCL shared-memory transport on the single node.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": "1",
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-ring-simple",
+      "split": "training",
+      "description": "Training interaction between NCCL Ring and Simple.",
+      "environment": {
+        "NCCL_ALGO": "Ring",
+        "NCCL_PROTO": "Simple",
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    }
+  ],
+  "holdout": [
+    {
+      "id": "nccl-tree-simple",
+      "split": "holdout",
+      "description": "Held-out interaction between NCCL Tree and Simple.",
+      "environment": {
+        "NCCL_ALGO": "Tree",
+        "NCCL_PROTO": "Simple",
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "nccl-ll",
+      "split": "holdout",
+      "description": "Held-out NCCL LL protocol selection.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": "LL",
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {},
+      "physical_runner_arguments": {
+        "disable_overlap": false,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": null
+    },
+    {
+      "id": "historical-vllm-2971-enforce-eager",
+      "split": "holdout",
+      "description": "Held-out current-version probe of the enforce-eager mitigation reported in vLLM issue 2971.",
+      "environment": {
+        "NCCL_ALGO": null,
+        "NCCL_PROTO": null,
+        "NCCL_NET": null,
+        "NCCL_P2P_DISABLE": null,
+        "NCCL_SHM_DISABLE": null,
+        "CUDA_LAUNCH_BLOCKING": null
+      },
+      "engine_configuration_overrides": {
+        "enforce_eager": true
+      },
+      "physical_runner_arguments": {
+        "disable_overlap": true,
+        "rank_skew_us": 0.0
+      },
+      "historical_reference": {
+        "kind": "historical_mechanism_probe",
+        "url": "https://github.com/vllm-project/vllm/issues/2971",
+        "issue_id": "vllm-project/vllm#2971",
+        "reported_symptom": "The issue reported much lower throughput on vLLM 0.3.2 than 0.2.7; commenters also reported TP and A100 cases, and the author reported that enforce-eager restored speed on 0.3.3.",
+        "scope_note": "This held-out arm probes enforce-eager in the current digest-pinned runner. It does not reproduce the issue's old versions, model, request path, or single-4090 setup."
+      }
+    }
+  ]
+}

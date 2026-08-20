@@ -5,6 +5,19 @@
     "repository": {
       "additionalProperties": false,
       "properties": {
+        "analysis_version": {
+          "const": "commcanary.rostam.frozen-analysis.v1"
+        },
+        "artifact_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifact_size_bytes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "entry_point": {
+          "const": "experiments.rostam.analyze:main"
+        },
         "commit": {
           "pattern": "^[0-9a-f]{40}$",
           "type": "string"
@@ -114,11 +127,41 @@
         },
         "fingerprint": {
           "$ref": "#/$defs/sha256"
+        },
+        "mode": {
+          "enum": [
+            "executor-inventory.v1",
+            "legacy-package-resources.v1"
+          ]
+        },
+        "schema_inventory_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_inventory_sha256": {
+          "$ref": "#/$defs/sha256"
         }
       },
       "required": [
         "fingerprint",
-        "files"
+        "files",
+        "mode"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {"mode": {"const": "executor-inventory.v1"}}
+          },
+          "then": {
+            "required": [
+              "analysis_version",
+              "artifact_sha256",
+              "artifact_size_bytes",
+              "entry_point",
+              "schema_inventory_sha256",
+              "source_inventory_sha256"
+            ]
+          }
+        }
       ],
       "type": "object"
     },

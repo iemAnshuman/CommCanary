@@ -28,7 +28,7 @@ commcanary --version
 ```
 
 The stable multi-line output includes the package version, canonicalization ID,
-replay-model version, and all eight exact artifact format IDs. Package metadata,
+replay-model version, and all 25 exact artifact format IDs. Package metadata,
 `commcanary.__version__`, and this output must agree.
 
 ## JSON diagnostics
@@ -79,6 +79,67 @@ when present. The records are path-free and sorted by rank, so input argument
 order and local filenames do not affect their ordering. Equivalent JSON with
 different whitespace has a different commitment. CommCanary does not copy the
 profiles into the output; retain them separately for later byte verification.
+
+## Physical canary build and gate
+
+The product-facing physical path uses Chakra ET as its execution-trace carrier:
+
+```console
+commcanary build trace.et \
+  --projection trace.projection.json \
+  --policy regression-policy.json \
+  --oracle-corpus physical-corpus.json \
+  --active-ledger active-study-ledger.json \
+  --application-evidence application-evidence.json \
+  --physical-evidence physical-evidence.json \
+  --runtime-budget 60s \
+  --output serving.canary
+
+commcanary gate serving.canary \
+  --baseline baseline.json \
+  --candidate candidate.json \
+  --output gate.json \
+  --html gate.html \
+  --junit gate.xml \
+  --sarif gate.sarif
+```
+
+`build` preserves complete Chakra protobuf node messages but selects only a
+dependency-closed subset. The required projection binds exact source bytes,
+node semantics, candidate regions, static work, and declared disclosures. The
+optional corpus supplies actual application and candidate decisions. Omitting
+it creates a measurement candidate with status
+`blocked_missing_physical_oracle_corpus` and exits 1. A synthetic corpus can
+exercise the search but cannot issue a physical-fidelity claim.
+
+`--runtime-budget` must end in `s` and equal the value already committed by the
+policy; it cannot alter that policy at the command line. The build directory is
+new and non-overwriting. After publication, the command reloads every retained
+input, reruns selection, and byte-compares the generated ET, ledger,
+certificate, leakage assessment, and manifest.
+
+`gate` accepts only a bundle whose held-out status is
+`qualified_physical_decision_canary`. It re-verifies the bundle, requires the
+certified baseline subject, exact canary executable, policy-bound runner, and
+distinct raw-evidence commitments. It also requires the same environment
+commitment in both observations, compares metric medians in their declared
+direction, and gives mandatory failures precedence over a pass. JSON is always
+written; HTML, JUnit, and SARIF are optional. Pass exits 0. A valid fail or
+incomparable result exits 1.
+
+`internal` and `full_audit` build modes retain the raw source, application
+allocations, and candidate executions. `private_exchange` requires
+`--owner-private-key` and `--owner-public-key`, signs the exact manifest with
+Ed25519, and withholds those raw artifacts while retaining their commitments.
+Verification requires the trusted owner public key. See
+[`physical-canary.md`](physical-canary.md) for the formats and assurance
+states.
+
+`capture` and `import-kineto` accept `--chakra-output` together with
+`--projection-output`. They produce the physical carrier directly when the
+instrumented shards or profiles contain complete all-rank arrival and GEMM
+recipe evidence. They refuse missing semantics instead of inferring them from
+an arbitrary uninstrumented process.
 
 ## Portable qualification request
 

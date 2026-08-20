@@ -16,7 +16,15 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ..artifacts.dtypes import normalize_dtype
 from ..artifacts.trace import validate_trace
-from ..artifacts.wire import JsonDict, as_float, as_int, load_json, normalize_ranks, write_json
+from ..artifacts.wire import (
+    JsonDict,
+    as_float,
+    as_int,
+    load_json,
+    normalize_ranks,
+    validate_reduction_metadata,
+    write_json,
+)
 from ..errors import SchemaError
 from ..formats import TRACE_FORMAT
 from ..resources import (
@@ -26,6 +34,7 @@ from ..resources import (
     checked_add,
     require_within,
     validate_json_mapping,
+    validate_json_value,
 )
 from .capture_merge import merge_trace_shards_with_loader
 
@@ -135,6 +144,9 @@ class TraceRecorder:
         message_sequence: Optional[int] = None,
         observed_exposed_us: Optional[float] = None,
         metadata: Optional[Mapping[str, Any]] = None,
+        reduction_op: Optional[str] = None,
+        compute_recipe: Optional[List[Mapping[str, Any]]] = None,
+        compute_recipe_by_rank: Optional[Mapping[str, List[Mapping[str, Any]]]] = None,
     ) -> None:
         self._require_open()
         with self._lock:
@@ -171,6 +183,20 @@ class TraceRecorder:
         metadata_snapshot: Optional[JsonDict] = None
         if metadata is not None:
             metadata_snapshot = _snapshot_json_mapping(metadata, "metadata", limits=self._limits)
+
+        if reduction_op is not None:
+            validate_reduction_metadata({"op": op, "reduction_op": reduction_op}, "record_collective")
+        if compute_recipe is not None and compute_recipe_by_rank is not None:
+            raise SchemaError("compute_recipe and compute_recipe_by_rank are mutually exclusive")
+
+        recipe_snapshot: Optional[List[JsonDict]] = None
+        if compute_recipe is not None:
+            recipe_snapshot = _snapshot_json_array(compute_recipe, "compute_recipe", limits=self._limits)
+        recipe_by_rank_snapshot: Optional[JsonDict] = None
+        if compute_recipe_by_rank is not None:
+            recipe_by_rank_snapshot = _snapshot_json_mapping(
+                compute_recipe_by_rank, "compute_recipe_by_rank", limits=self._limits
+            )
 
         parsed_sender = as_int(sender_rank) if sender_rank is not None else None
         parsed_receiver = as_int(receiver_rank) if receiver_rank is not None else None
@@ -257,6 +283,12 @@ class TraceRecorder:
                 event["arrival_skew_us"] = parsed_skew
             if parsed_observed is not None:
                 event["observed_exposed_us"] = round(parsed_observed, 9)
+            if reduction_op is not None:
+                event["reduction_op"] = reduction_op
+            if recipe_snapshot is not None:
+                event["compute_recipe"] = recipe_snapshot
+            if recipe_by_rank_snapshot is not None:
+                event["compute_recipe_by_rank"] = recipe_by_rank_snapshot
             if metadata_snapshot:
                 event["metadata"] = metadata_snapshot
             self.events.append(event)
@@ -534,6 +566,9 @@ def record_collective(
     message_sequence: Optional[int] = None,
     observed_exposed_us: Optional[float] = None,
     metadata: Optional[Mapping[str, Any]] = None,
+    reduction_op: Optional[str] = None,
+    compute_recipe: Optional[List[Mapping[str, Any]]] = None,
+    compute_recipe_by_rank: Optional[Mapping[str, List[Mapping[str, Any]]]] = None,
 ) -> None:
     """Record one collective through the environment-managed recorder.
 
@@ -570,6 +605,9 @@ def record_collective(
         message_sequence=message_sequence,
         observed_exposed_us=observed_exposed_us,
         metadata=metadata,
+        reduction_op=reduction_op,
+        compute_recipe=compute_recipe,
+        compute_recipe_by_rank=compute_recipe_by_rank,
     )
 
 
@@ -668,6 +706,23 @@ def _snapshot_json_mapping(
     except JsonResourceError as exc:
         raise SchemaError(f"{label} must be JSON serializable: {exc}") from exc
     snapshot = copy.deepcopy(dict(value))
+    _validate_json_serializable(snapshot, label)
+    return snapshot
+
+
+def _snapshot_json_array(
+    value: Any,
+    label: str,
+    *,
+    limits: ResourceLimits,
+) -> List[Any]:
+    if not isinstance(value, list):
+        raise SchemaError(f"{label} must be an array")
+    try:
+        validate_json_value(value, limits=limits)
+    except JsonResourceError as exc:
+        raise SchemaError(f"{label} must be JSON serializable: {exc}") from exc
+    snapshot = copy.deepcopy(value)
     _validate_json_serializable(snapshot, label)
     return snapshot
 

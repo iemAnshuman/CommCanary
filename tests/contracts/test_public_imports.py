@@ -72,16 +72,31 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
     ]
     assert formats.__all__ == [
         "ARTIFACT_PROVENANCE_ALGORITHM",
+        "APPLICATION_MEASUREMENT_FORMAT",
+        "APPLICATION_ORACLE_FORMAT",
+        "APPLICATION_EVIDENCE_SET_FORMAT",
+        "ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT",
         "BEHAVIOR_VERIFICATION_FORMAT",
         "BEHAVIOR_SEARCH_EVIDENCE_FORMAT",
         "CANARY_FORMAT",
         "CANARY_INTEGRITY_PROFILE",
         "CANONICAL_JSON_VERSION",
+        "CHAKRA_PROJECTION_FORMAT",
         "COMPARE_FORMAT",
         "DOCTOR_REPORT_FORMAT",
         "FIDELITY_VERIFICATION_FORMAT",
         "FORMAT_CAPABILITIES",
         "FormatCapability",
+        "PHYSICAL_CANARY_POLICY_FORMAT",
+        "PHYSICAL_DECISION_CANARY_FORMAT",
+        "PHYSICAL_EXECUTION_MEASUREMENT_FORMAT",
+        "PHYSICAL_EXECUTION_EVIDENCE_SET_FORMAT",
+        "PHYSICAL_FIDELITY_CERTIFICATE_FORMAT",
+        "PHYSICAL_GATE_OBSERVATION_FORMAT",
+        "PHYSICAL_GATE_RESULT_FORMAT",
+        "PHYSICAL_LEAKAGE_ASSESSMENT_FORMAT",
+        "PHYSICAL_ORACLE_CORPUS_FORMAT",
+        "PHYSICAL_SYNTHESIS_LEDGER_FORMAT",
         "QUALIFICATION_MATERIALIZATION_FORMAT",
         "QUALIFICATION_OBSERVATION_FORMAT",
         "QUALIFICATION_POLICY_FORMAT",
@@ -98,9 +113,9 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
 def test_capability_query_matches_published_schema_files_and_is_immutable() -> None:
     capabilities = format_capabilities()
     assert capabilities is format_capabilities()
-    assert len(capabilities) == 13
-    assert len({capability.artifact for capability in capabilities}) == 13
-    assert len({capability.format_id for capability in capabilities}) == 13
+    assert len(capabilities) == 25
+    assert len({capability.artifact for capability in capabilities}) == 25
+    assert len({capability.format_id for capability in capabilities}) == 25
     for capability in capabilities:
         schema_path = ROOT / capability.schema
         assert schema_path.is_file()

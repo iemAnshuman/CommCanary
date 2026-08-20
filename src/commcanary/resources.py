@@ -60,6 +60,11 @@ class ResourceLimits:
     max_behavior_ranking_comparisons: int = 10_000_000
     max_retained_ledger_rows: int = 10_000
     max_reduction_oracle_calls: int = 10_000
+    max_chakra_messages: int = 1_000_001
+    max_chakra_message_bytes: int = 16 * 1024 * 1024
+    max_physical_regions: int = 100_000
+    max_physical_perturbations: int = 10_000
+    max_physical_candidate_evaluations: int = 100_000
 
     def __post_init__(self) -> None:
         for field in fields(self):
@@ -99,6 +104,11 @@ class ResourceLimits:
             "max_behavior_ranking_comparisons",
             "max_retained_ledger_rows",
             "max_reduction_oracle_calls",
+            "max_chakra_messages",
+            "max_chakra_message_bytes",
+            "max_physical_regions",
+            "max_physical_perturbations",
+            "max_physical_candidate_evaluations",
         ):
             if getattr(self, name) < 1:
                 raise ValueError(f"{name} must be positive")

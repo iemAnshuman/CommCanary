@@ -405,6 +405,41 @@ def test_runtime_fingerprint_rejects_malformed_probe_rows_without_running_a_prob
         )
 
 
+def test_replicated_scheduler_evidence_binds_position_start_node_and_chunk(monkeypatch: Any) -> None:
+    schedule = [["configuration-b", "configuration-a"]]
+    manifest = SimpleNamespace(
+        campaign=SimpleNamespace(
+            policy=SimpleNamespace(to_value=lambda: {"configuration_order_by_repetition": schedule})
+        )
+    )
+    cell = SimpleNamespace(repetition=0, configuration_id="configuration-a")
+    monkeypatch.setenv("COMMCANARY_SUBMISSION_CHUNK", "p-" + "a" * 24)
+    monkeypatch.setattr(
+        cell_entrypoint,
+        "_run_bounded_probe",
+        lambda command: (
+            "JobId=12345 StartTime=2026-08-04T00:00:03+00:00 NodeList=toranj0\n"
+            if command == ("scontrol", "show", "job", "--oneliner", "12345")
+            else ""
+        ),
+    )
+
+    evidence = cell_entrypoint._replicated_scheduler_evidence(
+        manifest,
+        cell,
+        {"job_id": "12345", "hostname": "toranj0.example"},
+    )
+
+    assert evidence == {
+        "schema": "commcanary.rostam.scheduler-evidence.v1",
+        "method": "scontrol show job --oneliner JOBID",
+        "planned_position": 1,
+        "scheduler_start_time": "2026-08-04T00:00:03+00:00",
+        "node": "toranj0",
+        "chunk_identifier": "p-" + "a" * 24,
+    }
+
+
 def test_runtime_fingerprint_normalizes_nccl_load_failure(
     monkeypatch: Any,
     tmp_path: Path,

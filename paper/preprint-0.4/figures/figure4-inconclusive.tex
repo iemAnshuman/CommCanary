@@ -1,0 +1,69 @@
+\begin{tikzpicture}[x=0.64cm,y=0.67cm,font=\sffamily\tiny]
+\begin{scope}[xshift=0cm]
+\fill[paperblue!7] (-1,-0.55) rectangle (1,5.55);
+\draw[dashed,papergray] (-1,-0.55) -- (-1,5.55);
+\draw[dashed,papergray] (1,-0.55) -- (1,5.55);
+\draw[papergray] (0,-0.55) -- (0,5.55);
+\node[text=papergray] at (-2.5,6.0) {second faster boundary};
+\node[text=papergray] at (2.5,6.0) {first faster boundary};
+\node[anchor=east,text=paperblue] at (-5.1,5) {2.19.3 default vs ring LL};
+\draw[paperblue,thick] (-1.823755,5) -- (0.467433,5);
+\draw[paperblue] (-1.823755,4.88) -- (-1.823755,5.12);
+\draw[paperblue] (0.467433,4.88) -- (0.467433,5.12);
+\fill[paperblue] (-1.279693,5) circle (2pt);
+\node[anchor=east,text=paperblue] at (-5.1,4) {2.19.3 default vs ring simple};
+\draw[paperblue,thick] (-0.172848,4) -- (1.353979,4);
+\draw[paperblue] (-0.172848,3.88) -- (-0.172848,4.12);
+\draw[paperblue] (1.353979,3.88) -- (1.353979,4.12);
+\fill[paperblue] (0.626575,4) circle (2pt);
+\node[anchor=east,text=paperblue] at (-5.1,3) {2.19.3 default vs tree simple};
+\draw[paperblue,thick] (2.448686,3) -- (5.336694,3);
+\draw[paperblue] (2.448686,2.88) -- (2.448686,3.12);
+\draw[paperblue] (5.336694,2.88) -- (5.336694,3.12);
+\fill[paperblue] (3.824271,3) circle (2pt);
+\node[anchor=east,text=paperblue] at (-5.1,2) {2.20.5 default vs tree LL};
+\draw[paperblue,thick] (0.191625,2) -- (5.370121,2);
+\draw[paperblue] (0.191625,1.88) -- (0.191625,2.12);
+\draw[paperblue] (5.370121,1.88) -- (5.370121,2.12);
+\fill[paperblue] (2.405962,2) circle (2pt);
+\node[anchor=east,text=paperblue] at (-5.1,1) {ring LL vs tree LL};
+\draw[paperblue,thick] (1.431992,1) -- (6.592720,1);
+\draw[paperblue] (1.431992,0.88) -- (1.431992,1.12);
+\draw[paperblue] (6.592720,0.88) -- (6.592720,1.12);
+\fill[paperblue] (4.191571,1) circle (2pt);
+\node[anchor=east,text=paperblue] at (-5.1,0) {tree LL vs tree LL128};
+\draw[paperblue,thick] (-4.564887,0) -- (-0.134371,0);
+\draw[paperblue] (-4.564887,-0.12) -- (-4.564887,0.12);
+\draw[paperblue] (-0.134371,-0.12) -- (-0.134371,0.12);
+\fill[paperblue] (-2.326733,0) circle (2pt);
+\draw[papergray!35] (-4,-0.45) -- (-4,5.45);\node[below,text=papergray] at (-4,-0.55) {-4};
+\draw[papergray!35] (-2,-0.45) -- (-2,5.45);\node[below,text=papergray] at (-2,-0.55) {-2};
+\draw[papergray!35] (0,-0.45) -- (0,5.45);\node[below,text=papergray] at (0,-0.55) {0};
+\draw[papergray!35] (2,-0.45) -- (2,5.45);\node[below,text=papergray] at (2,-0.55) {2};
+\draw[papergray!35] (4,-0.45) -- (4,5.45);\node[below,text=papergray] at (4,-0.55) {4};
+\draw[papergray!35] (6,-0.45) -- (6,5.45);\node[below,text=papergray] at (6,-0.55) {6};
+\node[text=paperblue] at (0,-1.25) {Exact-work difference / pair tie threshold};
+\end{scope}
+\begin{scope}[xshift=9.6cm,x=0.09cm]
+\draw[->,papergray] (0,-0.55) -- (64,-0.55);
+\draw[dashed,paperorange] (20,-0.55) -- (20,3.45);
+\node[text=paperorange,anchor=west] at (21,3.65) {frozen 20\% limit};
+\node[anchor=east,text=paperblue] at (-3,2) {source};
+\fill[paperblue!75] (0,1.78) rectangle (47.473101,2.22);
+\node[anchor=west,text=paperblue] at (48.673101,2) {47.5\%};
+\node[anchor=east,text=paperblue] at (-3,1) {exact work};
+\fill[papergreen] (0,0.78) rectangle (32.277479,1.22);
+\node[anchor=west,text=paperblue] at (33.477479,1) {32.3\%};
+\node[anchor=east,text=paperblue] at (-3,0) {stratified};
+\fill[paperorange] (0,-0.22) rectangle (50.428571,0.22);
+\node[anchor=west,text=paperblue] at (51.628571,0) {50.4\%};
+\draw[papergray!25] (0,-0.45) -- (0,3.3);\node[below,text=papergray] at (0,-0.55) {0};
+\draw[papergray!25] (10,-0.45) -- (10,3.3);\node[below,text=papergray] at (10,-0.55) {10};
+\draw[papergray!25] (20,-0.45) -- (20,3.3);\node[below,text=papergray] at (20,-0.55) {20};
+\draw[papergray!25] (30,-0.45) -- (30,3.3);\node[below,text=papergray] at (30,-0.55) {30};
+\draw[papergray!25] (40,-0.45) -- (40,3.3);\node[below,text=papergray] at (40,-0.55) {40};
+\draw[papergray!25] (50,-0.45) -- (50,3.3);\node[below,text=papergray] at (50,-0.55) {50};
+\draw[papergray!25] (60,-0.45) -- (60,3.3);\node[below,text=papergray] at (60,-0.55) {60};
+\node[text=paperblue] at (30,-1.25) {Relative IQR for tree LL (\%)};
+\end{scope}
+\end{tikzpicture}

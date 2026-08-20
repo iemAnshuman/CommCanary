@@ -38,6 +38,14 @@ incomplete-matrix handling without SLURM. Analyzer output requires an explicit
 completeness verdict and regenerates aggregate JSON, CSV, and Markdown from the
 validated selected attempts.
 
+The reduced physical-canary campaign is a separate workflow under
+[`experiments/rostam/product_canary/`](../experiments/rostam/product_canary/README.md).
+It builds content-addressed vLLM or SGLang OCI/SIF runners, freezes application
+and candidate schedules, executes active synthesis through append-only SLURM
+attempts, and retains raw application and physical evidence. No result from
+that workflow has been recorded yet. Its historical vLLM issue 2971 probe also
+remains unexecuted and has a narrower non-causal claim boundary.
+
 The PARAM compatibility patch is also fully reviewed before the cluster
 boundary. Its source archive is defined as the uncompressed bytes from
 `git archive --format=tar
@@ -208,7 +216,8 @@ policy file itself is a separately hashed campaign input. One cell per
 configuration interleaves all six representations inside one allocation and
 process group:
 
-- direct source execution as ground truth;
+- trace-derived source execution as the local reference, not application
+  ground truth;
 - exact-work materialization, historically named the product candidate in the
   immutable v1 policy and now interpreted as the positive reconstruction
   control;
@@ -224,6 +233,18 @@ deterministic SUM check for every collective shape. The frozen matrix covers
 the two reviewed NCCL versions plus Ring/Tree by LL/LL128/Simple under NCCL
 2.20.5. A producer or adapter change invalidates that campaign for future
 execution: preserve every terminal attempt and freeze a replacement.
+
+An audit of the manifest-bound source archive for commit
+`4585318ac244f218e438de06c0ccd38c0c88cbbf` confirms two limitations in the
+archived executor. Its `exact_program()` traversed replay mappings and called
+`_recipe_tuple()` inside the CUDA-timed interval, while the source path used
+prebuilt event recipes. Its pre-timing correctness check issued a separate
+blocking all-reduce instead of running either measured executor. The archived
+latency difference therefore includes representation-specific host parsing,
+and the check establishes backend SUM behavior rather than complete executor
+conformance. Preserve the archived ranking as historical evidence, but do not
+interpret its exact-work error as purely physical replay error. The replicated
+v2 design replaces both paths before any new campaign can be frozen.
 
 After exactly one successful terminal attempt is selected for every expected
 cell, persist a zero-issue completeness verdict and regenerate the trusted
@@ -269,20 +290,31 @@ cell has its own exclusive scheduler allocation, distinct job ID, and distinct
 bound runtime observation. Equal repetition numbers across configurations do
 not imply a shared allocation or a paired statistical block.
 
-Each cell uses five warmups and 24 measured passes. The policy freezes all six
-Williams rows and the row used by every pass in every repetition. Within each
-cell, every representation occupies every position four times and every
-ordered predecessor/successor pair occurs four times. The opening row rotates
-across configuration repetitions. Before execution, the harness records GPU
-identity, driver, topology, persistence mode, power limit, CPU affinity, and
-the selected NCCL digest. It captures performance state, temperature, power
-draw, clocks, and scheduler node state both before and after measurement, and
-refuses the cell if an invariant changes. The evaluator requires one exact
-platform fingerprint across all cells and enforces the policy's temperature,
-power, clock, and pre/post-delta ranges. Bounded in-pass telemetry remains
-deferred because an external sampler could perturb this timing experiment.
-Retries may replace infrastructure failures only; a noisy successful attempt
-remains evidence and cannot be replaced by a quieter run.
+Each cell uses one complete six-row warmup cycle and 24 measured passes. The
+policy freezes the full warmup and measured row matrices. Every representation
+occupies every position four times, and directed transitions in the flattened
+measured stream occur four or five times, including row boundaries. Both the
+warmup and measured matrices rotate across configuration repetitions. A
+separate frozen eight-by-eight configuration schedule places every NCCL
+configuration in every submission position once. Selected evidence records
+the planned position, scheduler start, node, elapsed time from the repetition's
+first start, and submission chunk. A repetition spanning more than one hour is
+incomparable.
+
+Before execution, the harness records GPU identity, driver, topology,
+persistence mode, power limit, CPU affinity, and the selected NCCL digest. It
+also retains pre/post environmental observations. The decision-gate runner
+adds bounded checkpoints before warmup, before the first measured cycle, after
+each of the four measured cycles, and at the end. Those checkpoints bind GPU
+UUID order, allowed performance states, temperature and power trajectories,
+minimum and maximum clocks, throttle-reason bits, ECC counters, parsed SLURM
+node state, and boot-scoped Xid counts. The evaluator rejects changes or values
+outside the frozen policy and reports the observed extrema. These are
+between-cycle observations, not enforcement of the unobserved interior of
+each timed pass; continuous in-pass sampling remains deferred because an
+external sampler could perturb the timing experiment. Retries may replace
+infrastructure failures only; a noisy successful attempt remains evidence and
+cannot be replaced by a quieter run.
 
 The v2 evaluator independently resamples configuration repetitions for each
 configuration as its outer bootstrap. Its inner bootstrap resamples complete
@@ -335,21 +367,35 @@ directories are absent from `PYTHONPATH`. Workloads that require PARAM receive
 only a privately extracted, complete `param-runtime-artifact`; every cell uses
 the manifest-bound NCCL library bytes for its selected configuration.
 
-This isolates project-controlled code and payloads, not the base interpreter,
-standard library, dynamic loader, installed Torch/CUDA userland, or host
-driver as one immutable process image. `frozen executor` therefore means the
-executor zipapp and analyzer bytes, not whole-environment attestation. The v2
-profile is marked `blocked-content-addressed-runtime-image`; campaign freezing
-and submission must remain fail-closed until an actual content-addressed
-runtime image is added to the manifest and launch path.
+PARAM construction and staging use 1 MiB streaming chunks under a 64 MiB
+working-memory budget. The format rejects archives larger than 512 MiB, more
+than 1 GiB of expanded members, any member larger than 256 MiB, inventories
+larger than 16 MiB, or more than 50,000 files. Failed staging removes its
+private partial tree. The byte-returning compatibility renderer is limited to
+the same 64 MiB budget; production preparation writes and hashes the artifact
+through a temporary file before installing its content-addressed name.
 
-In v2, `exact_work` is explicitly a positive conformance control for the exact
-qualification capsule. The policy records reduced-canary and cost claims as
-`not_evaluated`. No v2 campaign has been frozen on Rostam, submitted, selected,
-or analyzed, so this section describes a blocked design rather than physical
-evidence. After the runtime-image blocker is implemented, an authorized
-operator must freeze new executor, input, environment, and plan hashes before
-any submission.
+This isolates project-controlled code and payloads, not the base interpreter,
+standard library, dynamic loader, installed Torch/CUDA userland, or host driver
+as one immutable process image. `frozen executor` therefore means the executor
+zipapp and analyzer bytes, not whole-environment attestation.
+
+The v2 runner now proves that its trace-derived reference and exact
+materialization control compile to one instruction sequence, then binds both
+labels to the same runtime tuple. That is useful conformance evidence but makes
+the proposed eight-configuration, eight-repetition campaign a physical
+self-comparison. The profile is therefore marked
+`retired-identical-instruction-path-no-product-evidence`; campaign freezing and
+submission remain fail-closed even if a content-addressed runtime image later
+becomes available.
+
+The wire keys remain `source` and `exact_work` for compatibility, but v2 labels
+their scientific roles `trace_derived_reference` and
+`exact_materialization_control`. Neither is application ground truth. The
+policy records reduced-canary and cost claims as `not_evaluated`. No v2
+campaign was frozen, submitted, selected, or analyzed. If this control is
+revived, use two representative configurations and only enough repetitions to
+estimate the measurement floor; freeze a new policy and campaign identity.
 
 ### Decision-fidelity gate result (2026-08-01)
 

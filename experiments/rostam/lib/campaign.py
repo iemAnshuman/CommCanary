@@ -8,6 +8,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
+from ..decision_gate_schedule import (
+    CONFIGURATION_ORDER_METHOD,
+    configuration_order_by_repetition,
+)
 from ..harness import (
     CAMPAIGN_SCHEMA,
     DEFAULT_JSON_LIMITS,
@@ -133,7 +137,7 @@ def _verify_decision_fidelity_binding(
     profile_id: str,
     inputs: Mapping[str, Path],
     repetitions: int,
-) -> None:
+) -> Optional[Tuple[Tuple[str, ...], ...]]:
     profile = catalog.profile(profile_id)
     declarations = []
     for workload in catalog.selected_workloads(profile):
@@ -155,7 +159,7 @@ def _verify_decision_fidelity_binding(
             raise CampaignPreparationError(f"workload {workload.id!r} readiness is invalid")
         declarations.append((workload.id, policy_id, configuration_repetitions, readiness))
     if not declarations:
-        return
+        return None
     if len(declarations) != 1:
         raise CampaignPreparationError("a campaign profile must select exactly one decision-fidelity workload")
     workload_id, expected_policy_id, configuration_repetitions, readiness = declarations[0]
@@ -197,6 +201,17 @@ def _verify_decision_fidelity_binding(
         )
     if configuration_repetitions is not None and readiness != "ready":
         raise CampaignPreparationError(f"replicated decision-fidelity campaign is not freeze-ready: {readiness}")
+    if configuration_repetitions is None:
+        return None
+    assert isinstance(measurement, Mapping)
+    expected_order = configuration_order_by_repetition(tuple(sorted(profile.configuration_ids)))[
+        :configuration_repetitions
+    ]
+    if measurement.get("configuration_order_method") != CONFIGURATION_ORDER_METHOD or measurement.get(
+        "configuration_order_by_repetition"
+    ) != [list(row) for row in expected_order]:
+        raise CampaignPreparationError("decision-fidelity policy does not bind the required configuration schedule")
+    return expected_order
 
 
 def build_campaign(
@@ -239,7 +254,7 @@ def build_campaign(
             f"profile input ownership mismatch: missing={missing!r}, unexpected={unexpected!r}"
         )
     _verify_gemm_calibration_binding(catalog=catalog, profile_id=profile_id, inputs=bound_inputs)
-    _verify_decision_fidelity_binding(
+    configuration_order = _verify_decision_fidelity_binding(
         catalog=catalog,
         profile_id=profile_id,
         inputs=bound_inputs,
@@ -300,6 +315,40 @@ def build_campaign(
         )
     input_paths = {input_id: str(path.resolve()) for input_id, path in sorted(bound_inputs.items())}
     script_hashes = _submission_wrapper_hashes(experiment_directory)
+    campaign_policy: Dict[str, Any] = {
+        "aggregation": "median-of-cell-medians",
+        "catalog_profile": profile.id,
+        "cell_order": (
+            "repetition-workload-frozen-configuration-schedule"
+            if configuration_order is not None
+            else "repetition-workload-topology-configuration"
+        ),
+        "dependency_policy": "afterok-explicit-attempt-binding",
+        "exclusion_policy": "explicit-terminal-record-only",
+        "input_paths": input_paths,
+        "interleave_configurations": True,
+        "executor": {
+            "format": EXECUTOR_POLICY_FORMAT,
+            "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "bootstrap_input_id": EXECUTOR_BOOTSTRAP_INPUT_ID,
+            "inventory_sha256": executor.inventory_sha256,
+            "source_inventory_sha256": executor.source_inventory_sha256,
+            "schema_inventory_sha256": executor.schema_inventory_sha256,
+            "source_file_count": len(executor.source_files),
+            "schema_file_count": len(executor.schema_files),
+        },
+        "planner_schema": "commcanary.rostam.submission-plan.v2",
+        "retry_policy": "append-only-explicit",
+        "script_hashes": script_hashes,
+        "tie_policy": "difference-below-either-config-iqr",
+    }
+    if configuration_order is not None:
+        campaign_policy.update(
+            {
+                "configuration_order_method": CONFIGURATION_ORDER_METHOD,
+                "configuration_order_by_repetition": [list(row) for row in configuration_order],
+            }
+        )
     raw = {
         "schema": CAMPAIGN_SCHEMA,
         "run_id": run_id,
@@ -316,29 +365,7 @@ def build_campaign(
             "workloads": workloads,
             "repetitions": repetitions,
         },
-        "policy": {
-            "aggregation": "median-of-cell-medians",
-            "catalog_profile": profile.id,
-            "cell_order": "repetition-workload-topology-configuration",
-            "dependency_policy": "afterok-explicit-attempt-binding",
-            "exclusion_policy": "explicit-terminal-record-only",
-            "input_paths": input_paths,
-            "interleave_configurations": True,
-            "executor": {
-                "format": EXECUTOR_POLICY_FORMAT,
-                "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
-                "bootstrap_input_id": EXECUTOR_BOOTSTRAP_INPUT_ID,
-                "inventory_sha256": executor.inventory_sha256,
-                "source_inventory_sha256": executor.source_inventory_sha256,
-                "schema_inventory_sha256": executor.schema_inventory_sha256,
-                "source_file_count": len(executor.source_files),
-                "schema_file_count": len(executor.schema_files),
-            },
-            "planner_schema": "commcanary.rostam.submission-plan.v2",
-            "retry_policy": "append-only-explicit",
-            "script_hashes": script_hashes,
-            "tie_policy": "difference-below-either-config-iqr",
-        },
+        "policy": campaign_policy,
         "expected_site": catalog.site.to_manifest_dict(),
     }
     return CampaignSpec.from_dict(raw)

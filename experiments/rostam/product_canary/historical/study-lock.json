@@ -1,0 +1,35 @@
+{
+  "format": "commcanary.historical_vllm_study_lock.v1",
+  "scope": "issue-2971-version-sensitivity-on-rostam-a100-tp4",
+  "workload": {
+    "tensor_parallel_size": 4,
+    "batch_size": 8,
+    "input_length": 256,
+    "output_length": 32,
+    "max_model_len": 8192,
+    "warmups": 3,
+    "iterations": 12,
+    "seed": 2971,
+    "gpu_memory_utilization": 0.85,
+    "swap_space_gib": 4
+  },
+  "execution": {
+    "repetitions": 8,
+    "minimum_distinct_days": 2,
+    "repetition_day_offset_by_repetition": [0, 0, 0, 0, 1, 1, 1, 1],
+    "allocation_timeout_seconds": 7200,
+    "maximum_repetition_span_seconds": 7200,
+    "poll_interval_seconds": 10
+  },
+  "decision": {
+    "regression_severity_threshold_pct": 5.0,
+    "reported_version_comparison": ["vllm-0.2.7-default", "vllm-0.3.2-default"],
+    "eager_mitigation_comparison": ["vllm-0.3.3-default", "vllm-0.3.3-enforce-eager"]
+  },
+  "claim_boundary": {
+    "application": "actual-openhermes-2.5-mistral-7b-at-issue-date-revision",
+    "hardware": "four-a100-gpus-not-the-reported-single-rtx-4090",
+    "execution": "fixed-offline-batches-not-the-unreported-original-server-request-stream",
+    "interpretation": "historical-version-sensitivity-probe-not-an-exact-reproduction-of-the-user-report"
+  }
+}

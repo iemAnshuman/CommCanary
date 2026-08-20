@@ -37,6 +37,10 @@ class BenchmarkRunnerTests(unittest.TestCase):
                 self.assertGreaterEqual(result["wall_time_seconds"], 0.0)
                 self.assertEqual(len(result["semantic_sha256"]), 64)
                 self.assertIn("python_version", result["environment"])
+                executable = result["environment"]["executable"]
+                self.assertEqual(executable, Path(executable).name)
+                self.assertNotIn("/", executable)
+                self.assertNotIn("\\", executable)
                 self.assertIn("peak_rss_bytes", result)
                 self.assertIn("peak_rss_method", result)
                 self.assertGreaterEqual(result["python_peak_allocated_bytes"], 0)

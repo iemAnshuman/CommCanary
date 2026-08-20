@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import io
 import json
 import os
 import re
+import shutil
 import stat
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -17,10 +18,17 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 PARAM_RUNTIME_ARTIFACT_INPUT_ID = "param-runtime-artifact"
 PARAM_RUNTIME_ARTIFACT_SCHEMA = "commcanary.rostam.param-runtime-artifact.v1"
 PARAM_RUNTIME_INVENTORY_NAME = "param-runtime.json"
-_MAX_ARTIFACT_BYTES = 2 * 1024 * 1024 * 1024
-_MAX_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024
-_MAX_INVENTORY_BYTES = 64 * 1024 * 1024
-_MAX_FILES = 100_000
+# Production paths stream in 1 MiB chunks and keep only the canonical
+# inventory resident. These ceilings bind the hostile-input working set to a
+# documented 64 MiB budget rather than permitting simultaneous multi-GiB
+# archive/member copies.
+_WORKING_MEMORY_BUDGET_BYTES = 64 * 1024 * 1024
+_STREAM_CHUNK_BYTES = 1024 * 1024
+_MAX_ARTIFACT_BYTES = 512 * 1024 * 1024
+_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024
+_MAX_MEMBER_BYTES = 256 * 1024 * 1024
+_MAX_INVENTORY_BYTES = 16 * 1024 * 1024
+_MAX_FILES = 50_000
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -149,56 +157,138 @@ def _zip_info(name: str, *, executable: bool = False) -> zipfile.ZipInfo:
     return info
 
 
-def render_param_artifact(param_directory: Path) -> Tuple[bytes, Dict[str, Any]]:
-    """Render deterministic bytes for every non-Git file in the patched tree."""
+def _remove_staging_tree(path: Path) -> None:
+    if not path.exists():
+        return
+    for directory, names, filenames in os.walk(path):
+        os.chmod(directory, 0o700)
+        for name in names:
+            child = Path(directory) / name
+            if not child.is_symlink():
+                os.chmod(child, 0o700)
+        for name in filenames:
+            os.chmod(Path(directory) / name, 0o600)
+    shutil.rmtree(path, ignore_errors=True)
 
+
+def _stream_source_member(
+    archive: zipfile.ZipFile,
+    path: Path,
+    *,
+    relative: str,
+    remaining_expanded: int,
+) -> Dict[str, Any]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        maximum = min(_MAX_MEMBER_BYTES, remaining_expanded)
+        if not stat.S_ISREG(before.st_mode) or not 0 <= before.st_size <= maximum:
+            raise ParamArtifactError(f"PARAM source file {relative!r} exceeds its deterministic limit")
+        digest = hashlib.sha256()
+        observed = 0
+        info = _zip_info(relative, executable=bool(before.st_mode & 0o111))
+        info.file_size = before.st_size
+        with archive.open(info, "w", force_zip64=True) as output:
+            while True:
+                chunk = os.read(descriptor, _STREAM_CHUNK_BYTES)
+                if not chunk:
+                    break
+                observed += len(chunk)
+                if observed > before.st_size:
+                    raise ParamArtifactError(f"PARAM source file {relative!r} grew while it was archived")
+                digest.update(chunk)
+                output.write(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+        if identity_before != identity_after or observed != before.st_size:
+            raise ParamArtifactError(f"PARAM source file {relative!r} changed while it was archived")
+        return {
+            "path": relative,
+            "sha256": digest.hexdigest(),
+            "size_bytes": observed,
+            "executable": bool(before.st_mode & 0o111),
+        }
+    finally:
+        os.close(descriptor)
+
+
+def _render_param_to_path(param_directory: Path, output_path: Path) -> Dict[str, Any]:
     root = param_directory.resolve()
     rows = []
-    payloads: Dict[str, bytes] = {}
     expanded = 0
-    for path in _source_files(root):
-        relative = path.relative_to(root).as_posix()
-        before = os.stat(path, follow_symlinks=False)
-        raw = _read_regular_bytes(
-            path,
-            maximum=_MAX_EXPANDED_BYTES - expanded,
-            field=f"PARAM source file {relative!r}",
-            allow_empty=True,
-        )
-        expanded += len(raw)
-        if expanded > _MAX_EXPANDED_BYTES:
-            raise ParamArtifactError("PARAM source exceeds the expanded-byte limit")
-        executable = bool(before.st_mode & 0o111)
-        payloads[relative] = raw
-        rows.append(
-            {
-                "path": relative,
-                "sha256": hashlib.sha256(raw).hexdigest(),
-                "size_bytes": len(raw),
-                "executable": executable,
+    with output_path.open("xb") as output:
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+            for path in _source_files(root):
+                relative = path.relative_to(root).as_posix()
+                row = _stream_source_member(
+                    archive,
+                    path,
+                    relative=relative,
+                    remaining_expanded=_MAX_EXPANDED_BYTES - expanded,
+                )
+                expanded += int(row["size_bytes"])
+                rows.append(row)
+            inventory: Dict[str, Any] = {
+                "schema": PARAM_RUNTIME_ARTIFACT_SCHEMA,
+                "files": rows,
+                "expanded_size_bytes": expanded,
             }
-        )
-    inventory: Dict[str, Any] = {
-        "schema": PARAM_RUNTIME_ARTIFACT_SCHEMA,
-        "files": rows,
-        "expanded_size_bytes": expanded,
-    }
-    inventory_raw = _canonical_bytes(inventory)
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        for row in rows:
-            relative = str(row["path"])
-            archive.writestr(_zip_info(relative, executable=bool(row["executable"])), payloads[relative])
-        archive.writestr(_zip_info(PARAM_RUNTIME_INVENTORY_NAME), inventory_raw)
-    rendered = buffer.getvalue()
-    if not rendered or len(rendered) > _MAX_ARTIFACT_BYTES:
+            inventory_raw = _canonical_bytes(inventory)
+            if len(inventory_raw) > _MAX_INVENTORY_BYTES:
+                raise ParamArtifactError("PARAM inventory exceeds the working-memory budget")
+            archive.writestr(_zip_info(PARAM_RUNTIME_INVENTORY_NAME), inventory_raw)
+        output.flush()
+        os.fsync(output.fileno())
+    size = output_path.stat().st_size
+    if not 0 < size <= _MAX_ARTIFACT_BYTES:
         raise ParamArtifactError("PARAM artifact size is outside the supported limit")
+    return inventory
+
+
+def _hash_file(path: Path, *, maximum: int, field: str) -> Tuple[str, int]:
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= maximum:
+            raise ParamArtifactError(f"{field} is not a bounded regular file")
+        digest = hashlib.sha256()
+        size = 0
+        while True:
+            chunk = os.read(descriptor, _STREAM_CHUNK_BYTES)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > maximum:
+                raise ParamArtifactError(f"{field} exceeds its byte limit")
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+        if identity_before != identity_after or size != before.st_size:
+            raise ParamArtifactError(f"{field} changed while it was hashed")
+        return digest.hexdigest(), size
+    finally:
+        os.close(descriptor)
+
+
+def render_param_artifact(param_directory: Path) -> Tuple[bytes, Dict[str, Any]]:
+    """Compatibility renderer restricted to the documented in-memory budget."""
+
+    with tempfile.TemporaryDirectory(prefix="commcanary-param-render-") as raw_directory:
+        output = Path(raw_directory) / "param-runtime.zip"
+        inventory = _render_param_to_path(param_directory, output)
+        rendered = _read_regular_bytes(
+            output,
+            maximum=_WORKING_MEMORY_BUDGET_BYTES,
+            field="rendered PARAM compatibility artifact",
+        )
     return rendered, inventory
 
 
 def prepare_param_artifact(param_directory: Path, artifact_directory: Path) -> ParamArtifact:
-    rendered, inventory = render_param_artifact(param_directory)
-    digest = hashlib.sha256(rendered).hexdigest()
     expanded_root = artifact_directory.expanduser()
     if expanded_root.is_symlink():
         raise ParamArtifactError("PARAM artifact directory must be a real directory")
@@ -206,20 +296,36 @@ def prepare_param_artifact(param_directory: Path, artifact_directory: Path) -> P
     destination_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     if destination_root.is_symlink() or not destination_root.is_dir():
         raise ParamArtifactError("PARAM artifact directory must be a real directory")
+    temporary_descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".param-runtime-", suffix=".tmp", dir=destination_root
+    )
+    os.close(temporary_descriptor)
+    temporary = Path(temporary_name)
+    temporary.unlink()
+    try:
+        inventory = _render_param_to_path(param_directory, temporary)
+        digest, size = _hash_file(temporary, maximum=_MAX_ARTIFACT_BYTES, field="rendered PARAM artifact")
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
     destination = destination_root / f"param-runtime-{digest}.zip"
     try:
-        with destination.open("xb") as handle:
-            handle.write(rendered)
-            handle.flush()
-            os.fsync(handle.fileno())
+        os.link(temporary, destination, follow_symlinks=False)
         os.chmod(destination, 0o444)
     except FileExistsError:
-        if _read_regular_bytes(destination, maximum=_MAX_ARTIFACT_BYTES, field="existing PARAM artifact") != rendered:
+        observed_digest, observed_size = _hash_file(
+            destination,
+            maximum=_MAX_ARTIFACT_BYTES,
+            field="existing PARAM artifact",
+        )
+        if observed_digest != digest or observed_size != size:
             raise ParamArtifactError(f"PARAM artifact collision: {destination}")
+    finally:
+        temporary.unlink(missing_ok=True)
     return ParamArtifact(
         path=destination,
         sha256=digest,
-        size_bytes=len(rendered),
+        size_bytes=size,
         inventory_sha256=hashlib.sha256(_canonical_bytes(inventory)).hexdigest(),
         file_count=len(inventory["files"]),
     )
@@ -228,18 +334,42 @@ def prepare_param_artifact(param_directory: Path, artifact_directory: Path) -> P
 def stage_param_artifact(artifact: Path, destination: Path) -> StagedParamRuntime:
     """Verify and extract exact PARAM bytes into a private import root."""
 
-    raw = _read_regular_bytes(artifact, maximum=_MAX_ARTIFACT_BYTES, field="PARAM artifact")
     if destination.exists() or destination.is_symlink():
         raise ParamArtifactError("PARAM staging destination already exists")
-    destination.mkdir(parents=True, mode=0o700)
-    root = destination / "param"
+    parent = destination.parent
+    if parent.is_symlink() or not parent.is_dir():
+        raise ParamArtifactError("PARAM staging parent must be a real directory")
+    temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.stage-", dir=parent))
+    root = temporary / "param"
     root.mkdir(mode=0o700)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = -1
     try:
-        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+        descriptor = os.open(artifact, flags)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= _MAX_ARTIFACT_BYTES:
+            raise ParamArtifactError("PARAM artifact must be a bounded real regular file")
+        with os.fdopen(os.dup(descriptor), "rb") as artifact_handle, zipfile.ZipFile(artifact_handle) as archive:
             infos = archive.infolist()
             names = [info.filename for info in infos]
-            if len(names) != len(set(names)):
+            if not infos or len(infos) > _MAX_FILES + 1 or len(names) != len(set(names)):
                 raise ParamArtifactError("PARAM artifact contains duplicate entries")
+            expanded_headers = 0
+            for info in infos:
+                _safe_relative(info.filename)
+                maximum = _MAX_INVENTORY_BYTES if info.filename == PARAM_RUNTIME_INVENTORY_NAME else _MAX_MEMBER_BYTES
+                if (
+                    info.is_dir()
+                    or info.flag_bits & 0x1
+                    or info.compress_type != zipfile.ZIP_STORED
+                    or info.compress_size != info.file_size
+                    or not 0 <= info.file_size <= maximum
+                ):
+                    raise ParamArtifactError("PARAM artifact member encoding or size is unsupported")
+                if info.filename != PARAM_RUNTIME_INVENTORY_NAME:
+                    expanded_headers += info.file_size
+                    if expanded_headers > _MAX_EXPANDED_BYTES:
+                        raise ParamArtifactError("PARAM artifact expanded headers exceed their limit")
             info_by_name = {info.filename: info for info in infos}
             inventory_info = info_by_name.get(PARAM_RUNTIME_INVENTORY_NAME)
             if inventory_info is None:
@@ -283,46 +413,88 @@ def stage_param_artifact(artifact: Path, destination: Path) -> StagedParamRuntim
                     or _SHA256_RE.fullmatch(digest) is None
                     or isinstance(size, bool)
                     or not isinstance(size, int)
-                    or size < 0
+                    or not 0 <= size <= _MAX_MEMBER_BYTES
                     or not isinstance(executable, bool)
                     or relative.as_posix() in observed_names
                 ):
                     raise ParamArtifactError("PARAM artifact file identity is malformed")
-                info = info_by_name.get(relative.as_posix())
-                if info is None or info.is_dir() or info.filename.endswith("/"):
+                member_info = info_by_name.get(relative.as_posix())
+                if member_info is None or member_info.file_size != size:
                     raise ParamArtifactError("PARAM artifact lacks an inventoried file")
-                payload = _zip_entry_bytes(
-                    archive,
-                    info,
-                    maximum=min(size, _MAX_EXPANDED_BYTES - observed_size),
-                    field=f"PARAM artifact file {relative.as_posix()!r}",
-                )
-                if len(payload) != size or hashlib.sha256(payload).hexdigest() != digest:
-                    raise ParamArtifactError("PARAM artifact file bytes do not match the inventory")
                 observed_names.append(relative.as_posix())
                 observed_size += size
-                target = root.joinpath(*relative.parts)
-                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                with target.open("xb") as handle:
-                    handle.write(payload)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                os.chmod(target, 0o500 if executable else 0o400)
             if observed_names != sorted(observed_names) or observed_size != expanded:
                 raise ParamArtifactError("PARAM artifact inventory ordering or size does not recompute")
             expected_names = set(observed_names) | {PARAM_RUNTIME_INVENTORY_NAME}
             if set(names) != expected_names or len(names) != len(expected_names):
                 raise ParamArtifactError("PARAM artifact contains unbound entries")
+            if observed_size != expanded_headers:
+                raise ParamArtifactError("PARAM artifact expanded header size does not recompute")
+
+            for row in rows:
+                relative = _safe_relative(str(row["path"]))
+                size = int(row["size_bytes"])
+                digest = str(row["sha256"])
+                executable = bool(row["executable"])
+                info = info_by_name[relative.as_posix()]
+                target = root.joinpath(*relative.parts)
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                member_digest = hashlib.sha256()
+                member_size = 0
+                with archive.open(info, "r") as source, target.open("xb") as handle:
+                    while True:
+                        chunk = source.read(_STREAM_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        member_size += len(chunk)
+                        if member_size > size:
+                            raise ParamArtifactError("PARAM artifact member exceeds its inventoried size")
+                        member_digest.update(chunk)
+                        handle.write(chunk)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if member_size != size or member_digest.hexdigest() != digest:
+                    raise ParamArtifactError("PARAM artifact file bytes do not match the inventory")
+                os.chmod(target, 0o500 if executable else 0o400)
+        after = os.fstat(descriptor)
+        identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+        if identity_before != identity_after:
+            raise ParamArtifactError("PARAM artifact changed while it was staged")
+    except ParamArtifactError:
+        _remove_staging_tree(temporary)
+        raise
     except (KeyError, OSError, TypeError, ValueError, zipfile.BadZipFile) as exc:
+        _remove_staging_tree(temporary)
         raise ParamArtifactError(f"cannot stage PARAM artifact: {exc}") from exc
-    alias = destination / "param_bench"
-    os.symlink("param", alias, target_is_directory=True)
-    for directory, names, _files in os.walk(root, topdown=False):
-        for name in names:
-            os.chmod(Path(directory) / name, 0o500)
-        os.chmod(directory, 0o500)
-    os.chmod(destination, 0o500)
-    return StagedParamRuntime(root=root, import_paths=(destination, root))
+    except BaseException:
+        _remove_staging_tree(temporary)
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    try:
+        alias = temporary / "param_bench"
+        os.symlink("param", alias, target_is_directory=True)
+        commit = temporary / ".stage-complete"
+        with commit.open("xb") as handle:
+            handle.write(b"commcanary-param-stage-v1\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(commit, 0o400)
+        for directory, names, _files in os.walk(root, topdown=False):
+            for name in names:
+                os.chmod(Path(directory) / name, 0o500)
+            os.chmod(directory, 0o500)
+        if destination.exists() or destination.is_symlink():
+            raise ParamArtifactError("PARAM staging destination appeared during verification")
+        os.rename(temporary, destination)
+        os.chmod(destination, 0o500)
+    except BaseException:
+        _remove_staging_tree(temporary)
+        raise
+    staged_root = destination / "param"
+    return StagedParamRuntime(root=staged_root, import_paths=(destination, staged_root))
 
 
 def build_parser() -> argparse.ArgumentParser:

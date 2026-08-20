@@ -6,6 +6,7 @@ import csv
 import io
 import math
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -84,6 +85,8 @@ _PER_CAMPAIGN_POLICY_FIELDS = frozenset({"catalog_profile", "input_paths"})
 _RUNTIME_OBSERVATION_SCHEMA_V1 = "commcanary.rostam.runtime-observation.v1"
 _RUNTIME_OBSERVATION_SCHEMA_V2 = "commcanary.rostam.runtime-observation.v2"
 _RUNTIME_OBSERVATION_SCHEMA_V3 = "commcanary.rostam.runtime-observation.v3"
+_SCHEDULER_EVIDENCE_SCHEMA = "commcanary.rostam.scheduler-evidence.v1"
+_SUBMISSION_CHUNK_RE = re.compile(r"^p-[0-9a-f]{24}$")
 _BINDING_ENVIRONMENT_FIELDS = {
     "CUDA_VISIBLE_DEVICES",
     "OMP_NUM_THREADS",
@@ -699,17 +702,72 @@ def _replicated_environment_binding(
         "topology": dict(topology),
         "binding": dict(binding),
     }
+    normalized_invariants = {
+        **platform,
+        "nccl_library_sha256": nccl_library_sha256,
+    }
+    normalized_probe_policy = dict(probe_policy)
+    observation_projection = {
+        "invariants": normalized_invariants,
+        "telemetry": normalized_telemetry,
+        "probe_policy": normalized_probe_policy,
+    }
     return {
         "schema": runtime_observation["schema"],
-        "invariants": {
-            **platform,
-            "nccl_library_sha256": nccl_library_sha256,
-        },
+        "invariants": normalized_invariants,
         "telemetry": normalized_telemetry,
-        "probe_policy": dict(probe_policy),
+        "probe_policy": normalized_probe_policy,
         "platform_sha256": canonical_sha256(platform),
-        "observation_sha256": canonical_sha256(runtime_observation),
+        "observation_sha256": canonical_sha256(observation_projection),
     }
+
+
+def _replicated_scheduler_binding(
+    raw: Any,
+    *,
+    manifest: RunManifest,
+    cell: Any,
+    record: Any,
+) -> Dict[str, Any]:
+    scheduler = _parameters(raw, "attempt.observed.metadata.scheduler_evidence")
+    expected_fields = {
+        "schema",
+        "method",
+        "planned_position",
+        "scheduler_start_time",
+        "node",
+        "chunk_identifier",
+    }
+    policy = _parameters(manifest.campaign.policy.to_value(), "campaign.policy")
+    schedule = policy.get("configuration_order_by_repetition")
+    if (
+        set(scheduler) != expected_fields
+        or scheduler.get("schema") != _SCHEDULER_EVIDENCE_SCHEMA
+        or scheduler.get("method") != "scontrol show job --oneliner JOBID"
+        or not isinstance(schedule, list)
+        or not 0 <= cell.repetition < len(schedule)
+    ):
+        raise AnalysisValidationError(f"replicated scheduler evidence is incomplete for cell {cell.id!r}")
+    row = schedule[cell.repetition]
+    if not isinstance(row, list) or row.count(cell.configuration_id) != 1:
+        raise AnalysisValidationError(f"replicated configuration schedule is invalid for cell {cell.id!r}")
+    node = scheduler.get("node")
+    chunk_identifier = scheduler.get("chunk_identifier")
+    start_time = scheduler.get("scheduler_start_time")
+    if (
+        scheduler.get("planned_position") != row.index(cell.configuration_id)
+        or not isinstance(node, str)
+        or [node] != list(record.observed.nodes)
+        or not isinstance(chunk_identifier, str)
+        or _SUBMISSION_CHUNK_RE.fullmatch(chunk_identifier) is None
+        or not isinstance(start_time, str)
+    ):
+        raise AnalysisValidationError(f"replicated scheduler evidence is stale for cell {cell.id!r}")
+    try:
+        datetime.fromisoformat(start_time)
+    except ValueError as exc:
+        raise AnalysisValidationError(f"replicated scheduler start time is invalid for cell {cell.id!r}") from exc
+    return dict(scheduler)
 
 
 def _physical_binding(
@@ -901,7 +959,32 @@ def _physical_binding(
         binding["decision_gate_runtime"] = physical.runtime.to_dict()
     if replicated_environment is not None:
         binding["decision_gate_environment"] = replicated_environment
+        binding["decision_gate_scheduler"] = _replicated_scheduler_binding(
+            metadata.get("scheduler_evidence"),
+            manifest=manifest,
+            cell=cell,
+            record=record,
+        )
     return binding
+
+
+def _bind_scheduler_elapsed(rows: Sequence[Dict[str, Any]]) -> None:
+    grouped: Dict[int, List[Dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("measurement_schema") == PHYSICAL_DECISION_GATE_MEASUREMENT_SCHEMA_V2:
+            grouped.setdefault(int(row["repetition"]), []).append(row)
+    for repetition_rows in grouped.values():
+        parsed = [
+            datetime.fromisoformat(str(row["decision_gate_scheduler"]["scheduler_start_time"]))
+            for row in repetition_rows
+        ]
+        if any((value.tzinfo is None) != (parsed[0].tzinfo is None) for value in parsed):
+            raise AnalysisValidationError("replicated scheduler timestamps mix timezone-aware and naive values")
+        beginning = min(parsed)
+        for row, started in zip(repetition_rows, parsed):
+            scheduler = dict(row["decision_gate_scheduler"])
+            scheduler["elapsed_from_repetition_start_seconds"] = (started - beginning).total_seconds()
+            row["decision_gate_scheduler"] = scheduler
 
 
 def _selected_rows(
@@ -996,6 +1079,7 @@ def _selected_rows(
                 **binding,
             }
         )
+    _bind_scheduler_elapsed(rows)
     return tuple(sorted(rows, key=lambda row: row["cell_id"]))
 
 
@@ -1783,7 +1867,7 @@ def prepare_cross_commit_compatibility(
     contract: Dict[str, Any] = {
         "schema": CROSS_COMMIT_COMPATIBILITY_SCHEMA,
         "status": "reviewed",
-        "analysis_implementation": analysis_implementation_record(),
+        "analysis_implementation": analysis_implementation_record(executor_artifact),
         "campaigns": campaign_bindings,
         "ground_truth": {
             "manifest_sha256s": sorted(evidence.frozen.manifest_sha256 for evidence in ground),
@@ -1801,7 +1885,10 @@ def prepare_cross_commit_compatibility(
         },
     }
     contract["contract_sha256"] = canonical_sha256(contract)
-    reviewed_contract = CrossCommitCompatibility.from_mapping(contract)
+    reviewed_contract = CrossCommitCompatibility.from_mapping(
+        contract,
+        executor_artifact=executor_artifact,
+    )
     _validate_trusted_join(
         combined,
         cross_commit_compatibility=reviewed_contract,
@@ -1958,7 +2045,10 @@ def verify_regenerate_campaigns(
     else:
         if compatibility_golden_directory is None:
             raise AnalysisValidationError("cross_commit_contract requires compatibility_golden_directory")
-        compatibility = load_cross_commit_compatibility(cross_commit_contract)
+        compatibility = load_cross_commit_compatibility(
+            cross_commit_contract,
+            executor_artifact=executor_artifact,
+        )
         _verify_cross_commit_ground_truth(
             compatibility,
             loaded,

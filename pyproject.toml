@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "commcanary"
 version = "0.3.0"
-description = "Decision-preserving communication canaries for distributed LLM inference regressions."
+description = "Verifiable distributed-AI replay and physical performance-canary synthesis."
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
@@ -16,7 +16,8 @@ keywords = [
   "nccl",
   "collective-communication",
   "performance-regression",
-  "trace-compression",
+  "chakra",
+  "performance-testing",
   "gpu",
 ]
 classifiers = [

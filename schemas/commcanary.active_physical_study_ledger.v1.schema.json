@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.active_physical_study_ledger.v1.schema.json",
+  "title": "CommCanary active physical study ledger v1",
+  "type": "object",
+  "required": ["format", "ledger_id", "algorithm", "status", "source_et_sha256", "projection_id", "policy_id", "predeclared_holdout_perturbation_ids", "selection", "holdout_access", "candidate_steps", "training_candidate_count", "training_measurement_request_count_before_freeze", "measurement_requests", "final_statistics", "corpus_id", "application_evidence_set_id", "physical_evidence_set_id"],
+  "properties": {
+    "format": {"const": "commcanary.active_physical_study_ledger.v1"},
+    "ledger_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "algorithm": {"const": "active-counterexample-guided-physical-minimization.v1"},
+    "status": {"enum": ["qualified_active_candidate", "failed_active_candidate"]},
+    "source_et_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "projection_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "policy_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "predeclared_holdout_perturbation_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+    "selection": {
+      "type": "object",
+      "required": ["source_et_sha256", "projection_id", "policy_id", "selected_region_ids", "selected_node_ids", "canary_et_sha256", "selection_sha256"],
+      "properties": {
+        "source_et_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "projection_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "policy_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "selected_region_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+        "selected_node_ids": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
+        "canary_et_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "selection_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "holdout_access": {
+      "type": "object",
+      "required": ["first_access_after_selection_sha256", "loaded_perturbation_ids", "baseline_application_evidence_sha256"],
+      "properties": {
+        "first_access_after_selection_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+        "loaded_perturbation_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+        "baseline_application_evidence_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    },
+    "candidate_steps": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["action", "from_candidate_id", "to_candidate_id", "counterexample_perturbation_ids", "added_region_ids"],
+            "properties": {
+              "action": {"const": "counterexample_addition"},
+              "from_candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+              "to_candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+              "counterexample_perturbation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+              "added_region_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["action", "from_candidate_id", "to_candidate_id", "removed_region_ids"],
+            "properties": {
+              "action": {"const": "ddmin_prune"},
+              "from_candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+              "to_candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+              "removed_region_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"}
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "training_candidate_count": {"type": "integer", "minimum": 1},
+    "training_measurement_request_count_before_freeze": {"type": "integer", "minimum": 1},
+    "measurement_requests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["candidate_id", "method", "selected_region_ids", "executable_sha256", "split", "perturbation_id", "subject_sha256", "measurement_id"],
+        "properties": {
+          "candidate_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+          "method": {"enum": ["reduced_decision_canary", "independent_exact_replay", "random_sampling", "stratified_sampling", "ddmin", "communication_only_microbenchmark"]},
+          "selected_region_ids": {"$ref": "#/$defs/nonEmptyUniqueStrings"},
+          "executable_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+          "split": {"enum": ["training", "all", "baseline"]},
+          "perturbation_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+          "subject_sha256": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+          "measurement_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "final_statistics": {
+      "type": "object",
+      "required": ["training", "holdout"],
+      "properties": {
+        "training": {"$ref": "#/$defs/statistics"},
+        "holdout": {"$ref": "#/$defs/statistics"}
+      },
+      "additionalProperties": false
+    },
+    "corpus_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "application_evidence_set_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "physical_evidence_set_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"}
+  },
+  "$defs": {
+    "nonEmptyUniqueStrings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}},
+    "statistics": {
+      "type": "object",
+      "required": ["decision_pairs", "severe_false_negatives", "false_positives", "false_positive_rate", "pairwise_decision_agreement", "minimum_runtime_reduction_ratio", "physical_runtime_max_seconds"],
+      "properties": {
+        "decision_pairs": {"type": "integer", "minimum": 1},
+        "severe_false_negatives": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+        "false_positives": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonNegativeInteger"},
+        "false_positive_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "pairwise_decision_agreement": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_runtime_reduction_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "physical_runtime_max_seconds": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

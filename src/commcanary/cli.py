@@ -27,12 +27,14 @@ from .command_line.codes import (
 )
 from .command_line.commands import (
     baseline_command,
+    build_command,
     compare_command,
     compile_command,
     doctor_command,
     evaluate_qualification_command,
     execute_materialization_command,
     export_param_command,
+    gate_command,
     import_kineto_command,
     materialize_qualification_command,
     prepare_qualification_command,
@@ -98,6 +100,14 @@ def _cmd_compile(args: Any) -> int:
         diagnostic_emitter=_emit_diagnostic,
         elapsed_clock=_elapsed_seconds,
     )
+
+
+def _cmd_build(args: Any) -> int:
+    return build_command(args)
+
+
+def _cmd_gate(args: Any) -> int:
+    return gate_command(args)
 
 
 def _cmd_doctor(args: Any) -> int:
@@ -188,6 +198,8 @@ def _build_parser() -> argparse.ArgumentParser:
     return build_parser(
         handlers=CommandHandlers(
             doctor=_cmd_doctor,
+            build=_cmd_build,
+            gate=_cmd_gate,
             compile=_cmd_compile,
             replay=_cmd_replay,
             compare=_cmd_compare,

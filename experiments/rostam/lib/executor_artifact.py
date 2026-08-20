@@ -9,8 +9,8 @@ import os
 import stat
 import zipfile
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path, PurePosixPath
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 EXECUTOR_ARTIFACT_SCHEMA = "commcanary.rostam.executor-artifact.v2"
 EXECUTOR_ARTIFACT_INPUT_ID = "rostam-executor-artifact"
@@ -25,6 +25,9 @@ EXECUTOR_RUN_PYTHON_ENTRY_POINT = "experiments.rostam.lib.executor_cli:run_pytho
 EXECUTOR_MAIN = ("from experiments.rostam.lib.executor_cli import main\nraise SystemExit(main())\n").encode("utf-8")
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 _MAX_EXECUTOR_BYTES = 16 * 1024 * 1024
+_MAX_EXECUTOR_MEMBERS = 256
+_MAX_EXECUTOR_MEMBER_BYTES = 2 * 1024 * 1024
+_MAX_EXECUTOR_EXPANDED_BYTES = 16 * 1024 * 1024
 
 
 class ExecutorArtifactError(RuntimeError):
@@ -71,6 +74,8 @@ class ExecutorArtifact:
     schema_inventory_sha256: str
     source_files: Tuple[str, ...]
     schema_files: Tuple[str, ...]
+    source_records: Tuple[Tuple[str, str, int], ...]
+    schema_records: Tuple[Tuple[str, str, int], ...]
 
     def analyzer_record(self, entry_point: str, *, policy_sha256: Optional[str] = None) -> Dict[str, Any]:
         if entry_point not in {EXECUTOR_ANALYZE_ENTRY_POINT, EXECUTOR_EVALUATE_ENTRY_POINT}:
@@ -171,6 +176,24 @@ def _inventory_sha256(value: Any) -> str:
     return hashlib.sha256(_inventory_bytes(value)).hexdigest()
 
 
+def _strict_object_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ExecutorArtifactError(f"Rostam executor inventory contains duplicate key {key!r}")
+        result[key] = value
+    return result
+
+
+def _safe_member_name(name: Any) -> str:
+    if not isinstance(name, str) or not name or "\\" in name or "\x00" in name:
+        raise ExecutorArtifactError("Rostam executor member name is unsafe")
+    path = PurePosixPath(name)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ExecutorArtifactError(f"Rostam executor member path is unsafe: {name!r}")
+    return name
+
+
 def _zip_info(name: str) -> zipfile.ZipInfo:
     info = zipfile.ZipInfo(filename=name, date_time=_ZIP_TIMESTAMP)
     info.compress_type = zipfile.ZIP_STORED
@@ -192,6 +215,7 @@ def render_executor_artifact(experiment_directory: Path) -> Tuple[bytes, Dict[st
         executor_schema_files(experiment_directory),
         field="schema",
     )
+    source_payloads = {"__main__.py": EXECUTOR_MAIN, **source_payloads}
     source_inventory = [
         {
             "path": name,
@@ -225,7 +249,6 @@ def render_executor_artifact(experiment_directory: Path) -> Tuple[bytes, Dict[st
     inventory_bytes = _inventory_bytes(inventory)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=False) as archive:
-        archive.writestr(_zip_info("__main__.py"), EXECUTOR_MAIN)
         for name, raw in sorted({**source_payloads, **schema_payloads}.items()):
             archive.writestr(_zip_info(name), raw)
         archive.writestr(_zip_info(EXECUTOR_INVENTORY_NAME), inventory_bytes)
@@ -267,6 +290,12 @@ def prepare_executor_artifact(experiment_directory: Path, artifact_directory: Pa
         schema_inventory_sha256=str(inventory["schema_inventory_sha256"]),
         source_files=tuple(str(item["path"]) for item in inventory["source_files"]),
         schema_files=tuple(str(item["path"]) for item in inventory["schema_files"]),
+        source_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["source_files"]
+        ),
+        schema_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["schema_files"]
+        ),
     )
 
 
@@ -288,6 +317,12 @@ def validate_executor_artifact(experiment_directory: Path, artifact: Path) -> Ex
         schema_inventory_sha256=str(inventory["schema_inventory_sha256"]),
         source_files=tuple(str(item["path"]) for item in inventory["source_files"]),
         schema_files=tuple(str(item["path"]) for item in inventory["schema_files"]),
+        source_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["source_files"]
+        ),
+        schema_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["schema_files"]
+        ),
     )
 
 
@@ -297,8 +332,22 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
     raw = _read_regular_bytes(artifact, maximum=_MAX_EXECUTOR_BYTES, field="Rostam executor artifact")
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            infos = archive.infolist()
+            archive_names = [info.filename for info in infos]
+            if not infos or len(infos) > _MAX_EXECUTOR_MEMBERS or len(archive_names) != len(set(archive_names)):
+                raise ExecutorArtifactError("Rostam executor member inventory is empty, oversized, or duplicated")
+            expanded = 0
+            for info in infos:
+                _safe_member_name(info.filename)
+                if info.is_dir() or info.compress_type != zipfile.ZIP_STORED or info.flag_bits & 0x1:
+                    raise ExecutorArtifactError("Rostam executor members must be unencrypted ZIP_STORED files")
+                if not 0 <= info.file_size <= _MAX_EXECUTOR_MEMBER_BYTES:
+                    raise ExecutorArtifactError("Rostam executor member exceeds its expanded-size limit")
+                expanded += info.file_size
+                if expanded > _MAX_EXECUTOR_EXPANDED_BYTES:
+                    raise ExecutorArtifactError("Rostam executor expanded bytes exceed their limit")
             inventory_raw = archive.read(EXECUTOR_INVENTORY_NAME)
-            inventory = json.loads(inventory_raw)
+            inventory = json.loads(inventory_raw, object_pairs_hook=_strict_object_pairs)
             if not isinstance(inventory, dict) or inventory.get("schema") != EXECUTOR_ARTIFACT_SCHEMA:
                 raise ExecutorArtifactError("Rostam executor inventory schema is unsupported")
             expected_fields = {
@@ -330,7 +379,7 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
                 rows = inventory[collection]
                 if not isinstance(rows, list) or not rows or _inventory_sha256(rows) != inventory[digest_field]:
                     raise ExecutorArtifactError(f"Rostam executor {collection} inventory does not recompute")
-                names = []
+                inventory_names = []
                 for row in rows:
                     if not isinstance(row, dict) or set(row) != {"path", "sha256", "size_bytes"}:
                         raise ExecutorArtifactError(f"Rostam executor {collection} entry is malformed")
@@ -339,14 +388,28 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
                         raise ExecutorArtifactError(f"Rostam executor {collection} path is unsafe")
                     payload = archive.read(name)
                     if (
-                        name in names
+                        name in inventory_names
                         or hashlib.sha256(payload).hexdigest() != row["sha256"]
                         or len(payload) != row["size_bytes"]
                     ):
                         raise ExecutorArtifactError(f"Rostam executor {collection} bytes do not match inventory")
-                    names.append(name)
-                if names != sorted(names):
+                    inventory_names.append(name)
+                if inventory_names != sorted(inventory_names):
                     raise ExecutorArtifactError(f"Rostam executor {collection} inventory is not sorted")
+            expected_members = {
+                EXECUTOR_INVENTORY_NAME,
+                *(str(item["path"]) for item in inventory["source_files"]),
+                *(str(item["path"]) for item in inventory["schema_files"]),
+            }
+            if set(archive_names) != expected_members:
+                raise ExecutorArtifactError("Rostam executor archive member set is not exactly inventoried")
+            if archive.read("__main__.py") != EXECUTOR_MAIN:
+                raise ExecutorArtifactError("Rostam executor __main__.py is unsupported")
+            source_names = {str(item["path"]) for item in inventory["source_files"]}
+            if "__main__.py" not in source_names or any(
+                name.endswith(".py") and name not in source_names for name in archive_names
+            ):
+                raise ExecutorArtifactError("Rostam executor executable Python members are not fully inventoried")
     except (KeyError, OSError, ValueError, zipfile.BadZipFile) as exc:
         if isinstance(exc, ExecutorArtifactError):
             raise
@@ -363,6 +426,12 @@ def load_executor_artifact(artifact: Path) -> ExecutorArtifact:
         schema_inventory_sha256=str(inventory["schema_inventory_sha256"]),
         source_files=tuple(str(item["path"]) for item in inventory["source_files"]),
         schema_files=tuple(str(item["path"]) for item in inventory["schema_files"]),
+        source_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["source_files"]
+        ),
+        schema_records=tuple(
+            (str(item["path"]), str(item["sha256"]), int(item["size_bytes"])) for item in inventory["schema_files"]
+        ),
     )
 
 

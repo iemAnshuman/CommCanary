@@ -24,10 +24,25 @@ QUALIFICATION_MATERIALIZATION_FORMAT = "commcanary.qualification_materialization
 QUALIFICATION_POLICY_FORMAT = "commcanary.qualification_policy.v1"
 QUALIFICATION_OBSERVATION_FORMAT = "commcanary.qualification_observation.v1"
 QUALIFICATION_VERDICT_FORMAT = "commcanary.qualification_verdict.v1"
+CHAKRA_PROJECTION_FORMAT = "commcanary.chakra_projection.v1"
+PHYSICAL_CANARY_POLICY_FORMAT = "commcanary.physical_canary_policy.v1"
+PHYSICAL_ORACLE_CORPUS_FORMAT = "commcanary.physical_oracle_corpus.v1"
+PHYSICAL_DECISION_CANARY_FORMAT = "physical_decision_canary.v1"
+PHYSICAL_GATE_OBSERVATION_FORMAT = "commcanary.physical_gate_observation.v1"
+PHYSICAL_GATE_RESULT_FORMAT = "commcanary.physical_gate_result.v1"
+PHYSICAL_SYNTHESIS_LEDGER_FORMAT = "commcanary.physical_synthesis_ledger.v1"
+PHYSICAL_FIDELITY_CERTIFICATE_FORMAT = "commcanary.physical_fidelity_certificate.v1"
+PHYSICAL_LEAKAGE_ASSESSMENT_FORMAT = "commcanary.physical_leakage_assessment.v1"
+PHYSICAL_EXECUTION_MEASUREMENT_FORMAT = "commcanary.physical_execution_measurement.v1"
+PHYSICAL_EXECUTION_EVIDENCE_SET_FORMAT = "commcanary.physical_execution_evidence_set.v1"
 
 CANONICAL_JSON_VERSION = "commcanary.canonical-json.v1"
 CANARY_INTEGRITY_PROFILE = "commcanary.canary-integrity.v1"
 ARTIFACT_PROVENANCE_ALGORITHM = "commcanary.artifact-provenance.v2"
+APPLICATION_MEASUREMENT_FORMAT = "commcanary.application_measurement.v1"
+APPLICATION_ORACLE_FORMAT = "commcanary.application_oracle.v1"
+APPLICATION_EVIDENCE_SET_FORMAT = "commcanary.application_evidence_set.v1"
+ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT = "commcanary.active_physical_study_ledger.v1"
 
 
 @dataclass(frozen=True)
@@ -161,6 +176,114 @@ FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
         migrate=False,
         semantic_validator=True,
     ),
+    FormatCapability(
+        artifact="chakra_projection",
+        format_id=CHAKRA_PROJECTION_FORMAT,
+        schema="schemas/commcanary.chakra_projection.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_canary_policy",
+        format_id=PHYSICAL_CANARY_POLICY_FORMAT,
+        schema="schemas/commcanary.physical_canary_policy.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_oracle_corpus",
+        format_id=PHYSICAL_ORACLE_CORPUS_FORMAT,
+        schema="schemas/commcanary.physical_oracle_corpus.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_decision_canary",
+        format_id=PHYSICAL_DECISION_CANARY_FORMAT,
+        schema="schemas/physical_decision_canary.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_gate_observation",
+        format_id=PHYSICAL_GATE_OBSERVATION_FORMAT,
+        schema="schemas/commcanary.physical_gate_observation.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_gate_result",
+        format_id=PHYSICAL_GATE_RESULT_FORMAT,
+        schema="schemas/commcanary.physical_gate_result.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_execution_measurement",
+        format_id=PHYSICAL_EXECUTION_MEASUREMENT_FORMAT,
+        schema="schemas/commcanary.physical_execution_measurement.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="physical_execution_evidence_set",
+        format_id=PHYSICAL_EXECUTION_EVIDENCE_SET_FORMAT,
+        schema="schemas/commcanary.physical_execution_evidence_set.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="application_measurement",
+        format_id=APPLICATION_MEASUREMENT_FORMAT,
+        schema="schemas/commcanary.application_measurement.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="application_oracle",
+        format_id=APPLICATION_ORACLE_FORMAT,
+        schema="schemas/commcanary.application_oracle.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="application_evidence_set",
+        format_id=APPLICATION_EVIDENCE_SET_FORMAT,
+        schema="schemas/commcanary.application_evidence_set.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="active_physical_study_ledger",
+        format_id=ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT,
+        schema="schemas/commcanary.active_physical_study_ledger.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
 )
 
 
@@ -172,16 +295,31 @@ def format_capabilities() -> Tuple[FormatCapability, ...]:
 
 __all__ = [
     "ARTIFACT_PROVENANCE_ALGORITHM",
+    "APPLICATION_MEASUREMENT_FORMAT",
+    "APPLICATION_ORACLE_FORMAT",
+    "APPLICATION_EVIDENCE_SET_FORMAT",
+    "ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT",
     "BEHAVIOR_VERIFICATION_FORMAT",
     "BEHAVIOR_SEARCH_EVIDENCE_FORMAT",
     "CANARY_FORMAT",
     "CANARY_INTEGRITY_PROFILE",
     "CANONICAL_JSON_VERSION",
+    "CHAKRA_PROJECTION_FORMAT",
     "COMPARE_FORMAT",
     "DOCTOR_REPORT_FORMAT",
     "FIDELITY_VERIFICATION_FORMAT",
     "FORMAT_CAPABILITIES",
     "FormatCapability",
+    "PHYSICAL_CANARY_POLICY_FORMAT",
+    "PHYSICAL_DECISION_CANARY_FORMAT",
+    "PHYSICAL_EXECUTION_MEASUREMENT_FORMAT",
+    "PHYSICAL_EXECUTION_EVIDENCE_SET_FORMAT",
+    "PHYSICAL_FIDELITY_CERTIFICATE_FORMAT",
+    "PHYSICAL_GATE_OBSERVATION_FORMAT",
+    "PHYSICAL_GATE_RESULT_FORMAT",
+    "PHYSICAL_LEAKAGE_ASSESSMENT_FORMAT",
+    "PHYSICAL_ORACLE_CORPUS_FORMAT",
+    "PHYSICAL_SYNTHESIS_LEDGER_FORMAT",
     "QUALIFICATION_MATERIALIZATION_FORMAT",
     "QUALIFICATION_OBSERVATION_FORMAT",
     "QUALIFICATION_POLICY_FORMAT",

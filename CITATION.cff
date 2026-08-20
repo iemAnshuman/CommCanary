@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: >-
+  If you use CommCanary or its published experiment evidence, cite the
+  preferred preprint below and identify the exact repository commit used.
+title: CommCanary
+type: software
+authors:
+  - family-names: Agrawal
+    given-names: Anshuman
+repository-code: https://github.com/iemAnshuman/CommCanary
+license: Apache-2.0
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Agrawal
+      given-names: Anshuman
+  title: >-
+    CommCanary 0.4v: Fail Closed Evidence for Decision Fidelity Evaluation of
+    Collective Trace Replay
+  doi: 10.5281/zenodo.21939041
+  url: https://doi.org/10.5281/zenodo.21939041
+  year: 2026

@@ -10,8 +10,10 @@ from itertools import combinations
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, cast
 
 from ..decision_gate_schedule import (
+    CONFIGURATION_ORDER_METHOD,
     REPLICATED_ORDER_METHOD,
     WILLIAMS_CYCLE_LENGTH,
+    configuration_order_by_repetition,
     frozen_schedule_inventory,
 )
 from ..harness import JSONResourceLimits, canonical_sha256, sha256_hex, strict_json_loads
@@ -54,6 +56,7 @@ _BINDING_ENVIRONMENT_FIELDS = {
     "SLURM_PROCID",
     "SLURM_STEP_GPUS",
 }
+_SHA256_CHARACTERS = frozenset("0123456789abcdef")
 
 RepetitionSamples = Dict[int, Dict[str, Dict[str, Tuple[float, ...]]]]
 MedianVector = Dict[str, Dict[str, float]]
@@ -79,7 +82,10 @@ def _environment_identity(
     )
     if environment["schema"] != "commcanary.rostam.runtime-observation.v3":
         raise DecisionFidelityError(f"{field}.schema is unsupported")
-    observation_sha256 = _sha256(environment["observation_sha256"], f"{field}.observation_sha256")
+    declared_observation_sha256 = _sha256(
+        environment["observation_sha256"],
+        f"{field}.observation_sha256",
+    )
     platform_sha256 = _sha256(environment["platform_sha256"], f"{field}.platform_sha256")
     invariants = _object(
         environment["invariants"],
@@ -240,7 +246,211 @@ def _environment_identity(
         raise DecisionFidelityError(f"{field}.telemetry temperature delta exceeds policy")
     if captured_at["post"] <= captured_at["pre"]:
         raise DecisionFidelityError(f"{field}.telemetry timestamps are not ordered")
-    return observation_sha256, platform_sha256
+    normalized_observation_sha256 = canonical_sha256(
+        {
+            "invariants": dict(invariants),
+            "telemetry": dict(telemetry),
+            "probe_policy": dict(probe_policy),
+        }
+    )
+    if declared_observation_sha256 != normalized_observation_sha256:
+        raise DecisionFidelityError(f"{field}.observation_sha256 does not recompute")
+    return normalized_observation_sha256, platform_sha256
+
+
+def _cycle_telemetry_summary(
+    raw: Any,
+    field: str,
+    *,
+    node: str,
+    expected_gpus: Sequence[Mapping[str, Any]],
+    comparability: Mapping[str, Any],
+) -> Dict[str, Any]:
+    telemetry = _object(raw, field, {"schema", "method", "snapshots"})
+    if (
+        telemetry["schema"] != "commcanary.rostam.decision-gate-cycle-telemetry.v1"
+        or telemetry["method"] != "bounded-between-six-row-cycles.v1"
+    ):
+        raise DecisionFidelityError(f"{field} contract is unsupported")
+    expected_labels = [
+        "before_warmup",
+        "before_measured_cycle_1",
+        "after_measured_cycle_1",
+        "after_measured_cycle_2",
+        "after_measured_cycle_3",
+        "after_measured_cycle_4",
+        "final",
+    ]
+    snapshots = telemetry["snapshots"]
+    if not isinstance(snapshots, list) or len(snapshots) != len(expected_labels):
+        raise DecisionFidelityError(f"{field}.snapshots inventory is incomplete")
+    expected_uuids = [str(gpu["uuid"]) for gpu in expected_gpus]
+    power_limits = [float(gpu["power_limit_w"]) for gpu in expected_gpus]
+    allowed_performance_states = set(comparability["allowed_performance_states"])
+    allowed_throttle_states = set(comparability["allowed_throttle_reasons_active"])
+    allowed_node_states = set(comparability["allowed_node_states"])
+    timestamps: List[datetime] = []
+    temperatures: List[int] = []
+    power_draws: List[float] = []
+    sm_clocks: List[int] = []
+    memory_clocks: List[int] = []
+    performance_states: Set[str] = set()
+    first_ecc: Optional[List[Tuple[int, int]]] = None
+    previous_ecc: Optional[List[Tuple[int, int]]] = None
+    first_xid: Optional[int] = None
+    previous_xid: Optional[int] = None
+    first_xid_sha256: Optional[str] = None
+    final_xid_sha256: Optional[str] = None
+    for snapshot_index, (raw_snapshot, expected_label) in enumerate(zip(snapshots, expected_labels)):
+        snapshot_field = f"{field}.snapshots[{snapshot_index}]"
+        snapshot = _object(
+            raw_snapshot,
+            snapshot_field,
+            {"label", "captured_at", "gpus", "node_state", "xid"},
+        )
+        captured_at = snapshot["captured_at"]
+        if snapshot["label"] != expected_label or not isinstance(captured_at, str):
+            raise DecisionFidelityError(f"{snapshot_field} identity is invalid")
+        try:
+            timestamps.append(datetime.strptime(captured_at, "%Y-%m-%dT%H:%M:%S.%fZ"))
+        except ValueError as exc:
+            raise DecisionFidelityError(f"{snapshot_field}.captured_at is invalid") from exc
+        node_state = _object(
+            snapshot["node_state"],
+            f"{snapshot_field}.node_state",
+            {"method", "node", "state"},
+        )
+        if (
+            node_state["method"] != "scontrol show node --oneliner HOSTNAME"
+            or node_state["node"] != node
+            or node_state["state"] not in allowed_node_states
+        ):
+            raise DecisionFidelityError(f"{snapshot_field}.node_state is outside policy")
+        raw_gpus = snapshot["gpus"]
+        if not isinstance(raw_gpus, list) or len(raw_gpus) != len(expected_gpus):
+            raise DecisionFidelityError(f"{snapshot_field}.gpus is incomplete")
+        uuids: List[str] = []
+        ecc: List[Tuple[int, int]] = []
+        for gpu_index, raw_gpu in enumerate(raw_gpus):
+            gpu_field = f"{snapshot_field}.gpus[{gpu_index}]"
+            gpu = _object(
+                raw_gpu,
+                gpu_field,
+                {
+                    "index",
+                    "uuid",
+                    "performance_state",
+                    "temperature_c",
+                    "power_draw_w",
+                    "sm_clock_mhz",
+                    "memory_clock_mhz",
+                    "throttle_reasons_active",
+                    "ecc_corrected_volatile_total",
+                    "ecc_uncorrected_volatile_total",
+                },
+            )
+            uuid = gpu["uuid"]
+            performance_state = gpu["performance_state"]
+            throttle_state = gpu["throttle_reasons_active"]
+            if (
+                gpu["index"] != gpu_index
+                or not isinstance(uuid, str)
+                or uuid != expected_uuids[gpu_index]
+                or not isinstance(performance_state, str)
+                or performance_state not in allowed_performance_states
+                or not isinstance(throttle_state, str)
+                or throttle_state not in allowed_throttle_states
+            ):
+                raise DecisionFidelityError(f"{gpu_field} identity or state is outside policy")
+            temperature = _integer(
+                gpu["temperature_c"],
+                f"{gpu_field}.temperature_c",
+                minimum=int(comparability["minimum_temperature_c"]),
+                maximum=int(comparability["maximum_temperature_c"]),
+            )
+            power_draw = _number(gpu["power_draw_w"], f"{gpu_field}.power_draw_w", minimum=0.0)
+            if power_draw / power_limits[gpu_index] > float(comparability["maximum_power_draw_to_limit_ratio"]):
+                raise DecisionFidelityError(f"{gpu_field}.power_draw_w is outside policy")
+            sm_clock = _integer(
+                gpu["sm_clock_mhz"],
+                f"{gpu_field}.sm_clock_mhz",
+                minimum=int(comparability["minimum_sm_clock_mhz"]),
+                maximum=int(comparability["maximum_sm_clock_mhz"]),
+            )
+            memory_clock = _integer(
+                gpu["memory_clock_mhz"],
+                f"{gpu_field}.memory_clock_mhz",
+                minimum=int(comparability["minimum_memory_clock_mhz"]),
+                maximum=int(comparability["maximum_memory_clock_mhz"]),
+            )
+            corrected = _integer(
+                gpu["ecc_corrected_volatile_total"],
+                f"{gpu_field}.ecc_corrected_volatile_total",
+                maximum=2**63 - 1,
+            )
+            uncorrected = _integer(
+                gpu["ecc_uncorrected_volatile_total"],
+                f"{gpu_field}.ecc_uncorrected_volatile_total",
+                maximum=2**63 - 1,
+            )
+            uuids.append(uuid)
+            ecc.append((corrected, uncorrected))
+            temperatures.append(temperature)
+            power_draws.append(power_draw)
+            sm_clocks.append(sm_clock)
+            memory_clocks.append(memory_clock)
+            performance_states.add(performance_state)
+        if uuids != expected_uuids:
+            raise DecisionFidelityError(f"{snapshot_field}.gpus changed UUID order")
+        if first_ecc is None:
+            first_ecc = ecc
+        if previous_ecc is not None and any(
+            corrected < old_corrected or uncorrected < old_uncorrected
+            for (corrected, uncorrected), (old_corrected, old_uncorrected) in zip(ecc, previous_ecc)
+        ):
+            raise DecisionFidelityError(f"{snapshot_field}.gpus ECC counters regressed")
+        previous_ecc = ecc
+        xid = _object(snapshot["xid"], f"{snapshot_field}.xid", {"method", "event_count", "window_sha256"})
+        xid_count = _integer(xid["event_count"], f"{snapshot_field}.xid.event_count", maximum=1_000_000)
+        xid_sha256 = _sha256(xid["window_sha256"], f"{snapshot_field}.xid.window_sha256")
+        if xid["method"] != "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid":
+            raise DecisionFidelityError(f"{snapshot_field}.xid method is unsupported")
+        if previous_xid is not None and xid_count < previous_xid:
+            raise DecisionFidelityError(f"{snapshot_field}.xid event counter regressed")
+        if first_xid is None:
+            first_xid = xid_count
+            first_xid_sha256 = xid_sha256
+        previous_xid = xid_count
+        final_xid_sha256 = xid_sha256
+    if any(second <= first for first, second in zip(timestamps, timestamps[1:])):
+        raise DecisionFidelityError(f"{field}.snapshots timestamps are not strictly ordered")
+    if first_ecc is None or previous_ecc is None or first_xid is None or previous_xid is None:
+        raise DecisionFidelityError(f"{field}.snapshots inventory is incomplete")
+    corrected_delta = max(current[0] - first[0] for first, current in zip(first_ecc, previous_ecc))
+    uncorrected_delta = max(current[1] - first[1] for first, current in zip(first_ecc, previous_ecc))
+    xid_delta = previous_xid - first_xid
+    if (
+        corrected_delta > int(comparability["maximum_ecc_corrected_delta"])
+        or uncorrected_delta > int(comparability["maximum_ecc_uncorrected_delta"])
+        or xid_delta > int(comparability["maximum_xid_event_delta"])
+        or (xid_delta == 0 and first_xid_sha256 != final_xid_sha256)
+    ):
+        raise DecisionFidelityError(f"{field} records a disallowed ECC or Xid delta")
+    return {
+        "snapshot_count": len(snapshots),
+        "minimum_temperature_c": min(temperatures),
+        "maximum_temperature_c": max(temperatures),
+        "minimum_power_draw_w": min(power_draws),
+        "maximum_power_draw_w": max(power_draws),
+        "minimum_sm_clock_mhz": min(sm_clocks),
+        "maximum_sm_clock_mhz": max(sm_clocks),
+        "minimum_memory_clock_mhz": min(memory_clocks),
+        "maximum_memory_clock_mhz": max(memory_clocks),
+        "performance_states": sorted(performance_states),
+        "maximum_ecc_corrected_delta": corrected_delta,
+        "maximum_ecc_uncorrected_delta": uncorrected_delta,
+        "xid_event_delta": xid_delta,
+    }
 
 
 def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
@@ -249,7 +459,17 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
     policy = _object(
         raw,
         "decision fidelity policy v2",
-        {"schema", "policy_id", "scope", "measurement", "comparison", "pass_criteria", "outcomes", "claim_boundary"},
+        {
+            "schema",
+            "policy_id",
+            "scope",
+            "measurement",
+            "comparison",
+            "pass_criteria",
+            "outcomes",
+            "outcome_precedence",
+            "claim_boundary",
+        },
     )
     if policy["schema"] != DECISION_FIDELITY_POLICY_SCHEMA_V2:
         raise DecisionFidelityError("decision fidelity policy v2 schema is unsupported")
@@ -274,8 +494,8 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         raise DecisionFidelityError("decision fidelity policy v2 scope is invalid")
     representations = _object(scope["representations"], "decision fidelity policy v2.scope.representations")
     if dict(representations) != {
-        "source": "ground_truth",
-        "exact_work": "positive_conformance_control",
+        "source": "trace_derived_reference",
+        "exact_work": "exact_materialization_control",
         "stratified": "sampling_baseline",
         "isolated": "incumbent_baseline",
         "no_overlap": "causal_ablation",
@@ -290,6 +510,10 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
             "allocation_policy",
             "configuration_repetitions",
             "cross_configuration_pairing",
+            "configuration_order_method",
+            "configuration_order_by_repetition",
+            "maximum_repetition_span_seconds",
+            "required_scheduler_evidence",
             "order_method",
             "representation_schedule",
             "timing_semantics",
@@ -304,8 +528,9 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     expected_measurement = {
-        "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-repetition",
+        "allocation_policy": "one-fresh-exclusive-allocation-per-configuration-cell",
         "cross_configuration_pairing": "none-independent-scheduler-allocations",
+        "configuration_order_method": CONFIGURATION_ORDER_METHOD,
         "order_method": REPLICATED_ORDER_METHOD,
         "timing_semantics": "maximum-rank-cuda-event-whole-program-duration",
         "measured_repetitions": 24,
@@ -317,11 +542,19 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
             "gpu_power_limit",
             "gpu_topology",
             "nccl_library_digest",
+            "between_cycle_gpu_node_xid_ecc_telemetry",
             "pre_post_gpu_telemetry",
             "pre_post_node_state",
         ],
         "require_distinct_job_ids": True,
         "retry_policy": "infrastructure-failure-only-never-retry-for-noise",
+        "required_scheduler_evidence": [
+            "planned_position",
+            "scheduler_start_time",
+            "node",
+            "elapsed_from_repetition_start_seconds",
+            "chunk_identifier",
+        ],
     }
     if any(measurement.get(field) != expected for field, expected in expected_measurement.items()):
         raise DecisionFidelityError("decision fidelity policy v2 measurement semantics are unsupported")
@@ -331,19 +564,42 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         minimum=5,
         maximum=10,
     )
-    _integer(measurement["warmup"], "warmup", maximum=100)
+    warmup = _integer(measurement["warmup"], "warmup", minimum=1, maximum=100)
+    if warmup % WILLIAMS_CYCLE_LENGTH:
+        raise DecisionFidelityError("decision fidelity policy v2 warmup must contain complete Williams cycles")
+    maximum_repetition_span_seconds = _integer(
+        measurement["maximum_repetition_span_seconds"],
+        "maximum_repetition_span_seconds",
+        minimum=1,
+        maximum=86_400,
+    )
+    if maximum_repetition_span_seconds != 3600:
+        raise DecisionFidelityError("decision fidelity policy v2 repetition span is unsupported")
+    expected_configuration_order = [
+        list(row) for row in configuration_order_by_repetition(cast(Sequence[str], configurations))
+    ][:configuration_repetitions]
+    if measurement["configuration_order_by_repetition"] != expected_configuration_order:
+        raise DecisionFidelityError("decision fidelity policy v2 configuration order is not the frozen design")
     _number(measurement["max_relative_iqr_pct"], "max_relative_iqr_pct", minimum=0.0, maximum=1000.0)
     environment_comparability = _object(
         measurement["environment_comparability"],
         "decision fidelity policy v2.measurement.environment_comparability",
         {
+            "allowed_node_states",
+            "allowed_performance_states",
+            "allowed_throttle_reasons_active",
+            "maximum_ecc_corrected_delta",
+            "maximum_ecc_uncorrected_delta",
             "require_identical_platform_fingerprint",
             "minimum_temperature_c",
             "maximum_temperature_c",
             "maximum_pre_post_temperature_delta_c",
             "maximum_power_draw_to_limit_ratio",
+            "minimum_sm_clock_mhz",
             "maximum_sm_clock_mhz",
+            "minimum_memory_clock_mhz",
             "maximum_memory_clock_mhz",
+            "maximum_xid_event_delta",
         },
     )
     if environment_comparability["require_identical_platform_fingerprint"] is not True:
@@ -373,11 +629,45 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         minimum=0.000001,
         maximum=10.0,
     )
-    _integer(environment_comparability["maximum_sm_clock_mhz"], "maximum_sm_clock_mhz", minimum=1)
-    _integer(environment_comparability["maximum_memory_clock_mhz"], "maximum_memory_clock_mhz", minimum=1)
+    if environment_comparability["allowed_node_states"] != ["ALLOCATED"]:
+        raise DecisionFidelityError("decision fidelity policy v2 node states are unsupported")
+    if environment_comparability["allowed_performance_states"] != ["P0", "P2", "P8"]:
+        raise DecisionFidelityError("decision fidelity policy v2 performance states are unsupported")
+    if environment_comparability["allowed_throttle_reasons_active"] != ["0x0000000000000000"]:
+        raise DecisionFidelityError("decision fidelity policy v2 throttle states are unsupported")
+    minimum_sm_clock = _integer(
+        environment_comparability["minimum_sm_clock_mhz"],
+        "minimum_sm_clock_mhz",
+        minimum=1,
+    )
+    maximum_sm_clock = _integer(
+        environment_comparability["maximum_sm_clock_mhz"],
+        "maximum_sm_clock_mhz",
+        minimum=1,
+    )
+    minimum_memory_clock = _integer(
+        environment_comparability["minimum_memory_clock_mhz"],
+        "minimum_memory_clock_mhz",
+        minimum=1,
+    )
+    maximum_memory_clock = _integer(
+        environment_comparability["maximum_memory_clock_mhz"],
+        "maximum_memory_clock_mhz",
+        minimum=1,
+    )
+    if minimum_sm_clock > maximum_sm_clock or minimum_memory_clock > maximum_memory_clock:
+        raise DecisionFidelityError("decision fidelity policy v2 clock range is inverted")
+    for field in (
+        "maximum_ecc_corrected_delta",
+        "maximum_ecc_uncorrected_delta",
+        "maximum_xid_event_delta",
+    ):
+        if _integer(environment_comparability[field], field) != 0:
+            raise DecisionFidelityError(f"decision fidelity policy v2 {field} is unsupported")
     expected_schedule = frozen_schedule_inventory(
         configuration_repetitions=configuration_repetitions,
         iterations=int(measurement["measured_repetitions"]),
+        warmup=warmup,
     )
     if measurement["representation_schedule"] != expected_schedule:
         raise DecisionFidelityError("decision fidelity policy v2 representation schedule is not the frozen design")
@@ -481,6 +771,8 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         not isinstance(value, str) or not value for value in outcomes.values()
     ):
         raise DecisionFidelityError("decision fidelity policy v2 outcomes are invalid")
+    if policy["outcome_precedence"] != ["incomparable", "fail", "inconclusive", "pass"]:
+        raise DecisionFidelityError("decision fidelity policy v2 outcome precedence is unsupported")
     boundary = _object(
         policy["claim_boundary"],
         "decision fidelity policy v2.claim_boundary",
@@ -494,10 +786,10 @@ def validate_decision_fidelity_policy_v2(raw: Any) -> Dict[str, Any]:
         },
     )
     if dict(boundary) != {
-        "mode": "exact_qualification_capsule",
-        "exact_work_claim": "portable_reconstruction_positive_control",
+        "mode": "exact_materialization_conformance_control",
+        "exact_work_claim": "identical_compiled_instruction_path_measurement_floor",
         "reduced_canary_claim": "not_evaluated",
-        "cost_claim": "not_evaluated_by_exact_work_control",
+        "cost_claim": "not_evaluated_by_exact_materialization_control",
         "generality_claim": "not_evaluated_beyond_the_declared_supported_domain",
         "independent_operator_claim": "not_evaluated_by_this_campaign",
     }:
@@ -767,6 +1059,24 @@ def _relative_iqr(values: Sequence[float]) -> float:
     return math.inf if median == 0.0 and iqr > 0.0 else (0.0 if median == 0.0 else iqr / median * 100.0)
 
 
+def _outcome_for_states(
+    *,
+    issues: Sequence[Mapping[str, Any]],
+    criterion_statuses: Sequence[str],
+    unstable: bool,
+    inconclusive_pairs: bool,
+) -> str:
+    """Apply the policy-frozen mandatory-failure precedence."""
+
+    if issues:
+        return "incomparable"
+    if "fail" in criterion_statuses:
+        return "fail"
+    if unstable or inconclusive_pairs or "inconclusive" in criterion_statuses:
+        return "inconclusive"
+    return "pass"
+
+
 def evaluate_decision_fidelity_v2(
     aggregate: Mapping[str, Any],
     policy_bytes: bytes,
@@ -834,6 +1144,10 @@ def evaluate_decision_fidelity_v2(
     platform_fingerprints: Set[str] = set()
     jobs: List[str] = []
     nodes: Set[str] = set()
+    chunk_identifiers: Set[str] = set()
+    scheduler_starts: Dict[int, List[Tuple[str, datetime, float]]] = {}
+    scheduler_spans: Dict[int, float] = {}
+    cycle_telemetry_summaries: List[Dict[str, Any]] = []
     measured_repetitions = int(policy["measurement"]["measured_repetitions"])
     schedule_inventory = cast(Mapping[str, Any], policy["measurement"]["representation_schedule"])
     schedule_rows = cast(Sequence[Sequence[str]], schedule_inventory["rows"])
@@ -891,14 +1205,72 @@ def evaluate_decision_fidelity_v2(
                 if not isinstance(job_id, str) or not job_id or not isinstance(hostname, str) or not hostname:
                     raise DecisionFidelityError("replicated decision-gate job and hostname are required")
                 jobs.append(job_id)
-                nodes.add(hostname.split(".", 1)[0])
+                node = hostname.split(".", 1)[0]
+                nodes.add(node)
+                scheduler = _object(
+                    row.get("decision_gate_scheduler"),
+                    f"configuration repetition {repetition}, {configuration}.decision_gate_scheduler",
+                    {
+                        "schema",
+                        "method",
+                        "planned_position",
+                        "scheduler_start_time",
+                        "node",
+                        "elapsed_from_repetition_start_seconds",
+                        "chunk_identifier",
+                    },
+                )
+                expected_configuration_row = policy["measurement"]["configuration_order_by_repetition"][repetition]
+                chunk_identifier = scheduler["chunk_identifier"]
+                start_time = scheduler["scheduler_start_time"]
+                elapsed = _number(
+                    scheduler["elapsed_from_repetition_start_seconds"],
+                    "replicated scheduler elapsed time",
+                    minimum=0.0,
+                )
+                if (
+                    scheduler["schema"] != "commcanary.rostam.scheduler-evidence.v1"
+                    or scheduler["method"] != "scontrol show job --oneliner JOBID"
+                    or scheduler["planned_position"] != expected_configuration_row.index(configuration)
+                    or scheduler["node"] != node
+                    or not isinstance(chunk_identifier, str)
+                    or not chunk_identifier.startswith("p-")
+                    or len(chunk_identifier) != 26
+                    or any(character not in _SHA256_CHARACTERS for character in chunk_identifier[2:])
+                    or not isinstance(start_time, str)
+                ):
+                    raise DecisionFidelityError("replicated scheduler evidence disagrees with policy or runtime")
+                try:
+                    parsed_start = datetime.fromisoformat(start_time)
+                except ValueError as exc:
+                    raise DecisionFidelityError("replicated scheduler start time is invalid") from exc
+                scheduler_starts.setdefault(repetition, []).append((configuration, parsed_start, elapsed))
+                chunk_identifiers.add(chunk_identifier)
+                raw_environment = row.get("decision_gate_environment")
                 observation_sha256, platform_sha256 = _environment_identity(
-                    row.get("decision_gate_environment"),
+                    raw_environment,
                     f"configuration repetition {repetition}, {configuration}.decision_gate_environment",
                     comparability=cast(
                         Mapping[str, Any],
                         policy["measurement"]["environment_comparability"],
                     ),
+                )
+                environment = _object(raw_environment, "replicated decision-gate environment")
+                invariants = _object(environment["invariants"], "replicated decision-gate invariants")
+                expected_gpus = invariants["gpus"]
+                if not isinstance(expected_gpus, list):  # pragma: no cover - validated above
+                    raise DecisionFidelityError("replicated decision-gate GPU inventory is invalid")
+                cycle_telemetry_summaries.append(
+                    _cycle_telemetry_summary(
+                        gate.get("telemetry_checkpoints"),
+                        f"configuration repetition {repetition}, {configuration}.telemetry_checkpoints",
+                        node=node,
+                        expected_gpus=cast(Sequence[Mapping[str, Any]], expected_gpus),
+                        comparability=cast(
+                            Mapping[str, Any],
+                            policy["measurement"]["environment_comparability"],
+                        ),
+                    )
                 )
                 environment_observations.add(observation_sha256)
                 platform_fingerprints.add(platform_sha256)
@@ -932,6 +1304,28 @@ def evaluate_decision_fidelity_v2(
                     "detail": "configuration repetitions do not share one platform fingerprint",
                 }
             )
+        for repetition, starts in scheduler_starts.items():
+            if len(starts) != len(configurations):
+                raise DecisionFidelityError("replicated scheduler evidence is incomplete")
+            timestamps = [started for _configuration, started, _elapsed in starts]
+            if any((value.tzinfo is None) != (timestamps[0].tzinfo is None) for value in timestamps):
+                raise DecisionFidelityError("replicated scheduler timestamps mix timezone forms")
+            beginning = min(timestamps)
+            for configuration, started, elapsed in starts:
+                expected_elapsed = (started - beginning).total_seconds()
+                if abs(elapsed - expected_elapsed) > 1e-9:
+                    raise DecisionFidelityError(
+                        f"replicated scheduler elapsed time is stale for repetition {repetition}, {configuration}"
+                    )
+            span = (max(timestamps) - beginning).total_seconds()
+            scheduler_spans[repetition] = span
+            if span > float(policy["measurement"]["maximum_repetition_span_seconds"]):
+                issues.append(
+                    {
+                        "code": "repetition_time_window_exceeded",
+                        "detail": (f"configuration repetition {repetition} scheduler starts span {span} seconds"),
+                    }
+                )
 
     stability_issues: List[str] = []
     observed_pair_rows: List[Dict[str, Any]] = []
@@ -1050,20 +1444,59 @@ def evaluate_decision_fidelity_v2(
                 }
             )
 
-    criteria_inconclusive = any(row["status"] == "inconclusive" for row in criteria_rows)
-    if issues:
-        outcome = "incomparable"
-    elif stability_issues or inconclusive_pairs or criteria_inconclusive:
-        outcome = "inconclusive"
-    elif any(row["status"] == "fail" for row in criteria_rows):
-        outcome = "fail"
-    else:
-        outcome = "pass"
+    criterion_statuses = [str(row["status"]) for row in criteria_rows]
+    criteria_inconclusive = "inconclusive" in criterion_statuses
+    outcome = _outcome_for_states(
+        issues=issues,
+        criterion_statuses=criterion_statuses,
+        unstable=bool(stability_issues),
+        inconclusive_pairs=bool(inconclusive_pairs),
+    )
     positioning = (
         "exact_capsule_positive_control_supported"
         if outcome == "pass"
         else "exact_capsule_positive_control_unvalidated"
     )
+    cycle_telemetry_summary = None
+    if cycle_telemetry_summaries:
+        cycle_telemetry_summary = {
+            "cell_count": len(cycle_telemetry_summaries),
+            "snapshots_per_cell": sorted({int(summary["snapshot_count"]) for summary in cycle_telemetry_summaries}),
+            "minimum_temperature_c": min(
+                int(summary["minimum_temperature_c"]) for summary in cycle_telemetry_summaries
+            ),
+            "maximum_temperature_c": max(
+                int(summary["maximum_temperature_c"]) for summary in cycle_telemetry_summaries
+            ),
+            "minimum_power_draw_w": min(
+                float(summary["minimum_power_draw_w"]) for summary in cycle_telemetry_summaries
+            ),
+            "maximum_power_draw_w": max(
+                float(summary["maximum_power_draw_w"]) for summary in cycle_telemetry_summaries
+            ),
+            "minimum_sm_clock_mhz": min(int(summary["minimum_sm_clock_mhz"]) for summary in cycle_telemetry_summaries),
+            "maximum_sm_clock_mhz": max(int(summary["maximum_sm_clock_mhz"]) for summary in cycle_telemetry_summaries),
+            "minimum_memory_clock_mhz": min(
+                int(summary["minimum_memory_clock_mhz"]) for summary in cycle_telemetry_summaries
+            ),
+            "maximum_memory_clock_mhz": max(
+                int(summary["maximum_memory_clock_mhz"]) for summary in cycle_telemetry_summaries
+            ),
+            "performance_states": sorted(
+                {
+                    str(state)
+                    for summary in cycle_telemetry_summaries
+                    for state in cast(Sequence[str], summary["performance_states"])
+                }
+            ),
+            "maximum_ecc_corrected_delta": max(
+                int(summary["maximum_ecc_corrected_delta"]) for summary in cycle_telemetry_summaries
+            ),
+            "maximum_ecc_uncorrected_delta": max(
+                int(summary["maximum_ecc_uncorrected_delta"]) for summary in cycle_telemetry_summaries
+            ),
+            "maximum_xid_event_delta": max(int(summary["xid_event_delta"]) for summary in cycle_telemetry_summaries),
+        }
     result: Dict[str, Any] = {
         "schema": DECISION_FIDELITY_VERDICT_SCHEMA_V2,
         "outcome": outcome,
@@ -1084,8 +1517,13 @@ def evaluate_decision_fidelity_v2(
             "configuration_pair_count": len(observed_pair_rows),
             "distinct_job_count": len(set(jobs)),
             "environment_observation_count": len(environment_observations),
+            "cycle_telemetry_summary": cycle_telemetry_summary,
             "platform_sha256": next(iter(platform_fingerprints)) if len(platform_fingerprints) == 1 else None,
             "nodes": sorted(nodes),
+            "submission_chunks": sorted(chunk_identifiers),
+            "scheduler_start_span_seconds_by_repetition": {
+                str(repetition): scheduler_spans[repetition] for repetition in sorted(scheduler_spans)
+            },
         },
         "issues": issues,
         "uncertainty": {

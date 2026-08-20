@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -78,6 +79,7 @@ _INHERITED_ENV = {
     "CUDA_VISIBLE_DEVICES",
     "COMMCANARY_EXECUTOR_PATH",
     "COMMCANARY_EXECUTOR_SHA256",
+    "COMMCANARY_SUBMISSION_CHUNK",
     "SLURM_ACCOUNT",
     "SLURM_CLUSTER_NAME",
     "SLURM_JOB_ACCOUNT",
@@ -104,6 +106,8 @@ _WHEEL_MARKER_MAX_BYTES = 256
 _PARAM_CONTRACT_INPUT_ID = "param-patch-contract"
 _PARAM_CONTRACT_MAX_BYTES = 1_048_576
 _REPLICATED_RUNTIME_OBSERVATION_SCHEMA = "commcanary.rostam.runtime-observation.v3"
+_SCHEDULER_EVIDENCE_SCHEMA = "commcanary.rostam.scheduler-evidence.v1"
+_SUBMISSION_CHUNK_RE = re.compile(r"^p-[0-9a-f]{24}$")
 _GPU_INVARIANT_FIELDS = (
     "index",
     "uuid",
@@ -896,6 +900,50 @@ def _run_bounded_probe(
         raise CellEntrypointError(f"runtime probe {command[0]!r} returned non-UTF-8 output") from exc
 
 
+def _replicated_scheduler_evidence(
+    manifest: Any,
+    cell: Any,
+    site: Mapping[str, str],
+) -> Dict[str, Any]:
+    """Bind frozen position and scheduler-owned start metadata for one cell."""
+
+    policy = _object(manifest.campaign.policy.to_value(), "campaign.policy")
+    schedule = policy.get("configuration_order_by_repetition")
+    if not isinstance(schedule, list) or not 0 <= cell.repetition < len(schedule):
+        raise CellEntrypointError("replicated campaign lacks its frozen configuration schedule")
+    row = schedule[cell.repetition]
+    if not isinstance(row, list) or row.count(cell.configuration_id) != 1:
+        raise CellEntrypointError("replicated campaign configuration schedule is invalid")
+    chunk_identifier = os.environ.get("COMMCANARY_SUBMISSION_CHUNK")
+    if not isinstance(chunk_identifier, str) or _SUBMISSION_CHUNK_RE.fullmatch(chunk_identifier) is None:
+        raise CellEntrypointError("replicated cell lacks its frozen submission chunk identity")
+    job_id = site.get("job_id")
+    hostname = site.get("hostname")
+    if not isinstance(job_id, str) or not isinstance(hostname, str):
+        raise CellEntrypointError("replicated cell lacks scheduler ownership")
+    raw = _run_bounded_probe(("scontrol", "show", "job", "--oneliner", job_id))
+    start_match = re.search(r"(?:^|\s)StartTime=(\S+)", raw)
+    node_match = re.search(r"(?:^|\s)NodeList=(\S+)", raw)
+    if start_match is None or node_match is None:
+        raise CellEntrypointError("SLURM job observation lacks StartTime or NodeList")
+    scheduler_start_time = start_match.group(1)
+    try:
+        datetime.fromisoformat(scheduler_start_time)
+    except ValueError as exc:
+        raise CellEntrypointError("SLURM job StartTime is not an ISO-8601 timestamp") from exc
+    node = hostname.split(".", 1)[0]
+    if node_match.group(1) != node:
+        raise CellEntrypointError("SLURM job NodeList disagrees with the allocated host")
+    return {
+        "schema": _SCHEDULER_EVIDENCE_SCHEMA,
+        "method": "scontrol show job --oneliner JOBID",
+        "planned_position": row.index(cell.configuration_id),
+        "scheduler_start_time": scheduler_start_time,
+        "node": node,
+        "chunk_identifier": chunk_identifier,
+    }
+
+
 def _observed_text(value: str, field: str, *, maximum: int = _MAX_OBSERVED_TEXT_BYTES) -> str:
     try:
         size = len(value.encode("utf-8"))
@@ -1443,6 +1491,9 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         raise CellEntrypointError(f"workload is not target-ready: {parameters.get('readiness')}")
     if parameters.get("wrapper") != args.site_wrapper:
         raise CellEntrypointError("spooled wrapper identity does not own this manifest workload")
+    scheduler_evidence: Optional[Dict[str, Any]] = None
+    if workload.measurement_schema == DECISION_GATE_REPLICATED_MEASUREMENT_SCHEMA:
+        scheduler_evidence = _replicated_scheduler_evidence(manifest, cell, site)
     max_output_bytes = _positive_integer(
         parameters.get("max_output_bytes"),
         "max_output_bytes",
@@ -1529,6 +1580,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
         "timeout_seconds": timeout_seconds,
         "max_output_bytes": max_output_bytes,
         "max_result_bytes": max_result_bytes,
+        "scheduler_evidence": scheduler_evidence,
     }
     execution_plan_sha256 = canonical_sha256(execution_plan)
     _write_exclusive(workspace / "execution_plan.json", canonical_json_bytes(execution_plan))
@@ -1686,6 +1738,7 @@ def run(args: argparse.Namespace, raw_argv: Sequence[str]) -> int:
                     "physical_commands": [list(item) for item in commands],
                     "result_schema": CELL_RESULT_SCHEMA,
                     "runtime_observation": runtime_observation,
+                    "scheduler_evidence": scheduler_evidence,
                 },
             },
             "exit_code": record_exit_code,

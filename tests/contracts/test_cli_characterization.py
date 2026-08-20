@@ -15,6 +15,8 @@ from commcanary.replay import SIMULATION_MODEL_VERSION
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "contracts"
 COMMANDS = (
+    "build",
+    "gate",
     "compile",
     "replay",
     "compare",

@@ -17,11 +17,11 @@
         "representations": {
           "additionalProperties": false,
           "properties": {
-            "exact_work": {"const": "positive_conformance_control"},
+            "exact_work": {"const": "exact_materialization_control"},
             "isolated": {"const": "incumbent_baseline"},
             "no_overlap": {"const": "causal_ablation"},
             "no_rank_skew": {"const": "causal_ablation"},
-            "source": {"const": "ground_truth"},
+            "source": {"const": "trace_derived_reference"},
             "stratified": {"const": "sampling_baseline"}
           },
           "required": ["exact_work", "isolated", "no_overlap", "no_rank_skew", "source", "stratified"],
@@ -36,26 +36,49 @@
     "measurement": {
       "additionalProperties": false,
       "properties": {
-        "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-repetition"},
+        "allocation_policy": {"const": "one-fresh-exclusive-allocation-per-configuration-cell"},
         "configuration_repetitions": {"maximum": 10, "minimum": 5, "type": "integer"},
         "cross_configuration_pairing": {"const": "none-independent-scheduler-allocations"},
+        "configuration_order_method": {"const": "eight-configuration-williams-design.v1"},
+        "configuration_order_by_repetition": {
+          "items": {
+            "items": {"minLength": 1, "type": "string"},
+            "maxItems": 8,
+            "minItems": 8,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "maxItems": 10,
+          "minItems": 5,
+          "type": "array"
+        },
+        "maximum_repetition_span_seconds": {"const": 3600},
+        "required_scheduler_evidence": {"const": ["planned_position", "scheduler_start_time", "node", "elapsed_from_repetition_start_seconds", "chunk_identifier"]},
         "environment_comparability": {
           "additionalProperties": false,
           "properties": {
+            "allowed_node_states": {"const": ["ALLOCATED"]},
+            "allowed_performance_states": {"const": ["P0", "P2", "P8"]},
+            "allowed_throttle_reasons_active": {"const": ["0x0000000000000000"]},
+            "maximum_ecc_corrected_delta": {"const": 0},
+            "maximum_ecc_uncorrected_delta": {"const": 0},
             "maximum_memory_clock_mhz": {"minimum": 1, "type": "integer"},
             "maximum_power_draw_to_limit_ratio": {"exclusiveMinimum": 0, "maximum": 10, "type": "number"},
             "maximum_pre_post_temperature_delta_c": {"maximum": 200, "minimum": 0, "type": "integer"},
             "maximum_sm_clock_mhz": {"minimum": 1, "type": "integer"},
             "maximum_temperature_c": {"maximum": 200, "minimum": -100, "type": "integer"},
+            "maximum_xid_event_delta": {"const": 0},
+            "minimum_memory_clock_mhz": {"minimum": 1, "type": "integer"},
+            "minimum_sm_clock_mhz": {"minimum": 1, "type": "integer"},
             "minimum_temperature_c": {"maximum": 200, "minimum": -100, "type": "integer"},
             "require_identical_platform_fingerprint": {"const": true}
           },
-          "required": ["maximum_memory_clock_mhz", "maximum_power_draw_to_limit_ratio", "maximum_pre_post_temperature_delta_c", "maximum_sm_clock_mhz", "maximum_temperature_c", "minimum_temperature_c", "require_identical_platform_fingerprint"],
+          "required": ["allowed_node_states", "allowed_performance_states", "allowed_throttle_reasons_active", "maximum_ecc_corrected_delta", "maximum_ecc_uncorrected_delta", "maximum_memory_clock_mhz", "maximum_power_draw_to_limit_ratio", "maximum_pre_post_temperature_delta_c", "maximum_sm_clock_mhz", "maximum_temperature_c", "maximum_xid_event_delta", "minimum_memory_clock_mhz", "minimum_sm_clock_mhz", "minimum_temperature_c", "require_identical_platform_fingerprint"],
           "type": "object"
         },
         "max_relative_iqr_pct": {"maximum": 1000, "minimum": 0, "type": "number"},
         "measured_repetitions": {"const": 24},
-        "order_method": {"const": "configuration-repetition-williams-design.v3"},
+        "order_method": {"const": "configuration-repetition-frozen-global-carryover-design.v4"},
         "representation_schedule": {
           "additionalProperties": false,
           "properties": {
@@ -82,19 +105,30 @@
               "minItems": 6,
               "type": "array",
               "uniqueItems": true
+            },
+            "warmup_row_index_by_configuration_repetition": {
+              "items": {
+                "items": {"maximum": 5, "minimum": 0, "type": "integer"},
+                "maxItems": 6,
+                "minItems": 6,
+                "type": "array"
+              },
+              "maxItems": 10,
+              "minItems": 5,
+              "type": "array"
             }
           },
-          "required": ["row_index_by_configuration_repetition", "rows"],
+          "required": ["row_index_by_configuration_repetition", "rows", "warmup_row_index_by_configuration_repetition"],
           "type": "object"
         },
         "required_correctness": {"const": "passed"},
-        "required_environment_evidence": {"const": ["cpu_affinity", "gpu_identity", "gpu_persistence_mode", "gpu_power_limit", "gpu_topology", "nccl_library_digest", "pre_post_gpu_telemetry", "pre_post_node_state"]},
+        "required_environment_evidence": {"const": ["cpu_affinity", "gpu_identity", "gpu_persistence_mode", "gpu_power_limit", "gpu_topology", "nccl_library_digest", "between_cycle_gpu_node_xid_ecc_telemetry", "pre_post_gpu_telemetry", "pre_post_node_state"]},
         "require_distinct_job_ids": {"const": true},
         "retry_policy": {"const": "infrastructure-failure-only-never-retry-for-noise"},
         "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
-        "warmup": {"maximum": 100, "minimum": 0, "type": "integer"}
+        "warmup": {"maximum": 100, "minimum": 1, "multipleOf": 6, "type": "integer"}
       },
-      "required": ["allocation_policy", "configuration_repetitions", "cross_configuration_pairing", "environment_comparability", "max_relative_iqr_pct", "measured_repetitions", "order_method", "representation_schedule", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
+      "required": ["allocation_policy", "configuration_repetitions", "cross_configuration_pairing", "configuration_order_method", "configuration_order_by_repetition", "maximum_repetition_span_seconds", "required_scheduler_evidence", "environment_comparability", "max_relative_iqr_pct", "measured_repetitions", "order_method", "representation_schedule", "required_correctness", "required_environment_evidence", "require_distinct_job_ids", "retry_policy", "timing_semantics", "warmup"],
       "type": "object"
     },
     "comparison": {
@@ -164,20 +198,21 @@
       "required": ["fail", "incomparable", "inconclusive", "pass"],
       "type": "object"
     },
+    "outcome_precedence": {"const": ["incomparable", "fail", "inconclusive", "pass"]},
     "claim_boundary": {
       "additionalProperties": false,
       "properties": {
-        "cost_claim": {"const": "not_evaluated_by_exact_work_control"},
-        "exact_work_claim": {"const": "portable_reconstruction_positive_control"},
+        "cost_claim": {"const": "not_evaluated_by_exact_materialization_control"},
+        "exact_work_claim": {"const": "identical_compiled_instruction_path_measurement_floor"},
         "generality_claim": {"const": "not_evaluated_beyond_the_declared_supported_domain"},
         "independent_operator_claim": {"const": "not_evaluated_by_this_campaign"},
-        "mode": {"const": "exact_qualification_capsule"},
+        "mode": {"const": "exact_materialization_conformance_control"},
         "reduced_canary_claim": {"const": "not_evaluated"}
       },
       "required": ["cost_claim", "exact_work_claim", "generality_claim", "independent_operator_claim", "mode", "reduced_canary_claim"],
       "type": "object"
     }
   },
-  "required": ["schema", "policy_id", "scope", "measurement", "comparison", "pass_criteria", "outcomes", "claim_boundary"],
+  "required": ["schema", "policy_id", "scope", "measurement", "comparison", "pass_criteria", "outcomes", "outcome_precedence", "claim_boundary"],
   "type": "object"
 }

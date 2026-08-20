@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 import commcanary.artifacts.io as artifact_io
+import commcanary.artifacts.schemas as artifact_schemas
 import commcanary.schema as legacy_schema
 import commcanary.statistics as shared_statistics
 from commcanary.artifacts import (
@@ -69,6 +70,29 @@ def test_capability_schema_loader_returns_repository_bytes_offline() -> None:
     for capability in format_capabilities():
         expected = (ROOT / capability.schema).read_bytes()
         assert load_schema_bytes(capability) == expected
+
+
+def test_capability_schema_loader_validates_paths_and_uses_source_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = format_capabilities()[0]
+    invalid = replace(capability, schema="outside/schema.json")
+    with pytest.raises(SchemaError, match="invalid schema resource path"):
+        load_schema_bytes(invalid)
+
+    def missing_package(_package: str) -> Any:
+        raise FileNotFoundError("package data unavailable")
+
+    monkeypatch.setattr(artifact_schemas.resources, "files", missing_package)
+    assert load_schema_bytes(capability) == (ROOT / capability.schema).read_bytes()
+
+    missing = replace(
+        capability,
+        format_id="commcanary.missing.v1",
+        schema="schemas/commcanary.missing.v1.schema.json",
+    )
+    with pytest.raises(SchemaError, match="schema resource is unavailable"):
+        load_schema_bytes(missing)
 
 
 def test_existing_writer_formats_are_byte_exact_and_modes_are_explicit(tmp_path: Path) -> None:

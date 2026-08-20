@@ -22,10 +22,14 @@ ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = ROOT / "src" / "commcanary" / "artifacts"
 STDLIB_IMPORT_ROOTS = {
     "__future__",
+    "copy",
     "dataclasses",
+    "datetime",
     "enum",
+    "gzip",
     "hashlib",
     "importlib",
+    "io",
     "json",
     "math",
     "os",

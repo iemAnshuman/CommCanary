@@ -1,0 +1,13 @@
+{
+  "format": "commcanary.product_runner_lock.v1",
+  "architecture": "amd64",
+  "base_image": "docker.io/vllm/vllm-openai",
+  "base_manifest_digest": "sha256:770fe65b2c73ee74a5c42165cf3433de4048cc2cd9c57a937ca4e35aba5aa87b",
+  "base_tag_observed": "v0.26.0",
+  "expected_application_engine": "vllm",
+  "expected_application_engine_version": "0.26.0",
+  "runner_protocols": [
+    "chakra-et-collective-graph.v1",
+    "vllm-offline-tensor-parallel.v1"
+  ]
+}

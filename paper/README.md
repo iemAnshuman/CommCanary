@@ -1,5 +1,25 @@
 # Paper status
 
+## Published v0.4 preprint
+
+The current evidence-backed paper is
+[*CommCanary 0.4v: Fail Closed Evidence for Decision Fidelity Evaluation of
+Collective Trace Replay*](https://doi.org/10.5281/zenodo.21939041), published
+on Zenodo on 2026-08-14. Its concept DOI is
+[`10.5281/zenodo.21939040`](https://doi.org/10.5281/zenodo.21939040), and it
+binds repository inspection to commit
+`c133ad3fb5883100cb8622b597d5b6233b5efca1`.
+
+The public v0.4 record currently exposes one PDF. Its description also says a
+complete source archive is present, but that archive is absent from the record's
+file inventory. [`preprint-0.4/`](preprint-0.4/README.md) contains a clearly
+identified source reconstruction, deterministic figure generator, evidence
+snapshot, provenance checks, and packaging procedure for a corrected deposit.
+It does not claim to be the lost original authoring tree or to regenerate the
+published PDF byte for byte.
+
+## Historical draft
+
 `draft.md` is preserved as a historical research draft. The complete raw
 archive behind its original tables was not retained in the current append-only
 format, so those historical numeric claims cannot be regenerated independently.

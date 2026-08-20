@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+import os
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -43,12 +47,19 @@ from experiments.rostam.harness import (
     write_attempt_record,
     write_cell_result,
 )
+from experiments.rostam.lib.executor_artifact import (
+    EXECUTOR_ARTIFACT_INPUT_ID,
+    EXECUTOR_POLICY_FORMAT,
+    ExecutorArtifact,
+    prepare_executor_artifact,
+)
 
 MICRO_SCHEMA = "commcanary.rostam.physical.micro-measurement.v1"
 FULL_SCHEMA = "commcanary.rostam.physical.full-measurement.v1"
 CAPTURE_SCHEMA = "commcanary.rostam.physical.capture-measurement.v1"
 PARAM_SCHEMA = "commcanary.rostam.physical.param-measurement.v1"
 OVERLAP_SCHEMA = "commcanary.rostam.physical.overlap-measurement.v1"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _runtime() -> Dict[str, Any]:
@@ -481,6 +492,31 @@ def _with_repository(campaign: CampaignSpec, character: str) -> CampaignSpec:
     )
 
 
+def _with_executor(campaign: CampaignSpec, artifact: ExecutorArtifact) -> CampaignSpec:
+    value = campaign.to_dict()
+    value["inputs"] = [
+        *value["inputs"],
+        {
+            "id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "sha256": artifact.sha256,
+            "size_bytes": artifact.size_bytes,
+        },
+    ]
+    value["policy"] = {
+        **value["policy"],
+        "executor": {
+            "format": EXECUTOR_POLICY_FORMAT,
+            "artifact_input_id": EXECUTOR_ARTIFACT_INPUT_ID,
+            "inventory_sha256": artifact.inventory_sha256,
+            "source_inventory_sha256": artifact.source_inventory_sha256,
+            "schema_inventory_sha256": artifact.schema_inventory_sha256,
+            "source_file_count": len(artifact.source_files),
+            "schema_file_count": len(artifact.schema_files),
+        },
+    }
+    return CampaignSpec.from_dict(value)
+
+
 def _compatibility_binding(fixture: PhysicalFixture) -> Dict[str, Any]:
     return {
         "manifest_sha256": fixture.frozen.manifest_sha256,
@@ -597,6 +633,121 @@ def test_trusted_join_still_rejects_divergent_analysis_policy(tmp_path: Path) ->
             regeneration_command="python -m experiments.rostam.analyze verify --policy-conflict-fixture",
             joined_evidence=(CampaignEvidence(shared.frozen.directory, "primary", shared.verdict_sha256),),
         )
+
+
+def test_executor_zipapp_prepares_and_verifies_cross_commit_compatibility(tmp_path: Path) -> None:
+    artifact = prepare_executor_artifact(
+        REPOSITORY_ROOT / "experiments" / "rostam",
+        tmp_path / "executor-artifacts",
+    )
+    ground = _freeze_physical_campaign(
+        _with_executor(_core_campaign("zipapp-compatibility-ground"), artifact),
+        tmp_path / "ground",
+    )
+    extension_trace = b"zipapp compatibility extension"
+    extension = _freeze_physical_campaign(
+        _with_executor(
+            _with_repository(
+                _shared_campaign(
+                    "zipapp-compatibility-extension",
+                    hashlib.sha256(extension_trace).hexdigest(),
+                    len(extension_trace),
+                ),
+                "2",
+            ),
+            artifact,
+        ),
+        tmp_path / "extension",
+    )
+    environment = dict(os.environ)
+    environment["COMMCANARY_EXECUTOR_PATH"] = str(artifact.path)
+    environment["COMMCANARY_EXECUTOR_SHA256"] = artifact.sha256
+
+    def run_zipapp(*arguments: str) -> subprocess.CompletedProcess[str]:
+        completed = subprocess.run(
+            [sys.executable, "-I", "-S", str(artifact.path), "analyze", *arguments],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=environment,
+        )
+        assert completed.returncode == 0, completed.stderr
+        return completed
+
+    regeneration_command = "python -m experiments.rostam.analyze verify --zipapp-compatibility-fixture"
+    golden = tmp_path / "golden"
+    run_zipapp(
+        "verify",
+        "--run-directory",
+        str(ground.frozen.directory),
+        "--selection-id",
+        ground.selection.selection_id,
+        "--verdict-sha256",
+        ground.verdict_sha256,
+        "--output-directory",
+        str(golden),
+        "--regeneration-command",
+        regeneration_command,
+        "--baseline-config",
+        "nccl-2.19.3-default",
+        "--candidate-config",
+        "nccl-2.20.5-default",
+    )
+    contract = tmp_path / "cross-commit-contract.json"
+    run_zipapp(
+        "prepare-compatibility",
+        "--ground-evidence",
+        str(ground.frozen.directory),
+        ground.selection.selection_id,
+        ground.verdict_sha256,
+        "--extension-evidence",
+        str(extension.frozen.directory),
+        extension.selection.selection_id,
+        extension.verdict_sha256,
+        "--output",
+        str(contract),
+        "--regeneration-command",
+        regeneration_command,
+        "--golden-directory",
+        str(golden),
+        "--baseline-config",
+        "nccl-2.19.3-default",
+        "--candidate-config",
+        "nccl-2.20.5-default",
+        "--reviewed",
+    )
+    publication = tmp_path / "publication"
+    run_zipapp(
+        "verify",
+        "--run-directory",
+        str(ground.frozen.directory),
+        "--selection-id",
+        ground.selection.selection_id,
+        "--verdict-sha256",
+        ground.verdict_sha256,
+        "--join-evidence",
+        str(extension.frozen.directory),
+        extension.selection.selection_id,
+        extension.verdict_sha256,
+        "--output-directory",
+        str(publication),
+        "--regeneration-command",
+        regeneration_command,
+        "--baseline-config",
+        "nccl-2.19.3-default",
+        "--candidate-config",
+        "nccl-2.20.5-default",
+        "--cross-commit-contract",
+        str(contract),
+        "--compatibility-golden-directory",
+        str(golden),
+    )
+
+    contract_value = json.loads(contract.read_text(encoding="utf-8"))
+    assert contract_value["analysis_implementation"]["mode"] == "executor-inventory.v1"
+    aggregate = json.loads((publication / "aggregate.json").read_text(encoding="utf-8"))
+    assert aggregate["provenance"]["cross_commit_compatibility"]["status"] == ("reviewed-byte-identical-ground-truth")
 
 
 def test_reviewed_cross_commit_contract_requires_byte_identical_ground_truth(

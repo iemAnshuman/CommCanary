@@ -5,6 +5,30 @@
   "properties": {
     "attempt_id": {"pattern": "^a-[0-9]{6}$", "type": "string"},
     "correctness_check_count": {"maximum": 1000000, "minimum": 1, "type": "integer"},
+    "correctness": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {"const": "passed"},
+        "semantics": {"const": "complete-source-and-exact-work-output-commitment-comparison"},
+        "checks_per_rank": {"items": {"minimum": 1, "type": "integer"}, "minItems": 1, "type": "array"},
+        "total_check_count": {"minimum": 1, "type": "integer"},
+        "source_output_commitment_sha256_by_rank": {"items": {"pattern": "^[0-9a-f]{64}$", "type": "string"}, "minItems": 1, "type": "array"},
+        "exact_work_output_commitment_sha256_by_rank": {"items": {"pattern": "^[0-9a-f]{64}$", "type": "string"}, "minItems": 1, "type": "array"},
+        "backend_smoke_check": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {"const": "passed"},
+            "semantics": {"const": "one-blocking-sum-check-per-collective-shape"},
+            "checks_per_rank": {"items": {"minimum": 1, "type": "integer"}, "minItems": 1, "type": "array"},
+            "total_check_count": {"minimum": 1, "type": "integer"}
+          },
+          "required": ["checks_per_rank", "semantics", "status", "total_check_count"],
+          "type": "object"
+        }
+      },
+      "required": ["backend_smoke_check", "checks_per_rank", "exact_work_output_commitment_sha256_by_rank", "semantics", "source_output_commitment_sha256_by_rank", "status", "total_check_count"],
+      "type": "object"
+    },
     "count": {"maximum": 1000, "minimum": 1, "type": "integer"},
     "decision_claims": {
       "additionalProperties": false,
@@ -21,7 +45,7 @@
       "properties": {
         "configuration_repetition": {"maximum": 999, "minimum": 0, "type": "integer"},
         "iterations": {"const": 24},
-        "order_method": {"const": "configuration-repetition-williams-design.v3"},
+        "order_method": {"const": "configuration-repetition-frozen-global-carryover-design.v4"},
         "representation_order_by_iteration": {
           "items": {
             "items": {
@@ -36,6 +60,21 @@
           "minItems": 24,
           "type": "array"
         },
+        "representation_order_by_warmup": {
+          "items": {
+            "items": {
+              "enum": ["source", "exact_work", "stratified", "isolated", "no_overlap", "no_rank_skew"]
+            },
+            "maxItems": 6,
+            "minItems": 6,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "representation_schedule_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"},
         "source_event_count": {"minimum": 1, "type": "integer"},
         "stratified_method": {"const": "first-observed-per-collective-shape.v1"},
         "stratified_source_event_indices": {
@@ -45,10 +84,10 @@
           "uniqueItems": true
         },
         "timing_semantics": {"const": "maximum-rank-cuda-event-whole-program-duration"},
-        "warmup": {"maximum": 100, "minimum": 0, "type": "integer"},
+        "warmup": {"const": 6},
         "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
       },
-      "required": ["configuration_repetition", "iterations", "order_method", "representation_order_by_iteration", "source_event_count", "stratified_method", "stratified_source_event_indices", "timing_semantics", "warmup", "world_size"],
+      "required": ["configuration_repetition", "iterations", "order_method", "representation_order_by_iteration", "representation_order_by_warmup", "representation_schedule_sha256", "source_event_count", "stratified_method", "stratified_source_event_indices", "timing_semantics", "warmup", "world_size"],
       "type": "object"
     },
     "global_ranks": {
@@ -118,13 +157,45 @@
       "minItems": 1,
       "type": "array"
     },
+    "telemetry_checkpoints": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {"const": "bounded-between-six-row-cycles.v1"},
+        "schema": {"const": "commcanary.rostam.decision-gate-cycle-telemetry.v1"},
+        "snapshots": {
+          "items": {"$ref": "#/$defs/telemetry_snapshot"},
+          "maxItems": 7,
+          "minItems": 7,
+          "type": "array"
+        }
+      },
+      "required": ["method", "schema", "snapshots"],
+      "type": "object"
+    },
     "value_us": {"minimum": 0, "type": "number"},
     "wall_time_s": {"minimum": 0, "type": "number"},
     "world_size": {"maximum": 1024, "minimum": 1, "type": "integer"}
   },
-  "required": ["attempt_id", "correctness_check_count", "count", "decision_claims", "execution", "global_ranks", "iqr_us", "materialization", "operation", "policy", "representations", "request", "runtime", "samples_us", "value_us", "wall_time_s", "world_size"],
+  "required": ["attempt_id", "correctness", "correctness_check_count", "count", "decision_claims", "execution", "global_ranks", "iqr_us", "materialization", "operation", "policy", "representations", "request", "runtime", "samples_us", "telemetry_checkpoints", "value_us", "wall_time_s", "world_size"],
   "type": "object",
   "$defs": {
+    "cycle_gpu": {
+      "additionalProperties": false,
+      "properties": {
+        "ecc_corrected_volatile_total": {"minimum": 0, "type": "integer"},
+        "ecc_uncorrected_volatile_total": {"minimum": 0, "type": "integer"},
+        "index": {"minimum": 0, "type": "integer"},
+        "memory_clock_mhz": {"minimum": 0, "type": "integer"},
+        "performance_state": {"minLength": 1, "type": "string"},
+        "power_draw_w": {"minimum": 0, "type": "number"},
+        "sm_clock_mhz": {"minimum": 0, "type": "integer"},
+        "temperature_c": {"maximum": 200, "minimum": -50, "type": "integer"},
+        "throttle_reasons_active": {"pattern": "^0x[0-9a-f]{16}$", "type": "string"},
+        "uuid": {"minLength": 1, "type": "string"}
+      },
+      "required": ["ecc_corrected_volatile_total", "ecc_uncorrected_volatile_total", "index", "memory_clock_mhz", "performance_state", "power_draw_w", "sm_clock_mhz", "temperature_c", "throttle_reasons_active", "uuid"],
+      "type": "object"
+    },
     "metrics": {
       "additionalProperties": false,
       "properties": {
@@ -141,7 +212,7 @@
       "additionalProperties": false,
       "properties": {
         "category": {
-          "enum": ["causal_ablation", "ground_truth", "incumbent_baseline", "kill_condition_baseline", "positive_conformance_control"]
+          "enum": ["causal_ablation", "exact_materialization_control", "incumbent_baseline", "kill_condition_baseline", "trace_derived_reference"]
         },
         "executed_event_count": {"minimum": 1, "type": "integer"},
         "metrics": {"$ref": "#/$defs/metrics"},
@@ -165,6 +236,43 @@
         }
       },
       "required": ["category", "executed_event_count", "metrics", "rank_timings_us", "semantics", "template_count", "timings_us"],
+      "type": "object"
+    },
+    "telemetry_snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_at": {"format": "date-time", "type": "string"},
+        "gpus": {
+          "items": {"$ref": "#/$defs/cycle_gpu"},
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "label": {
+          "enum": ["before_warmup", "before_measured_cycle_1", "after_measured_cycle_1", "after_measured_cycle_2", "after_measured_cycle_3", "after_measured_cycle_4", "final"]
+        },
+        "node_state": {
+          "additionalProperties": false,
+          "properties": {
+            "method": {"const": "scontrol show node --oneliner HOSTNAME"},
+            "node": {"minLength": 1, "type": "string"},
+            "state": {"minLength": 1, "type": "string"}
+          },
+          "required": ["method", "node", "state"],
+          "type": "object"
+        },
+        "xid": {
+          "additionalProperties": false,
+          "properties": {
+            "event_count": {"minimum": 0, "type": "integer"},
+            "method": {"const": "journalctl --dmesg --boot --no-pager --grep NVRM.*Xid"},
+            "window_sha256": {"pattern": "^[0-9a-f]{64}$", "type": "string"}
+          },
+          "required": ["event_count", "method", "window_sha256"],
+          "type": "object"
+        }
+      },
+      "required": ["captured_at", "gpus", "label", "node_state", "xid"],
       "type": "object"
     }
   }

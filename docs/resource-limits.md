@@ -1,7 +1,8 @@
 # Resource limits
 
 CommCanary treats trace, canary, report, qualification
-request/materialization, capture, execution, and ecosystem-adapter input as
+request/materialization, Chakra ET and physical-canary evidence, capture,
+execution, and ecosystem-adapter input as
 untrusted. `ResourceLimits` is the immutable policy shared by JSON loading,
 validation, expansion, hashing, replay, verification, behavior search,
 reduction, capture merging, qualification preparation/materialization/
@@ -44,6 +45,11 @@ memory and time limits when handling hostile input.
 | `max_behavior_ranking_comparisons` | 10,000,000 | Pairwise comparisons in one behavior-ranking evaluation |
 | `max_retained_ledger_rows` | 10,000 | Candidate/refinement diagnostics retained by one search |
 | `max_reduction_oracle_calls` | 10,000 | Oracle calls allowed by one reduction |
+| `max_chakra_messages` | 1,000,001 | One Chakra metadata message plus bounded node messages |
+| `max_chakra_message_bytes` | 16,777,216 | Bytes in one expanded Chakra protobuf message |
+| `max_physical_regions` | 100,000 | Dependency-closed regions in one Chakra projection |
+| `max_physical_perturbations` | 10,000 | Training and holdout perturbations in one physical corpus |
+| `max_physical_candidate_evaluations` | 100,000 | Measured candidate rows in one physical corpus |
 
 All calculated work counts use non-negative checked arithmetic with a fixed
 maximum of `2**63 - 1`. Overflow is rejected even if a configured limit would
@@ -62,6 +68,13 @@ calls, capture shard counts, and PARAM output sizes are preflighted with checked
 arithmetic before the relevant generator, repeat loop, or output list begins.
 Validation and the operation that follows it receive the same policy object so
 an artifact cannot be accepted with one ceiling and expanded with another.
+
+Chakra input applies `max_input_bytes` to both exact compressed bytes and the
+expanded protobuf stream. Framing is decoded before protobuf-field traversal;
+message count and per-message limits therefore reject compressed expansion and
+oversized length prefixes without allocating the declared message. Projection
+regions, corpus perturbations, and candidate rows have independent limits
+before synthesis inspects training decisions.
 
 Already-decoded report and comparison objects receive the same JSON depth,
 item, and string preflight as file-loaded artifacts. Report replay counts are

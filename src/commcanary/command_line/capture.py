@@ -10,8 +10,9 @@ import uuid
 from typing import Any, Callable
 
 from ..adapters.capture import TraceRecorder, merge_trace_shards
-from ..artifacts import write_json
-from ..errors import CommCanaryError
+from ..adapters.chakra_capture import commcanary_trace_to_chakra
+from ..artifacts import SENSITIVE_JSON_POLICY, atomic_write_bytes, write_json
+from ..errors import CommCanaryError, SchemaError
 from .codes import EXIT_CHILD_FAILURE
 
 CaptureFailurePreserver = Callable[..., None]
@@ -24,6 +25,18 @@ def capture_command(
     failure_preserver: CaptureFailurePreserver,
     diagnostic_emitter: DiagnosticEmitter,
 ) -> int:
+    chakra_output = getattr(args, "chakra_output", None)
+    projection_output = getattr(args, "projection_output", None)
+    if bool(chakra_output) != bool(projection_output):
+        raise SchemaError("--chakra-output and --projection-output must be supplied together")
+    if chakra_output:
+        if projection_output is None:
+            raise SchemaError("--projection-output is required with --chakra-output")
+        chakra_path = str(chakra_output)
+        projection_path = str(projection_output)
+        destinations = [os.path.abspath(str(value)) for value in (args.output, chakra_path, projection_path)]
+        if len(destinations) != len(set(destinations)):
+            raise SchemaError("trace, Chakra ET, and projection outputs must use different paths")
     command = list(args.command)
     if command and command[0] == "--":
         command = command[1:]
@@ -70,8 +83,20 @@ def capture_command(
                     "or pass --allow-empty"
                 )
             merged = TraceRecorder(args.output, workload={"name": args.workload_name}).to_trace()
+        if chakra_output:
+            captured = commcanary_trace_to_chakra(
+                merged,
+                opaque_attributes_reviewed=bool(getattr(args, "opaque_attributes_reviewed", False)),
+            )
+            atomic_write_bytes(chakra_path, captured.chakra_et, policy=SENSITIVE_JSON_POLICY)
+            write_json(projection_path, captured.projection)
         write_json(args.output, merged)
     print(f"captured trace: {args.output}")
+    if chakra_output:
+        print(
+            f"captured Chakra ET with {len(captured.projection['nodes'])} nodes and "
+            f"{len(captured.projection['regions'])} executable regions: {chakra_path}"
+        )
     return 0
 
 

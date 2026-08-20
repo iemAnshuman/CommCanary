@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -12,8 +13,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
 
 _EXECUTOR_INPUT_ID = "rostam-executor-artifact"
@@ -21,6 +23,19 @@ _EXECUTOR_FORMAT = "python-zipapp.v1"
 _MANIFEST_NAME = "run_manifest.json"
 _MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 _MAX_EXECUTOR_BYTES = 16 * 1024 * 1024
+_MAX_EXECUTOR_MEMBERS = 256
+_MAX_EXECUTOR_MEMBER_BYTES = 2 * 1024 * 1024
+_MAX_EXECUTOR_EXPANDED_BYTES = 16 * 1024 * 1024
+_EXECUTOR_INVENTORY_NAME = "rostam-executor.json"
+_EXECUTOR_ARTIFACT_SCHEMA = "commcanary.rostam.executor-artifact.v2"
+_EXECUTOR_ANALYSIS_VERSION = "commcanary.rostam.frozen-analysis.v1"
+_EXECUTOR_MAIN = b"from experiments.rostam.lib.executor_cli import main\nraise SystemExit(main())\n"
+_EXECUTOR_ENTRYPOINTS = {
+    "analyze": "experiments.rostam.analyze:main",
+    "evaluate-decision-gate": "experiments.rostam.evaluate_decision_gate:main",
+    "execute-cell": "experiments.rostam.lib.cell_entrypoint:main",
+    "run-python": "experiments.rostam.lib.executor_cli:run_python",
+}
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -48,7 +63,7 @@ def _strict_object_pairs(pairs: Sequence[Tuple[str, Any]]) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
     for key, value in pairs:
         if key in result:
-            raise ExecutorBootstrapError(f"run manifest contains duplicate key {key!r}")
+            raise ExecutorBootstrapError(f"strict JSON contains duplicate key {key!r}")
         result[key] = value
     return result
 
@@ -104,6 +119,118 @@ def _read_regular(path: Path, *, maximum: int, field: str) -> bytes:
         os.close(descriptor)
 
 
+def _inventory_bytes(value: Any) -> bytes:
+    return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def _safe_member_name(value: Any) -> str:
+    if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
+        raise ExecutorBootstrapError("executor archive member name is unsafe")
+    path = PurePosixPath(value)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ExecutorBootstrapError(f"executor archive member path is unsafe: {value!r}")
+    return value
+
+
+def _validate_executor_archive(raw: bytes) -> None:
+    """Validate every executable/resource member before Python sees the zipapp."""
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            infos = archive.infolist()
+            names = [info.filename for info in infos]
+            if not infos or len(infos) > _MAX_EXECUTOR_MEMBERS or len(names) != len(set(names)):
+                raise ExecutorBootstrapError("executor archive member inventory is empty, oversized, or duplicated")
+            expanded = 0
+            for info in infos:
+                _safe_member_name(info.filename)
+                if info.is_dir() or info.compress_type != zipfile.ZIP_STORED or info.flag_bits & 0x1:
+                    raise ExecutorBootstrapError("executor members must be unencrypted ZIP_STORED files")
+                if not 0 <= info.file_size <= _MAX_EXECUTOR_MEMBER_BYTES:
+                    raise ExecutorBootstrapError("executor member exceeds its expanded-size limit")
+                expanded += info.file_size
+                if expanded > _MAX_EXECUTOR_EXPANDED_BYTES:
+                    raise ExecutorBootstrapError("executor expanded bytes exceed their limit")
+            inventory_raw = archive.read(_EXECUTOR_INVENTORY_NAME)
+            inventory = _object(
+                json.loads(inventory_raw, object_pairs_hook=_strict_object_pairs),
+                "executor inventory",
+            )
+            expected_fields = {
+                "schema",
+                "entrypoints",
+                "analysis_version",
+                "source_inventory_sha256",
+                "schema_inventory_sha256",
+                "source_files",
+                "schema_files",
+            }
+            if (
+                set(inventory) != expected_fields
+                or inventory.get("schema") != _EXECUTOR_ARTIFACT_SCHEMA
+                or inventory.get("entrypoints") != _EXECUTOR_ENTRYPOINTS
+                or inventory.get("analysis_version") != _EXECUTOR_ANALYSIS_VERSION
+                or inventory_raw != _inventory_bytes(inventory)
+            ):
+                raise ExecutorBootstrapError("executor inventory format is unsupported or noncanonical")
+            inventories: Dict[str, Sequence[Mapping[str, Any]]] = {}
+            for collection, digest_field in (
+                ("source_files", "source_inventory_sha256"),
+                ("schema_files", "schema_inventory_sha256"),
+            ):
+                rows = inventory[collection]
+                digest = inventory[digest_field]
+                if (
+                    not isinstance(rows, list)
+                    or not rows
+                    or not isinstance(digest, str)
+                    or _SHA256_RE.fullmatch(digest) is None
+                    or hashlib.sha256(_inventory_bytes(rows)).hexdigest() != digest
+                ):
+                    raise ExecutorBootstrapError(f"executor {collection} inventory does not recompute")
+                observed_names = []
+                for row_index, raw_row in enumerate(rows):
+                    row = _object(raw_row, f"executor {collection}[{row_index}]")
+                    if set(row) != {"path", "sha256", "size_bytes"}:
+                        raise ExecutorBootstrapError(f"executor {collection} row is not closed")
+                    name = _safe_member_name(row["path"])
+                    row_digest = row["sha256"]
+                    size = row["size_bytes"]
+                    if (
+                        not isinstance(row_digest, str)
+                        or _SHA256_RE.fullmatch(row_digest) is None
+                        or isinstance(size, bool)
+                        or not isinstance(size, int)
+                        or not 0 <= size <= _MAX_EXECUTOR_MEMBER_BYTES
+                    ):
+                        raise ExecutorBootstrapError(f"executor {collection} row is malformed")
+                    payload = archive.read(name)
+                    if (
+                        name in observed_names
+                        or len(payload) != size
+                        or hashlib.sha256(payload).hexdigest() != row_digest
+                    ):
+                        raise ExecutorBootstrapError(f"executor {collection} bytes do not match inventory")
+                    observed_names.append(name)
+                if observed_names != sorted(observed_names):
+                    raise ExecutorBootstrapError(f"executor {collection} inventory is not sorted")
+                inventories[collection] = rows
+            source_names = {str(row["path"]) for row in inventories["source_files"]}
+            schema_names = {str(row["path"]) for row in inventories["schema_files"]}
+            if set(names) != source_names | schema_names | {_EXECUTOR_INVENTORY_NAME}:
+                raise ExecutorBootstrapError("executor archive contains unlisted or missing members")
+            if archive.read("__main__.py") != _EXECUTOR_MAIN:
+                raise ExecutorBootstrapError("executor __main__.py is unsupported")
+            if "__main__.py" not in source_names or any(
+                name.endswith(".py") and name not in source_names for name in names
+            ):
+                raise ExecutorBootstrapError("executor Python members are not completely inventoried")
+    except ExecutorBootstrapError:
+        raise
+    except (KeyError, OSError, UnicodeError, ValueError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
+        raise ExecutorBootstrapError(f"executor archive is invalid: {exc}") from exc
+
+
 def _executor_binding(run_directory: Path, manifest_sha256: str) -> Tuple[Path, str, int]:
     if _SHA256_RE.fullmatch(manifest_sha256) is None:
         raise ExecutorBootstrapError("expected manifest SHA-256 is malformed")
@@ -154,6 +281,7 @@ def stage_executor_artifact(run_directory: Path, manifest_sha256: str) -> Staged
     raw = _read_regular(source, maximum=_MAX_EXECUTOR_BYTES, field="executor artifact")
     if len(raw) != expected_size or hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise ExecutorBootstrapError("executor artifact bytes do not match the frozen campaign")
+    _validate_executor_archive(raw)
     temporary = tempfile.TemporaryDirectory(prefix="commcanary-rostam-executor-")
     root = Path(temporary.name)
     os.chmod(root, 0o700)

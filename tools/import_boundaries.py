@@ -22,6 +22,7 @@ BOUNDARY_PREFIXES: Tuple[Tuple[str, str], ...] = (
     ("commcanary.adapters", "adapters"),
     ("commcanary.workflows", "workflows"),
     ("commcanary.execution", "execution"),
+    ("commcanary.product", "execution"),
     ("commcanary.reporting", "reporting"),
     ("commcanary.experimental", "experimental"),
     ("commcanary.baselines", "experimental"),
