@@ -71,6 +71,11 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check ".[dev]"
           python -m pip install --disable-pip-version-check "https://download-r2.pytorch.org/whl/cpu/torch-2.4.1%2Bcpu-cp312-cp312-linux_x86_64.whl#sha256=8800deef0026011d502c0c256cc4b67d002347f63c3a38cd8e45f1f445c61364"
+          # torch.distributed.all_gather_object converts tensors through NumPy,
+          # so the correctness oracle cannot gather its per-rank result without
+          # it. This is a verification dependency; the package itself still has
+          # no runtime dependencies.
+          python -m pip install --disable-pip-version-check "numpy<2"
       - name: Require the pinned Gloo build
         run: python -c "import torch; assert torch.__version__ == '2.4.1+cpu'; assert torch.distributed.is_available(); assert torch.distributed.is_gloo_available()"
       - name: Run four-process correctness conformance

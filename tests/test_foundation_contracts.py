@@ -74,7 +74,17 @@ def test_capability_schema_loader_returns_repository_bytes_offline() -> None:
 
 def test_capability_schema_loader_validates_paths_and_uses_source_fallback(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
+    """The fallback is exercised against a synthetic tree, not this checkout.
+
+    Asserting it against the real repository only holds when ``commcanary`` is
+    imported from ``src/``. Installed non-editable -- which is how CI consumes
+    the package -- the module sits in site-packages and no repository
+    ``schemas/`` is reachable from it, so the assertion could never pass there.
+    Building the layout here tests the resolution logic in every install mode.
+    """
+
     capability = format_capabilities()[0]
     invalid = replace(capability, schema="outside/schema.json")
     with pytest.raises(SchemaError, match="invalid schema resource path"):
@@ -84,7 +94,18 @@ def test_capability_schema_loader_validates_paths_and_uses_source_fallback(
         raise FileNotFoundError("package data unavailable")
 
     monkeypatch.setattr(artifact_schemas.resources, "files", missing_package)
-    assert load_schema_bytes(capability) == (ROOT / capability.schema).read_bytes()
+
+    # <root>/schemas/<name> with the module three parents below <root>, which is
+    # the source layout the fallback is written for.
+    payload = (ROOT / capability.schema).read_bytes()
+    root = tmp_path / "root"
+    (root / "schemas").mkdir(parents=True)
+    (root / capability.schema).write_bytes(payload)
+    module_dir = root / "src" / "commcanary" / "artifacts"
+    module_dir.mkdir(parents=True)
+    monkeypatch.setattr(artifact_schemas, "__file__", str(module_dir / "schemas.py"))
+
+    assert load_schema_bytes(capability) == payload
 
     missing = replace(
         capability,
