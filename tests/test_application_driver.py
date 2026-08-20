@@ -461,35 +461,66 @@ def test_gpu_health_check_refuses_an_unexpected_gpu_count(monkeypatch: pytest.Mo
         application_driver.require_healthy_gpus(4)
 
 
-def test_watchdog_terminates_a_run_that_outlives_its_budget() -> None:
+def test_watchdog_terminates_a_run_that_outlives_its_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     """The path that only runs when the engine is already hung.
 
-    A driver that cannot be made to stop is how GPUs end up held by a dead run,
-    so the timer must actually fire and actually signal this process.
+    Both the signal and the hard-exit escalation are intercepted. Letting the
+    real ones run would take this process down thirty seconds later, from a
+    daemon thread, long after the test itself had passed.
     """
 
-    signalled: List[int] = []
-    original = signal.signal(signal.SIGTERM, lambda *_: signalled.append(1))
-    try:
-        timer = application_driver._start_watchdog(0.05, "unit test")
-        deadline = time.monotonic() + 5.0
-        while not signalled and time.monotonic() < deadline:
-            time.sleep(0.01)
-        timer.cancel()
-    finally:
-        signal.signal(signal.SIGTERM, original)
-    assert signalled, "the watchdog did not signal the process"
+    killed: List[int] = []
+    exited: List[int] = []
+    monkeypatch.setattr(application_driver.os, "kill", lambda _pid, sig: killed.append(sig))
+    monkeypatch.setattr(application_driver.os, "_exit", lambda code: exited.append(code))
+
+    timer = application_driver._start_watchdog(0.05, "unit test")
+    deadline = time.monotonic() + 5.0
+    while not killed and time.monotonic() < deadline:
+        time.sleep(0.01)
+    timer.cancel()
+
+    assert killed == [signal.SIGTERM], "the watchdog must signal before escalating"
+    assert not exited, "the hard exit must wait for the grace period, not fire immediately"
 
 
-def test_watchdog_does_not_fire_when_cancelled_in_time() -> None:
-    signalled: List[int] = []
-    original = signal.signal(signal.SIGTERM, lambda *_: signalled.append(1))
-    try:
-        application_driver._start_watchdog(30.0, "unit test").cancel()
-        time.sleep(0.1)
-    finally:
-        signal.signal(signal.SIGTERM, original)
-    assert not signalled
+def test_cancelling_a_fired_watchdog_disarms_the_hard_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A run that is signalled and then tears down cleanly must survive.
+
+    The escalation lives in a daemon thread, so leaving it armed after cancel
+    takes the process down later from outside any test that could catch it.
+    That is exactly how this watchdog killed CI with exit code 75.
+    """
+
+    exited: List[int] = []
+    monkeypatch.setattr(application_driver.os, "kill", lambda _pid, _sig: None)
+    monkeypatch.setattr(application_driver.os, "_exit", lambda code: exited.append(code))
+    monkeypatch.setattr(application_driver, "WATCHDOG_GRACE_SECONDS", 0.05)
+
+    watchdog = application_driver._Watchdog(0.01, "unit test")
+    deadline = time.monotonic() + 5.0
+    while watchdog._grace is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert watchdog._grace is not None, "the escalation was never armed"
+
+    watchdog.cancel()
+    time.sleep(0.25)  # comfortably past the shortened grace period
+    assert not exited, "cancel must disarm the pending hard exit"
+
+
+def test_an_uncancelled_watchdog_does_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The escalation still has to happen when nothing cleans up."""
+
+    exited: List[int] = []
+    monkeypatch.setattr(application_driver.os, "kill", lambda _pid, _sig: None)
+    monkeypatch.setattr(application_driver.os, "_exit", lambda code: exited.append(code))
+    monkeypatch.setattr(application_driver, "WATCHDOG_GRACE_SECONDS", 0.05)
+
+    application_driver._Watchdog(0.01, "unit test")
+    deadline = time.monotonic() + 5.0
+    while not exited and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert exited == [75]
 
 
 def test_engine_teardown_survives_a_failing_shutdown_hook() -> None:

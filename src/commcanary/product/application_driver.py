@@ -197,28 +197,53 @@ def require_healthy_gpus(expected_gpu_count: int) -> List[str]:
     return rows
 
 
-def _start_watchdog(limit_seconds: float, label: str) -> "threading.Timer":
+#: Seconds a signalled run is given to tear down before it is killed outright.
+WATCHDOG_GRACE_SECONDS = 30.0
+
+
+class _Watchdog:
+    """A deadline that signals first and kills only if the signal is ignored.
+
+    ``cancel`` must release the escalation as well as the deadline. A run that
+    is signalled and then tears down cleanly has nothing left to kill, and a
+    hard exit still armed in a daemon thread would take the process down in the
+    middle of whatever ran next.
+    """
+
+    def __init__(self, limit_seconds: float, label: str) -> None:
+        self._label = label
+        self._limit_seconds = limit_seconds
+        self._grace: Optional[threading.Timer] = None
+        self._timer = threading.Timer(limit_seconds, self._expire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _expire(self) -> None:
+        print(
+            f"watchdog: {self._label} exceeded {self._limit_seconds:.0f}s; terminating so the GPUs are released",
+            file=sys.stderr,
+            flush=True,
+        )
+        os.kill(os.getpid(), signal.SIGTERM)
+        grace = threading.Timer(WATCHDOG_GRACE_SECONDS, lambda: os._exit(75))
+        grace.daemon = True
+        self._grace = grace
+        grace.start()
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+        if self._grace is not None:
+            self._grace.cancel()
+
+
+def _start_watchdog(limit_seconds: float, label: str) -> _Watchdog:
     """Terminate this process if the run outlives its declared budget.
 
     SIGTERM first so the teardown path still runs, then a hard exit if the
     engine is wedged badly enough to ignore it.
     """
 
-    def _expire() -> None:
-        print(
-            f"watchdog: {label} exceeded {limit_seconds:.0f}s; terminating so the GPUs are released",
-            file=sys.stderr,
-            flush=True,
-        )
-        os.kill(os.getpid(), signal.SIGTERM)
-        grace = threading.Timer(30.0, lambda: os._exit(75))
-        grace.daemon = True
-        grace.start()
-
-    timer = threading.Timer(limit_seconds, _expire)
-    timer.daemon = True
-    timer.start()
-    return timer
+    return _Watchdog(limit_seconds, label)
 
 
 def _shutdown_engine(llm: Any, torch: Any) -> None:
