@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.physical_canary_policy.v1.schema.json",
+  "title": "CommCanary physical canary policy v1",
+  "type": "object",
+  "required": ["format", "policy_id", "supported_domain", "runtime_budget_seconds", "severe_regression_threshold_pct", "required_feature_tags", "required_baselines", "runner", "qualification_gates", "gate_metrics", "minimum_samples", "uncertainty", "noise", "privacy"],
+  "properties": {
+    "format": {"const": "commcanary.physical_canary_policy.v1"},
+    "policy_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
+    "supported_domain": {"const": "single-node-tensor-parallel-dense-decoder-all-reduce-gemm-overlap.v1"},
+    "runtime_budget_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "severe_regression_threshold_pct": {"type": "number", "exclusiveMinimum": 0},
+    "required_feature_tags": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"}},
+    "required_baselines": {"type": "array", "uniqueItems": true, "items": {"enum": ["independent_exact_replay", "random_sampling", "stratified_sampling", "ddmin", "communication_only_microbenchmark"]}},
+    "runner": {
+      "type": "object",
+      "required": ["oci_digest", "execution_protocol", "world_size"],
+      "properties": {
+        "oci_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "execution_protocol": {"const": "chakra-et-collective-graph.v1"},
+        "world_size": {"type": "integer", "minimum": 2, "maximum": 65536}
+      },
+      "additionalProperties": false
+    },
+    "qualification_gates": {
+      "type": "object",
+      "required": ["minimum_runtime_reduction_ratio", "maximum_severe_false_negatives", "maximum_false_positive_rate", "minimum_pairwise_decision_agreement"],
+      "properties": {
+        "minimum_runtime_reduction_ratio": {"type": "number", "minimum": 1},
+        "maximum_severe_false_negatives": {"type": "integer", "minimum": 0},
+        "maximum_false_positive_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "minimum_pairwise_decision_agreement": {"type": "number", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    },
+    "gate_metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "direction", "regression_threshold_pct", "mandatory"],
+        "properties": {
+          "name": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"},
+          "direction": {"enum": ["lower_is_better", "higher_is_better"]},
+          "regression_threshold_pct": {"type": "number", "minimum": 0},
+          "mandatory": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "minimum_samples": {"type": "integer", "minimum": 2, "maximum": 1000000},
+    "uncertainty": {
+      "type": "object",
+      "required": ["method", "confidence", "bootstrap_resamples", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "method": {"const": "percentile_bootstrap_median_difference"},
+        "confidence": {"type": "number", "minimum": 0.5, "exclusiveMaximum": 1},
+        "bootstrap_resamples": {"type": "integer", "minimum": 100, "maximum": 100000},
+        "seed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "noise": {
+      "type": "object",
+      "required": ["max_relative_iqr_pct"],
+      "additionalProperties": false,
+      "properties": {"max_relative_iqr_pct": {"type": "number", "minimum": 0}}
+    },
+    "privacy": {
+      "type": "object",
+      "required": ["maximum_leakage_score", "private_exchange_requires_reviewed_opaque_attributes"],
+      "properties": {
+        "maximum_leakage_score": {"type": "number", "minimum": 0, "maximum": 1},
+        "private_exchange_requires_reviewed_opaque_attributes": {"const": true}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

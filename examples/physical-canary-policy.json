@@ -1,0 +1,48 @@
+{
+  "format": "commcanary.physical_canary_policy.v1",
+  "gate_metrics": [
+    {
+      "direction": "lower_is_better",
+      "mandatory": true,
+      "name": "p99_latency_ms",
+      "regression_threshold_pct": 5.0
+    },
+    {
+      "direction": "higher_is_better",
+      "mandatory": true,
+      "name": "throughput_per_second",
+      "regression_threshold_pct": 5.0
+    }
+  ],
+  "minimum_samples": 5,
+  "noise": {
+    "max_relative_iqr_pct": 20.0
+  },
+  "policy_id": "9046b495eb25c2976dff076689cf8793ade467a25ecf54756bde1dfedb569230",
+  "privacy": {
+    "maximum_leakage_score": 1.0,
+    "private_exchange_requires_reviewed_opaque_attributes": true
+  },
+  "qualification_gates": {
+    "maximum_false_positive_rate": 0.1,
+    "maximum_severe_false_negatives": 0,
+    "minimum_pairwise_decision_agreement": 0.9,
+    "minimum_runtime_reduction_ratio": 10.0
+  },
+  "required_baselines": [],
+  "required_feature_tags": [],
+  "runner": {
+    "execution_protocol": "chakra-et-collective-graph.v1",
+    "oci_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "world_size": 4
+  },
+  "runtime_budget_seconds": 60.0,
+  "severe_regression_threshold_pct": 5.0,
+  "supported_domain": "single-node-tensor-parallel-dense-decoder-all-reduce-gemm-overlap.v1",
+  "uncertainty": {
+    "bootstrap_resamples": 1000,
+    "confidence": 0.95,
+    "method": "percentile_bootstrap_median_difference",
+    "seed": 0
+  }
+}
