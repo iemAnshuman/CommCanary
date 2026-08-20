@@ -2,8 +2,103 @@
 
 ## 0.3.0 - Unreleased
 
+### Decision safety
+
+- Hardened both application drivers after job `180257` left all four A100s on
+  `toranj1` in "GPU requires reset" on 2026-08-04, where they remained for
+  sixteen days while Slurm kept scheduling onto the node. CUDA graphs and
+  peer-to-peer custom all-reduce -- both outside the domain
+  `docs/product-status.md` declares qualified -- now default **off** and must be
+  opted into with `--allow-cuda-graphs` / `--allow-custom-all-reduce`, which
+  warn when used. Both drivers refuse to start on GPUs already reporting a
+  pending reset, both carry a `--max-runtime-seconds` watchdog that terminates
+  the process so a hung engine cannot hold GPUs, and the vLLM driver now
+  releases its engine, worker processes, and process group in a `finally`
+  instead of leaving that to interpreter exit.
+- Phase reduction now samples proportionally instead of by typicality.
+  Percentiles are proportions, so an artifact only reproduces them if its phase
+  mix matches the source. Medoid-only selection put p95/p99 58-80% under;
+  reserving budget for the longest-iteration clusters recovered p99 but pushed
+  the median 237% over. Retention is proportional with a floor for
+  tail-carrying clusters, and timeline rebasing uses each cluster's own cadence.
+
+- Fixed the GEMM correctness probe in the physical runner, which could not run
+  at all. `a` and `b` are two-dimensional views, so `float(a[0].item())` raised
+  `RuntimeError: a Tensor with N elements cannot be converted to Scalar` for
+  every GEMM wider than one column. The only test covering it substitutes a
+  fake torch, and the runner had never executed on a GPU, so this survived
+  until the first real four-rank run. Both axes are now indexed.
+- Recalibrated the injected-skew floor from measurement rather than assumption.
+  The monotonic spin carries a fixed ~0.35 us overhead from its own clock reads,
+  so `MINIMUM_RESOLVABLE_SKEW_US` moves from 0.5 to 4.0 -- the point where
+  relative error first falls below 10 percent. Measured on A100: 4 us -> 4.35 us
+  (+8.7%), 10 us -> 10.36 us (+3.6%), 20 us -> 20.36 us (+1.8%), 100 us ->
+  100.36 us (+0.4%).
+- Added `experiments/rostam/smoke_buffer_pool{_worker.py,.sbatch}`, a runner
+  conformance check that issues more same-dtype collectives per region than
+  there are buffer slots so the pool wraps and the settle-before-reuse path
+  runs. It issues no qualification verdict and writes no campaign evidence.
+
+- Fixed the four-process correctness conformance, which had failed in CI on
+  `main` since at least 2026-08-03 and therefore never validated anything.
+  `_torch_reduction_op` guarded on whether PyTorch exposed a `ReduceOp`
+  attribute, but Gloo publishes `ReduceOp.AVG` and rejects it at call time with
+  a bare `RuntimeError`, so a program the guard reported as executable failed
+  mid-collective. The guard now consults backend capability and refuses with a
+  named reason, and the conformance worker plans only the reductions the active
+  backend can execute. Its plan constants are derived rather than written down;
+  at five reductions they reproduce the previous 11 / (9, 9, 9, 10) / 38
+  exactly. Verified on four ranks against torch 2.4.1+cu121 on Rostam.
+
+- The physical gate can now return `inconclusive`. It previously offered only
+  `pass`/`fail`/`incomparable`, compared baseline and candidate medians against
+  a percentage threshold, and accepted a single sample per metric, so a
+  difference the measurement could not resolve was reported as a pass. The
+  qualification path in the same package already used a four-state verdict with
+  a percentile bootstrap and an interquartile stability bound, and declared the
+  2026-08-01 campaign `inconclusive` on exactly that basis; the product surface
+  did not. Gate metrics are now screened for a predeclared `minimum_samples`
+  replicate floor and a `noise.max_relative_iqr_pct` stability bound, then
+  decided against a seeded percentile-bootstrap interval on the
+  regression-oriented median difference. A mandatory metric whose interval
+  straddles its acceptance boundary makes the gate `inconclusive` rather than
+  passing it. The result validator independently rechecks the rule from the
+  reported interval. `physical_canary_policy.v1` gains `minimum_samples`,
+  `uncertainty`, and `noise`; `physical_gate_result.v1` gains per-metric
+  interval, replicate, and dispersion fields.
+- The physical runner no longer lets concurrent all-reduces alias one buffer.
+  A single collective tensor per dtype was shared by every all-reduce in a
+  region while `async_op=True` work stayed in flight until the region drained,
+  so two same-dtype collectives reduced into overlapping memory and NCCL could
+  serialise them — destroying the compute/communication overlap the canary
+  exists to measure. Buffers are now a bounded pool and a slot's previous work
+  is settled before reuse.
+- Injected per-rank skew no longer uses `time.sleep`, whose granularity cannot
+  resolve the single-digit microsecond skews these traces carry. A monotonic
+  spin replaces it, skew below the resolvable floor is refused rather than
+  silently inflated, and evidence records the mechanism as
+  `host_issue_monotonic_spin` so it is not mistaken for a GPU-side arrival
+  guarantee.
+- A false-positive rate computed over zero passing perturbations is no longer
+  reported as `0.0` satisfying the qualification gate. The denominator is
+  published as `passing_perturbations` and the gate refuses a vacuous rate.
+
 ### Integrity and safety
 
+- Clustering features in `baselines` no longer fabricate concurrency. Absent
+  `compute_pressure` defaulted to `0.5`, a midpoint asserting the event was half
+  loaded, and absent overlap and preceding compute defaulted to `0.0`; each now
+  carries a known-indicator so an undeclared field can only match another
+  undeclared field.
+- Chakra capture now distinguishes unknown overlap from measured zero overlap
+  with an `overlap-unknown` tag, instead of tagging an undeclared trace as
+  genuinely non-overlapping.
+- Added phase-representative repetition reduction. Segmentation comes from a
+  declared `iteration_index`, an explicit period, or an opt-in compute-gap
+  heuristic; an undeclared repetition unit is refused rather than inferred from
+  event structure, because every compression objective over the collective
+  stream alone is maximised by discarding that structure. Retained iterations
+  are rebased onto a contiguous timeline and carry weights.
 - Made absent compute/communication overlap an explicit unknown instead of
   silently coercing it to `0.0`. Canary compilation, behavior search,
   reduction, and overlap-preserving baselines now require a measured or
@@ -76,6 +171,24 @@
   are detached from caller-owned nested input.
 
 ### Contracts and API
+
+- Added the first `physical_decision_canary.v1` compiler contract above Chakra
+  ET. A bounded, dependency-validating reader retains complete protobuf
+  messages byte-for-byte; source-bound projections declare the narrow GEMM and
+  all-reduce domain, candidate regions, work, feature coverage, and disclosure.
+  An active counterexample-guided synthesizer measures training candidates,
+  freezes selection before opening holdout evidence, and refuses qualification
+  for absent, synthetic, incomplete, unsafe, or privacy-violating evidence. A
+  reduced candidate must execute a strict subset of source nodes. Corpora bind
+  the runner, application and stack subjects, environments, executable bytes,
+  and GPU-seconds arithmetic. Audit bundles retain the complete application and
+  physical measurement sets and recompute corpus rows; private bundles withhold
+  those records behind an Ed25519-signed manifest. Instrumented capture and
+  Kineto import can emit Chakra ET plus its projection directly. Immutable
+  `build` bundles re-run synthesis during verification, while `gate` emits
+  JSON, HTML, JUnit, and SARIF from bundle-, runner-, executable-, subject-,
+  evidence-, and environment-bound observations. A real held-out campaign
+  remains an open product requirement.
 
 - Split behavior-search candidate/refinement ledgers from executable canaries.
   The compact canary summary binds an experimental evidence sidecar by exact

@@ -1,5 +1,125 @@
 # CommCanary live handoff
 
+## Rostam state observed 2026-08-20 (supersedes the checkout notes below)
+
+Measured directly over the ControlMaster socket, not inferred.
+
+**The `cuda-A100` GPUs are largely unusable right now.**
+
+| node | GPUs | observed state |
+|---|---|---|
+| `toranj1` | 4x A100-PCIE-40GB, driver 580.82.07 | Slurm `idle`, but `nvidia-smi` reports **`[GPU requires reset]` on all four**. `cuInit` returns `CUDA_ERROR_NO_DEVICE` (100) and `cuDeviceGetCount` returns 0. `nvidia_uvm` is loaded and every `/dev/nvidia*` node is present and world-writable, so this is wedged hardware, not permissions. Slurm still schedules onto it and jobs fail in seconds (see `186026`). |
+| `toranj0` | 4x A100-PCIE-40GB | briefly `down/drained`, then `ALLOCATED` to another job. |
+| `nasrin0`, `nasrin1` | 2x A100 80GB PCIe, driver 580.65.06 | GPUs healthy (`P0`). |
+
+**We caused this.** The kernel log attributes every one of the 56 Xid events on
+`toranj1` -- 14 on each of the four GPUs -- to vLLM worker processes
+`412921`-`412924`, inside a 211-second window from **2026-08-04 18:11:57 to
+18:15:28**. That window falls entirely inside job **`180257`
+`commcanary-app-probe`** (aagrawal, 18:09:40 -> 18:15:32, `FAILED`). No other
+process appears in any Xid, before or since. Four worker pids is a TP=4 vLLM
+run, which is what the CommCanary application driver does.
+
+The sequence was Xid 119 (GSP RPC timeout) on all four GPUs, then 62
+(micro-controller halt), 154 (unrecoverable recovery action), 31 (MMU fault),
+and a cascade of 45s (channel teardown). The chain opening with 119 rather than
+31 means this may be a driver/firmware interaction under load rather than simply
+an illegal access from our kernels -- but the job on the GPUs was ours, and the
+attribution is not ambiguous.
+
+Consequences, all still live:
+
+- The four A100s have been unusable for **16 days**.
+- Job `180259 commcanary-app-probe-r2` retried at 18:22:39 onto already-dead
+  GPUs and failed.
+- **Another user has been hit**: `parsa` jobs `185118`/`185119` failed on
+  `toranj1` on 2026-08-17.
+- Slurm never drained the node. It still reports `IDLE` and keeps accepting
+  work that fails in seconds, including `186026` today.
+- The 2026-08-05 handoff entry records that the SSH inspection was blocked and
+  no remote command ran, so the damage was never observed at the time.
+
+Clearing it requires root (`nvidia-smi -r` or a reboot) and should be reported
+to the Rostam administrators, naming the job. This is the same failure class
+already recorded further down for `177179`/`177293` on `toranj0`.
+
+**Two environment couplings that were never written down:**
+
+- `/home` is readable but **not executable** from the `nasrin` nodes, so every
+  reviewed venv under `/home/aagrawal/CommCanary/experiments/rostam/venvs/`
+  fails there with `Permission denied`. This is very likely why every campaign
+  ran exclusively on `toranj`.
+- On **both** `nasrin` nodes every module interpreter is non-executable --
+  `/opt/apps/python/3.12.3/bin/python3.12` and `.../3.13.2/bin/python3.13` are
+  mode `-rw-r--r--`, owned `dogman:wheel`. `/opt/apps` is node-local, so this is
+  a per-node misconfiguration. Only `/usr/bin/python3` (3.9.21) runs there.
+
+**Corrections to the checkout notes below:** the evidence checkout is at
+`4585318a` ("fix: observe the selected NCCL runtime") and its working tree is
+**clean**. It is not at `9b1e58ae`, and the two uncommitted analyzer repairs and
+`/tmp/join-fix.patch` described below are no longer present.
+
+**Disk:** `/home/aagrawal` is 47G/50G (93%); `commcanary-archives` and
+`CommCanary` are 12G each, `probes` 7.5G, `vllm-probe` 5.0G. `/work/aagrawal` is
+34G/1.0T (4%). New work belongs on `/work`.
+
+**Measured usage since 2026-06-01** (`Elapsed x NNodes`): CommCanary campaign
+jobs total **8.42 node-hours over 729 jobs**; all jobs total **1,649 node-hours
+over 2,558 jobs**, dominated by GSoC HPX work on medusa/buran. `email.md` states
+"about 11.9 node hours" for CommCanary, which overstates it.
+
+---
+
+**Current local checkpoint: 2026-08-05, fifth review product-convergence
+implementation.** The working tree is intentionally uncommitted and contains
+the preceding fourth-cycle hardening plus this product pivot. Preserve it; no
+commit, push, tag, Rostam mutation, campaign freeze, or submission occurred in
+this cycle.
+
+The product path now has a bounded, byte-preserving Chakra ET reader; automatic
+projection from complete instrumented or Kineto evidence; vLLM and SGLang
+application oracles; a four-rank physical runner with correctness and cycle
+telemetry; active counterexample-guided synthesis; digest-pinned OCI/SIF runner
+builders; immutable audit evidence; Ed25519 private exchange; and the
+`capture`/`build`/`gate` surface. A reduced candidate must be dependency-closed
+and execute fewer Chakra nodes than its source. Full-audit bundles retain and
+revalidate every application allocation and physical candidate measurement.
+Private bundles withhold those records but sign their content identities.
+Exact-work v2 remains a trace-derived conformance/measurement-floor control;
+its large replicated profile is
+`retired-identical-instruction-path-no-product-evidence`.
+
+This implementation is not new scientific evidence. No product runner image
+has been built on Rostam, no real application perturbation corpus or held-out
+result exists, and no private customer artifact has been issued. Synthetic
+fixture corpora cannot qualify a bundle. The separate vLLM issue 2971 study
+binds official 0.2.7, 0.3.2, and 0.3.3 images plus the issue-date OpenHermes
+revision, but it has not run and its frozen claim boundary is a four-A100
+version-sensitivity probe, not an exact reproduction or causal study. Do not
+revive or submit the retired v2 profile; freeze a new product study after its
+runner bytes exist.
+
+The 2026-08-05 attempt to inspect the user-managed SSH agent was blocked by the
+local sandbox, and the required escalation was rejected because the Codex
+usage limit is exhausted until 2026-08-08 13:01. No remote command ran. Resume
+with a read-only SSH and repository/queue preflight; do not infer missing or
+invalid Rostam credentials from this tooling failure.
+
+Local verification is green:
+
+- `.venv/bin/python -m tools.verify --fast`: 1,158 passed, one skipped because
+  PyTorch is not installed; Ruff, formatting, strict mypy over 167 files,
+  import boundaries, coverage, schemas, shell/workflow checks, and README
+  validation passed.
+- `.venv/bin/python -m tools.verify --reproducible`: the same source gate plus
+  reproducible wheel/sdist construction passed. Temporary artifact digests:
+  wheel `007e2e01c565040a5e4f0807408b41b9b276db2e23a33a9146d9757d5740c728`;
+  sdist `6746faf5c26c892ae6cfa69c68e38f7f820cc0457cda2958067dc4ab98790bf1`.
+- `tests/experiments/rostam`: 299 passed.
+
+The historical 2026-08-01 checkpoint and physical evidence below are
+unchanged.
+
 **Checkpoint:** 2026-08-01, after the predeclared decision-fidelity gate
 completed on Rostam. Replacement campaign `decision-gate-20260801-r3` froze
 eight configurations at clean remote commit
