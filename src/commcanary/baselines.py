@@ -365,13 +365,23 @@ def _feature_distance(left: Tuple[float, ...], right: Tuple[float, ...], scales:
     return sum(abs(left[index] - right[index]) / scales[index] for index in range(len(scales)))
 
 
-def _features(event: Mapping[str, Any]) -> Tuple[float, float, float, float, float]:
+def _features(event: Mapping[str, Any]) -> Tuple[float, ...]:
+    """Clustering features, with unknown concurrency kept distinct from measured.
+
+    ``compute_pressure`` previously defaulted to ``0.5``, which is not a neutral
+    value: it asserts the event was half loaded, and an event that never
+    declared its pressure would then cluster with events measured at exactly
+    that. Overlap and preceding compute defaulted to ``0.0`` the same way. Since
+    concurrency is the load-bearing variable for ranking fidelity, each of the
+    three carries a companion known-indicator instead, so an undeclared field
+    can only ever match another undeclared field.
+    """
+
     ranks = normalize_ranks(event.get("ranks"))
     offsets = normalize_arrival_offsets(event, ranks)
-    return (
-        _source_gap_us(event),
-        arrival_skew_us(offsets),
-        as_float(event.get("compute_before_us"), 0.0),
-        as_float(event.get("compute_overlap_us"), 0.0),
-        as_float(event.get("compute_pressure"), 0.5),
-    )
+    features = [_source_gap_us(event), arrival_skew_us(offsets)]
+    for field in ("compute_before_us", "compute_overlap_us", "compute_pressure"):
+        raw = event.get(field)
+        features.append(0.0 if raw is None else as_float(raw))
+        features.append(0.0 if raw is None else 1.0)
+    return tuple(features)
