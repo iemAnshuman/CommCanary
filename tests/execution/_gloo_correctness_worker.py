@@ -18,6 +18,7 @@ from commcanary.execution.qualification import (
     _validated_correctness_checks,
     _validation_expected_output_values,
     _validation_output_matches,
+    backend_unsupported_reductions,
 )
 
 
@@ -47,13 +48,30 @@ def _communication(
         entry["reduction_op"] = reduction_op
     if operation == "broadcast":
         entry["root"] = 1
+    if operation in {"send", "recv"}:
+        entry.update(
+            {
+                "src_rank": 0,
+                "dst_rank": 3,
+                "startTime_ns": 1_000,
+                "_validation_route_id": 10,
+            }
+        )
     return entry
 
 
-def _plan(group_size: int) -> QualificationExecutionPlan:
+def _plan(group_size: int, *, backend: str = "gloo") -> QualificationExecutionPlan:
+    # Exercise every reduction the active backend can actually execute. Gloo
+    # publishes ReduceOp.AVG and then rejects it at call time, so planning it
+    # unconditionally made this oracle unable to pass on the only backend it
+    # targets -- which is why the CI job asserting it had been red since
+    # 2026-08-03 without covering anything.
+    unsupported = backend_unsupported_reductions(backend)
+    reductions = tuple(op for op in ("avg", "max", "min", "product", "sum") if op not in unsupported)
+    assert reductions, f"backend {backend!r} supports no reduction this oracle can check"
     entries: List[Mapping[str, Any]] = []
     request = 1
-    for reduction_op in ("avg", "max", "min", "product", "sum"):
+    for reduction_op in reductions:
         entries.extend(
             (
                 _communication(request, "all_reduce", group_size=group_size, reduction_op=reduction_op),
@@ -74,6 +92,17 @@ def _plan(group_size: int) -> QualificationExecutionPlan:
             )
         )
         request += 1
+    entries.extend(
+        (
+            _communication(request, "send", group_size=group_size),
+            _communication(request + 1, "recv", group_size=group_size),
+        )
+    )
+    # Derived from the plan rather than written down, so dropping a reduction the
+    # backend cannot execute cannot silently disagree with the expectation. At
+    # five reductions these reproduce the original 11 / (9, 9, 9, 10) / 38.
+    collectives = len(reductions) + 4
+    p2p_destination = 3
     return QualificationExecutionPlan(
         request_id="gloo-correctness-conformance",
         materialization_id="0" * 64,
@@ -84,11 +113,13 @@ def _plan(group_size: int) -> QualificationExecutionPlan:
         distributed_timeout_seconds=60,
         groups=((0, tuple(range(group_size))),),
         entries=tuple(entries),
-        communication_entries_per_pass=9,
+        communication_entries_per_pass=collectives + 2,
         compute_operations_per_pass=0,
         rank_compute_operations_per_pass=(0,) * group_size,
-        observation_samples=9 * group_size,
-        rank_correctness_checks=(9,) * group_size,
+        observation_samples=collectives * group_size + 2,
+        rank_correctness_checks=tuple(
+            collectives + (1 if rank == p2p_destination else 0) for rank in range(group_size)
+        ),
         rank_tensor_bytes=(0,) * group_size,
     )
 
@@ -99,7 +130,7 @@ def main() -> None:
     assert world_size == 4
     dist.init_process_group("gloo", timeout=timedelta(seconds=60))
     try:
-        plan = _plan(world_size)
+        plan = _plan(world_size, backend=dist.get_backend())
         group = dist.new_group(ranks=list(range(world_size)), timeout=timedelta(seconds=60))
         buffers = _allocate_runtime_buffers(
             plan,
@@ -117,7 +148,44 @@ def main() -> None:
         )
         gathered: List[Any] = [None] * world_size
         dist.all_gather_object(gathered, local)
-        assert _validated_correctness_checks(plan, gathered) == (9,) * world_size
+        assert _validated_correctness_checks(plan, gathered) == plan.rank_correctness_checks
+
+        broadcast = next(entry for entry in plan.entries if entry.get("comms") == "broadcast")
+        _input, broadcast_output = buffers["communication"][_communication_buffer_key(broadcast)]
+        wrong_root = {**broadcast, "root": 2}
+        wrong_root_values = _validation_expected_output_values(
+            wrong_root,
+            request_id=plan.request_id,
+            rank=rank,
+            group_ranks=tuple(range(world_size)),
+        )
+        broadcast_output.copy_(torch.tensor(wrong_root_values, dtype=broadcast_output.dtype))
+        assert not _validation_output_matches(
+            broadcast,
+            request_id=plan.request_id,
+            rank=rank,
+            group_ranks=tuple(range(world_size)),
+            buffers=buffers,
+        )
+
+        if rank == 3:
+            recv = next(entry for entry in plan.entries if entry.get("comms") == "recv")
+            _input, recv_output = buffers["communication"][_communication_buffer_key(recv)]
+            wrong_peer = {**recv, "src_rank": 2}
+            wrong_peer_values = _validation_expected_output_values(
+                wrong_peer,
+                request_id=plan.request_id,
+                rank=rank,
+                group_ranks=tuple(range(world_size)),
+            )
+            recv_output.copy_(torch.tensor(wrong_peer_values, dtype=recv_output.dtype))
+            assert not _validation_output_matches(
+                recv,
+                request_id=plan.request_id,
+                rank=rank,
+                group_ranks=tuple(range(world_size)),
+                buffers=buffers,
+            )
 
         all_to_all = next(entry for entry in plan.entries if entry.get("comms") == "all_to_all")
         _input, output = buffers["communication"][_communication_buffer_key(all_to_all)]

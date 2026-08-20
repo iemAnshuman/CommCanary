@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass
 from datetime import timedelta
 from functools import lru_cache
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Mapping, MutableMapping, Optional, Sequence, Tuple, Union
 
 from ..artifacts.dtypes import (
     dtype_size_bytes,
@@ -131,6 +131,44 @@ def distributed_execution_environment(environ: Mapping[str, str]) -> Tuple[int, 
     return rank, world_size, local_rank
 
 
+def _bind_point_to_point_validation_routes(entries: Sequence[MutableMapping[str, Any]]) -> None:
+    """Bind each adjacent send/recv pair to one correctness-signature identity."""
+
+    pair_fields = (
+        "pg_id",
+        "global_ranks",
+        "world_size",
+        "in_msg_size",
+        "out_msg_size",
+        "dtype",
+        "src_rank",
+        "dst_rank",
+        "startTime_ns",
+    )
+    index = 0
+    while index < len(entries):
+        entry = entries[index]
+        if "_validation_route_id" in entry:
+            raise SchemaError(f"replay program entry {index} contains a reserved executor field")
+        comms = entry.get("comms")
+        if comms == "recv":
+            raise SchemaError(f"replay program entry {index} recv has no immediately preceding send")
+        if comms != "send":
+            index += 1
+            continue
+        if index + 1 >= len(entries) or entries[index + 1].get("comms") != "recv":
+            raise SchemaError(f"replay program entry {index} send lacks an immediately following recv")
+        recv = entries[index + 1]
+        if "_validation_route_id" in recv:
+            raise SchemaError(f"replay program entry {index + 1} contains a reserved executor field")
+        if any(entry.get(field) != recv.get(field) for field in pair_fields):
+            raise SchemaError(f"replay program entry {index + 1} recv does not match its preceding send")
+        route_id = _nonnegative_int(entry.get("req"), f"replay program entry {index} req")
+        entry["_validation_route_id"] = route_id
+        recv["_validation_route_id"] = route_id
+        index += 2
+
+
 def preflight_qualification_execution(
     request_directory: str,
     materialization_directory: str,
@@ -174,6 +212,7 @@ def preflight_qualification_execution(
     if not all(isinstance(entry, Mapping) for entry in raw_entries):
         raise SchemaError("qualification replay program entries must be objects")
     entries = tuple(copy.deepcopy(dict(entry)) for entry in raw_entries)
+    _bind_point_to_point_validation_routes(entries)
 
     groups: Dict[int, Tuple[int, ...]] = {}
     pending: Dict[int, Tuple[str, Tuple[int, ...], int]] = {}
@@ -1295,14 +1334,20 @@ def _validate_correctness_probe_support(
                 f"replay program entry {index} cannot be checked by the reference executor: {exc}"
             ) from exc
         group_ranks = groups[as_int(entry["pg_id"])]
-        if comms in {"all_gather", "all_to_all"}:
-            segment_length = (
-                as_int(entry["in_msg_size"])
-                if comms == "all_gather"
-                else as_int(entry["out_msg_size"]) // len(group_ranks)
-            )
+        if comms in {"broadcast", "all_gather", "all_to_all", "send", "recv"}:
+            if comms == "all_gather":
+                segment_length = as_int(entry["in_msg_size"])
+                routes = len(group_ranks)
+            elif comms == "all_to_all":
+                segment_length = as_int(entry["out_msg_size"]) // len(group_ranks)
+                routes = len(group_ranks) ** 2
+            elif comms == "broadcast":
+                segment_length = as_int(entry["out_msg_size"])
+                routes = len(group_ranks)
+            else:
+                segment_length = as_int(entry["in_msg_size"] if comms == "send" else entry["out_msg_size"])
+                routes = len(group_ranks) ** 2
             lane_count = min(_VALIDATION_LANE_PERIOD, segment_length)
-            routes = len(group_ranks) if comms == "all_gather" else len(group_ranks) ** 2
             if lane_count < 1 or capacity**lane_count < routes:
                 raise SchemaError(f"replay program entry {index} exceeds the {dtype} routing-signature capacity")
         if comms not in _REDUCTION_COLLECTIVES:
@@ -1342,6 +1387,12 @@ def _tensor_pattern_matches(tensor: Any, *, length: int, value_for_lane: Any) ->
     return all(_tensor_all_equal(tensor[lane::period], value_for_lane(lane)) for lane in range(period))
 
 
+def _validation_route_id(entry: Mapping[str, Any]) -> int:
+    """Return the shared signature identity for one communication route."""
+
+    return as_int(entry.get("_validation_route_id", entry["req"]))
+
+
 def _initialize_validation_buffers(
     plan: QualificationExecutionPlan,
     *,
@@ -1364,7 +1415,7 @@ def _initialize_validation_buffers(
         input_tensor.zero_()
         if output_tensor is not input_tensor:
             output_tensor.zero_()
-        request = as_int(entry["req"])
+        request = _validation_route_id(entry)
         dtype = str(entry["dtype"])
         if comms in _REDUCTION_COLLECTIVES:
             source_index = group_ranks.index(rank)
@@ -1532,7 +1583,7 @@ def _validation_output_matches(
 ) -> bool:
     comms = str(entry["comms"])
     _input_tensor, output_tensor = buffers["communication"][_communication_buffer_key(entry)]
-    request = as_int(entry["req"])
+    request = _validation_route_id(entry)
     dtype = str(entry["dtype"])
     if comms in _REDUCTION_COLLECTIVES:
         destination_rank = None if comms == "all_reduce" else rank
@@ -1607,7 +1658,7 @@ def _validation_expected_output_values(
     """Return the pure expected tensor for small tests and independent adapters."""
 
     comms = str(entry["comms"])
-    request = as_int(entry["req"])
+    request = _validation_route_id(entry)
     dtype = str(entry["dtype"])
     output_size = as_int(entry["out_msg_size"])
     values: List[ValidationNumber] = []
@@ -1756,6 +1807,21 @@ def _issue_runtime_operation(
     raise CommCanaryError(f"reference executor reached unsupported operation {comms!r} on rank {rank}")
 
 
+#: Reductions a backend cannot execute even though PyTorch exposes the enum.
+#: ``ReduceOp.AVG`` is NCCL-only: Gloo publishes the attribute and then refuses
+#: it at call time with a bare ``RuntimeError``, so an attribute check alone
+#: reports a program as executable that the backend will reject mid-collective.
+_BACKEND_UNSUPPORTED_REDUCTIONS: Dict[str, FrozenSet[str]] = {
+    "gloo": frozenset({"avg"}),
+}
+
+#: Reductions any backend restricts. Only these require querying the backend,
+#: so the common path issues no extra introspection call.
+_RESTRICTABLE_REDUCTIONS: FrozenSet[str] = frozenset(
+    reduction for reductions in _BACKEND_UNSUPPORTED_REDUCTIONS.values() for reduction in reductions
+)
+
+
 def _torch_reduction_op(dist: Any, entry: Mapping[str, Any]) -> Any:
     reduction_op = str(entry["reduction_op"])
     attribute = {
@@ -1765,12 +1831,32 @@ def _torch_reduction_op(dist: Any, entry: Mapping[str, Any]) -> Any:
         "product": "PRODUCT",
         "sum": "SUM",
     }[reduction_op]
+    if reduction_op in _RESTRICTABLE_REDUCTIONS:
+        backend = _active_backend(dist)
+        if reduction_op in _BACKEND_UNSUPPORTED_REDUCTIONS.get(backend, frozenset()):
+            raise CommCanaryError(
+                f"the {backend!r} backend cannot execute ReduceOp.{attribute} required by the source "
+                "program; the reduction is exposed by PyTorch but rejected by this backend"
+            )
     try:
         return getattr(dist.ReduceOp, attribute)
     except AttributeError as exc:
         raise CommCanaryError(
             f"target PyTorch does not expose ReduceOp.{attribute} required by the source program"
         ) from exc
+
+
+def backend_unsupported_reductions(backend: str) -> FrozenSet[str]:
+    """Reductions the named backend publishes but cannot execute."""
+
+    return _BACKEND_UNSUPPORTED_REDUCTIONS.get(backend, frozenset())
+
+
+def _active_backend(dist: Any) -> str:
+    try:
+        return str(dist.get_backend()).lower()
+    except Exception:  # pragma: no cover - no initialized process group
+        return ""
 
 
 def _communication_buffer_key(entry: Mapping[str, Any]) -> Tuple[Any, ...]:
