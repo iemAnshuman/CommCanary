@@ -40,8 +40,13 @@ needs no GPUs, no cluster, and no input files. The replay is a deterministic
 simulator over a bundled example, so the demo's numbers illustrate the workflow
 rather than measuring your hardware.
 
-A rendered version of the same output is published from CI at
-[iemanshuman.github.io/CommCanary](https://iemanshuman.github.io/CommCanary/).
+![The comparison report commcanary demo produces](docs/images/comparison-report.png)
+
+That report is what the command above writes. The verdict, the median/p95/p99
+deltas, and the per-phase and per-operation breakdown are exactly the values the
+demo emits: +32.0%, +36.1% and +40.4%. It is also published from CI at
+[iemanshuman.github.io/CommCanary](https://iemanshuman.github.io/CommCanary/),
+so the site and the local run cannot diverge.
 
 ## What this is
 
