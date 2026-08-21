@@ -39,6 +39,7 @@ def test_public_claim_registry_has_the_frozen_initial_claims() -> None:
         "chakra_dependency_closed_selection_exists",
         "exact_work_point_estimates_published",
         "private_exchange_is_implemented",
+        "proxy_fidelity_ranking_published",
     }
     assert {row["id"] for row in document["qualified_only_after_evidence"]} == {
         "predicts_stack_change_decisions",

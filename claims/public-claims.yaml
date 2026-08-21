@@ -25,6 +25,12 @@
       "status": "implemented_and_tested",
       "qualification": "local_verified",
       "evidence": "Owner-signed Ed25519 private-exchange bundles and independent verification against a supplied public-key trust anchor are implemented and tested."
+    },
+    {
+      "id": "proxy_fidelity_ranking_published",
+      "status": "measured",
+      "qualification": "physically_observed_on_rostam",
+      "evidence": "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json records, against W-full over 28 configuration pairs on four A100 GPUs: W-shared-overlap 71.4286% pair agreement and Kendall tau-b 0.708333; W-micro 64.2857% and 0.489898; W-canary 57.1429% and 0.204124; W-canary-overlap 53.5714% and 0.677003. Faithful communication-only replay therefore ranks configurations below an isolated microbenchmark, and only overlap-bearing replay exceeds it. The result describes proxy fidelity for ranking; it is not a decision-preservation or cost claim."
     }
   ],
   "qualified_only_after_evidence": [
