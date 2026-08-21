@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ..artifacts.dtypes import normalize_dtype
+from ..artifacts.json_codec import formatted_json_bytes
 from ..artifacts.trace import validate_trace
 from ..artifacts.wire import (
     JsonDict,
@@ -32,6 +33,7 @@ from ..resources import (
     JsonResourceError,
     ResourceLimits,
     checked_add,
+    decode_bounded_json_bytes,
     require_within,
     validate_json_mapping,
     validate_json_value,
@@ -87,6 +89,12 @@ class TraceRecorder:
         self._last_saved_generation = -1
         self._closed = False
         self._session_id = os.environ.get("COMMCANARY_CAPTURE_SESSION_ID", str(uuid.uuid4()))
+        self._event_count = 0
+        self._rollover_started = False
+        self._collective_ids: set[str] = set()
+        self._completed_shards = 0
+        self._written_output_paths: set[str] = set()
+        self._shard_json_items, self._shard_input_bytes = self._empty_shard_resource_usage_locked()
         _RECORDERS.add(self)
 
     @classmethod
@@ -241,7 +249,7 @@ class TraceRecorder:
         with self._lock:
             self._ensure_current_process_locked()
             self._require_event_capacity_locked()
-            sequence = len(self.events)
+            sequence = self._event_count
             event: JsonDict = {
                 "id": f"event-{sequence:06d}",
                 "capture_session_id": self._session_id,
@@ -291,7 +299,17 @@ class TraceRecorder:
                 event["compute_recipe_by_rank"] = recipe_by_rank_snapshot
             if metadata_snapshot:
                 event["metadata"] = metadata_snapshot
+            self._prepare_shard_for_event_locked(event)
             self.events.append(event)
+            event_items, event_bytes = _event_shard_resource_usage(event)
+            self._shard_json_items += event_items
+            self._shard_input_bytes += event_bytes
+            if len(self.events) == 1:
+                self._shard_input_bytes += 2
+            collective_key = event.get("collective_id")
+            if collective_key is not None:
+                self._collective_ids.add(str(collective_key))
+            self._event_count += 1
             self._generation += 1
 
     def to_trace(self) -> JsonDict:
@@ -332,6 +350,7 @@ class TraceRecorder:
                 _require_path_below_root(Path(output_path), trace_root)
             require_readable_shard(trace, limits=self._limits, path=output_path)
             write_json(output_path, trace)
+            self._written_output_paths.add(output_path)
             self._last_saved_generation = generation
 
     def close(self) -> None:
@@ -357,19 +376,142 @@ class TraceRecorder:
 
     def _require_event_capacity_locked(self) -> None:
         try:
-            next_count = checked_add(len(self.events), 1, label="trace recorder events")
+            next_count = checked_add(self._event_count, 1, label="trace recorder events")
             require_within(
                 next_count,
                 self._limits.max_capture_events,
                 label="trace recorder events",
             )
-            require_within(
-                next_count,
-                self._limits.max_stored_events,
-                label="trace recorder stored events",
-            )
         except JsonResourceError as exc:
             raise SchemaError(str(exc)) from exc
+
+    def _prepare_shard_for_event_locked(self, event: JsonDict) -> None:
+        event_items, event_bytes = _event_shard_resource_usage(event)
+        if not self._event_requires_rollover_locked(event_items, event_bytes):
+            if self._rollover_started:
+                self._require_unique_collective_id_locked(event)
+            return
+        if not self.events:
+            raise SchemaError(
+                "capture event cannot fit in one shard with required loader headroom; "
+                "reduce its metadata or raise the applicable resource limit"
+            )
+        empty_items, empty_bytes = self._empty_shard_resource_usage_locked()
+        if _would_exceed_shard_budget(
+            event_count=1,
+            json_items=empty_items + event_items,
+            input_bytes=empty_bytes + event_bytes + 2,
+            limits=self._limits,
+        ):
+            raise SchemaError(
+                "capture event cannot fit in one shard with required loader headroom; "
+                "reduce its metadata or raise the applicable resource limit"
+            )
+        self._require_rollover_identities_locked(event)
+        self._roll_over_locked()
+
+    def _event_requires_rollover_locked(self, event_items: int, event_bytes: int) -> bool:
+        return _would_exceed_shard_budget(
+            event_count=len(self.events) + 1,
+            json_items=self._shard_json_items + event_items,
+            input_bytes=self._shard_input_bytes + event_bytes + (2 if not self.events else 0),
+            limits=self._limits,
+        )
+
+    def _require_rollover_identities_locked(self, incoming: JsonDict) -> None:
+        if not self._session_id:
+            raise SchemaError("capture rollover requires a non-empty capture_session_id")
+        if self._rollover_started:
+            self._require_unique_collective_id_locked(incoming)
+            return
+        seen: set[str] = set()
+        for event in [*self.events, incoming]:
+            raw_collective_id = event.get("collective_id")
+            if raw_collective_id is None:
+                raise SchemaError("capture rollover requires every event to include an explicit stable collective_id")
+            collective_id = str(raw_collective_id)
+            if collective_id in seen:
+                raise SchemaError(
+                    f"capture rollover requires collective_id values to be unique per recorder; "
+                    f"duplicate {collective_id!r}"
+                )
+            seen.add(collective_id)
+
+    def _require_unique_collective_id_locked(self, event: JsonDict) -> None:
+        raw_collective_id = event.get("collective_id")
+        if raw_collective_id is None:
+            raise SchemaError("capture rollover requires every event to include an explicit stable collective_id")
+        collective_id = str(raw_collective_id)
+        if collective_id in self._collective_ids:
+            raise SchemaError(
+                f"capture rollover requires collective_id values to be unique per recorder; duplicate {collective_id!r}"
+            )
+
+    def _roll_over_locked(self) -> None:
+        try:
+            required_shards = checked_add(self._completed_shards, 2, label="capture shards")
+            require_within(required_shards, self._limits.max_capture_shards, label="capture shards")
+        except JsonResourceError as exc:
+            raise SchemaError(str(exc)) from exc
+
+        current_path = self.output_path
+        final_path = current_path
+        if not _is_discoverable_shard_path(current_path):
+            final_path = self._fresh_rollover_output_path_locked()
+        next_path = self._fresh_rollover_output_path_locked(exclude={current_path, final_path})
+        snapshot = copy.deepcopy(self.events)
+        trace = self._to_trace_locked(snapshot)
+        validate_trace(trace, allow_partial_arrivals=True, limits=self._limits)
+        with self._save_lock:
+            if final_path != current_path and current_path in self._written_output_paths:
+                try:
+                    os.replace(current_path, final_path)
+                except OSError as exc:
+                    raise SchemaError(
+                        f"cannot move completed capture shard {current_path} to {final_path}: {exc}"
+                    ) from exc
+                self._written_output_paths.remove(current_path)
+                self._written_output_paths.add(final_path)
+            if self._trace_root is not None:
+                _require_path_below_root(Path(final_path), self._trace_root)
+            require_readable_shard(trace, limits=self._limits, path=final_path)
+            write_json(final_path, trace)
+            self._written_output_paths.add(final_path)
+            self._last_saved_generation = self._generation
+
+        self._completed_shards += 1
+        self._rollover_started = True
+        self.output_path = next_path
+        self.events = []
+        self._shard_json_items, self._shard_input_bytes = self._empty_shard_resource_usage_locked()
+
+    def _fresh_rollover_output_path_locked(self, *, exclude: Optional[set[str]] = None) -> str:
+        candidate = _resolve_output_path(
+            self._requested_output_path,
+            force_shard=True,
+            recorder_id=uuid.uuid4().hex,
+            trace_root=self._trace_root,
+        )
+        excluded = exclude or set()
+        if candidate in excluded or candidate in self._written_output_paths or Path(candidate).exists():
+            raise SchemaError(f"refusing to reuse capture rollover path {candidate}")
+        return candidate
+
+    def _empty_shard_resource_usage_locked(self) -> Tuple[int, int]:
+        trace: JsonDict = {
+            "format": TRACE_FORMAT,
+            "created_at": "9999-12-31T23:59:59.999999+00:00",
+            "workload": copy.deepcopy(self.workload),
+            "system": {
+                **copy.deepcopy(self.system),
+                "pid": self._pid,
+                "rank": _rank_label(),
+                "capture_session_id": self._session_id,
+                "recorder_id": self._recorder_id,
+            },
+            "events": [],
+        }
+        return _json_item_count(trace), len(formatted_json_bytes(trace, indent=2))
 
     def reset_after_fork(self) -> None:
         self._reset_after_fork_in_child()
@@ -400,6 +542,12 @@ class TraceRecorder:
             recorder_id=self._recorder_id,
             trace_root=self._trace_root,
         )
+        self._event_count = 0
+        self._rollover_started = False
+        self._collective_ids = set()
+        self._completed_shards = 0
+        self._written_output_paths = set()
+        self._shard_json_items, self._shard_input_bytes = self._empty_shard_resource_usage_locked()
 
 
 class NullRecorder:
@@ -637,7 +785,7 @@ def require_readable_shard(
     """Refuse to write a shard this package could not read back.
 
     ``validate_trace`` bounds stored events, but merging applies the bounded
-    JSON loader, whose item, depth and string budgets bind far earlier: a
+    JSON loader, whose byte, item, depth and token budgets bind far earlier: a
     coalescing shard costs roughly 21 JSON items per event, so the default
     ``max_json_items`` admits about 95,000 events per shard against a declared
     ``max_stored_events`` of 1,000,000. Without this check capture happily
@@ -645,12 +793,13 @@ def require_readable_shard(
     discovered after the workload has finished, when the run that produced the
     evidence is gone.
 
-    Failing at write time turns silent loss of a completed run into an
-    actionable error while the capture is still in hand.
+    The recorder rolls over before those limits. This check remains the final
+    guard that every emitted shard can pass through the production loader.
     """
 
     try:
-        validate_json_mapping(trace, limits=limits)
+        encoded = formatted_json_bytes(trace, indent=2)
+        decode_bounded_json_bytes(encoded, limits=limits)
     except JsonResourceError as exc:
         events = trace.get("events")
         count = len(events) if isinstance(events, list) else "an unknown number of"
@@ -660,6 +809,46 @@ def require_readable_shard(
             "capture in windows; raising the limit only moves the boundary, because "
             "max_input_bytes binds shortly after."
         ) from exc
+
+
+def _would_exceed_shard_budget(
+    *,
+    event_count: int,
+    json_items: int,
+    input_bytes: int,
+    limits: ResourceLimits,
+) -> bool:
+    json_item_threshold = limits.max_json_items - 1
+    input_byte_threshold = limits.max_input_bytes - 1
+    return (
+        event_count > limits.max_stored_events or json_items > json_item_threshold or input_bytes > input_byte_threshold
+    )
+
+
+def _event_shard_resource_usage(event: Mapping[str, Any]) -> Tuple[int, int]:
+    encoded = formatted_json_bytes(event, indent=2, trailing_newline=False)
+    line_count = encoded.count(b"\n") + 1
+    array_bytes = len(encoded) + (4 * line_count) + 2
+    return checked_add(1, _json_item_count(event), label="capture shard JSON items"), array_bytes
+
+
+def _json_item_count(value: Any) -> int:
+    item_count = 0
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, Mapping):
+            item_count = checked_add(item_count, len(current), label="capture shard JSON items")
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            item_count = checked_add(item_count, len(current), label="capture shard JSON items")
+            stack.extend(current)
+    return item_count
+
+
+def _is_discoverable_shard_path(path: str) -> bool:
+    name = Path(path).name
+    return name.endswith(".trace.json") or (".rank-" in name and "-pid-" in name and name.endswith(".json"))
 
 
 def _resolve_output_path(

@@ -8,11 +8,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+import commcanary.adapters.capture as capture_module
 from commcanary.adapters.capture import require_readable_shard
+from commcanary.artifacts.json_codec import formatted_json_bytes
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.compare import compare_reports
 from commcanary.compiler import compile_trace
@@ -900,3 +903,91 @@ def test_capture_refuses_to_write_a_shard_it_could_not_read_back() -> None:
 
     # The same document is accepted once the budget can actually admit it.
     require_readable_shard(trace, limits=DEFAULT_RESOURCE_LIMITS, path="/tmp/shard.trace.json")
+
+
+def test_capture_rolls_one_rank_into_readable_shards_and_merges_every_event_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RANK", "0")
+    limits = dataclasses.replace(DEFAULT_RESOURCE_LIMITS, max_json_items=500)
+    source_ids = [f"collective-{index:04d}" for index in range(80)]
+    direct_output = tmp_path / "capture.json"
+    recorder = TraceRecorder(
+        str(direct_output),
+        workload={"name": "rollover"},
+        limits=limits,
+    )
+    try:
+        for index, collective_id in enumerate(source_ids):
+            recorder.record_collective(
+                op="all_reduce",
+                bytes=16,
+                ranks=[0],
+                start_us=float(index),
+                rank_arrival_us={"0": 0.0},
+                collective_id=collective_id,
+            )
+            if index == 4:
+                recorder.save()
+        recorder.save()
+    finally:
+        recorder.close()
+
+    shard_paths = sorted(tmp_path.glob("*.json"))
+    assert len(shard_paths) >= 2
+    assert direct_output not in shard_paths
+    headroom_limits = dataclasses.replace(limits, max_json_items=limits.max_json_items - 1)
+    for shard_path in shard_paths:
+        load_json(str(shard_path), limits=headroom_limits)
+
+    merged = merge_trace_shards(str(tmp_path), workload_name="rollover", limits=limits)
+    merged_ids = [event["collective_id"] for event in merged["events"]]
+    assert len(merged_ids) == len(source_ids)
+    assert sorted(merged_ids) == source_ids
+
+
+def test_small_capture_keeps_the_single_shard_wire_format(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixed_created_at = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+
+    class FixedDatetime:
+        @classmethod
+        def now(cls, tz: timezone) -> datetime:
+            assert tz is timezone.utc
+            return fixed_created_at
+
+    monkeypatch.setattr(capture_module, "datetime", FixedDatetime)
+    monkeypatch.setenv("RANK", "0")
+    output_path = tmp_path / "capture.trace.json"
+    recorder = TraceRecorder(
+        str(output_path),
+        workload={"name": "small"},
+        system={"world_size": 1},
+    )
+    try:
+        recorder.record_collective(
+            op="all_reduce",
+            bytes=16,
+            ranks=[0],
+            start_us=1.0,
+            rank_arrival_us={"0": 0.0},
+        )
+        expected = {
+            "format": TRACE_FORMAT,
+            "created_at": fixed_created_at.isoformat(),
+            "workload": {"name": "small"},
+            "system": {
+                "world_size": 1,
+                "pid": os.getpid(),
+                "rank": "0",
+                "capture_session_id": recorder._session_id,
+                "recorder_id": recorder._recorder_id,
+            },
+            "events": copy.deepcopy(recorder.events),
+        }
+        recorder.save()
+    finally:
+        recorder.close()
+
+    assert sorted(tmp_path.glob("*.json")) == [output_path]
+    assert output_path.read_bytes() == formatted_json_bytes(expected, indent=2)
