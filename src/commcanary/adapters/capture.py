@@ -330,6 +330,7 @@ class TraceRecorder:
                 return
             if trace_root is not None:
                 _require_path_below_root(Path(output_path), trace_root)
+            require_readable_shard(trace, limits=self._limits, path=output_path)
             write_json(output_path, trace)
             self._last_saved_generation = generation
 
@@ -625,6 +626,40 @@ def merge_trace_shards(
         limits=limits,
         load_trace=load_json,
     )
+
+
+def require_readable_shard(
+    trace: Mapping[str, Any],
+    *,
+    limits: ResourceLimits,
+    path: str,
+) -> None:
+    """Refuse to write a shard this package could not read back.
+
+    ``validate_trace`` bounds stored events, but merging applies the bounded
+    JSON loader, whose item, depth and string budgets bind far earlier: a
+    coalescing shard costs roughly 21 JSON items per event, so the default
+    ``max_json_items`` admits about 95,000 events per shard against a declared
+    ``max_stored_events`` of 1,000,000. Without this check capture happily
+    writes a shard that ``merge_trace_shards`` then rejects -- and it is
+    discovered after the workload has finished, when the run that produced the
+    evidence is gone.
+
+    Failing at write time turns silent loss of a completed run into an
+    actionable error while the capture is still in hand.
+    """
+
+    try:
+        validate_json_mapping(trace, limits=limits)
+    except JsonResourceError as exc:
+        events = trace.get("events")
+        count = len(events) if isinstance(events, list) else "an unknown number of"
+        raise SchemaError(
+            f"refusing to write {path}: the shard holds {count} events and would exceed the "
+            f"bounded JSON loader that merges it ({exc}). Capture fewer events per shard, or "
+            "capture in windows; raising the limit only moves the boundary, because "
+            "max_input_bytes binds shortly after."
+        ) from exc
 
 
 def _resolve_output_path(

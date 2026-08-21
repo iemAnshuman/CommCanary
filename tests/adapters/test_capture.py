@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import math
 import os
 import subprocess
@@ -9,10 +10,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
+
+from commcanary.adapters.capture import require_readable_shard
 from commcanary.capture import TraceRecorder, _rank_label, merge_trace_shards
 from commcanary.compare import compare_reports
 from commcanary.compiler import compile_trace
 from commcanary.replay import replay_canary
+from commcanary.resources import DEFAULT_RESOURCE_LIMITS
 from commcanary.schema import TRACE_FORMAT, SchemaError, load_json, write_json
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -858,3 +863,40 @@ class CaptureTests(unittest.TestCase):
             )
             with self.assertRaises(SchemaError):
                 merge_trace_shards(tmp, workload_name="mixed")
+
+
+def test_capture_refuses_to_write_a_shard_it_could_not_read_back() -> None:
+    """Write and read must agree, or a finished run is lost.
+
+    validate_trace bounds stored events, but merging applies the bounded JSON
+    loader, whose item budget binds far earlier -- roughly 21 items per event
+    for a coalescing shard against a declared max_stored_events of 1,000,000.
+    Without this check capture writes a shard merge_trace_shards then refuses,
+    and it is discovered only after the workload has finished.
+    """
+
+    limits = dataclasses.replace(DEFAULT_RESOURCE_LIMITS, max_json_items=2_000)
+    events = [
+        {
+            "op": "all_reduce",
+            "bytes": 1024,
+            "ranks": [0, 1],
+            "dtype": "bfloat16",
+            "reduction_op": "sum",
+            "start_us": float(index),
+            "compute_overlap_us": 1.0,
+        }
+        for index in range(400)
+    ]
+    trace = {
+        "format": TRACE_FORMAT,
+        "workload": {"name": "readability"},
+        "system": {"world_size": 2},
+        "events": events,
+    }
+
+    with pytest.raises(SchemaError, match="could not read back|would exceed the bounded JSON loader"):
+        require_readable_shard(trace, limits=limits, path="/tmp/shard.trace.json")
+
+    # The same document is accepted once the budget can actually admit it.
+    require_readable_shard(trace, limits=DEFAULT_RESOURCE_LIMITS, path="/tmp/shard.trace.json")

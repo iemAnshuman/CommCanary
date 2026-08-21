@@ -398,8 +398,27 @@ floor.
       the project's own fixture: the CEGIS holdout contained only regressions,
       so qualification against it asserted a false-positive bound that the
       evidence could not falsify. The fixture now carries a passing holdout.
-- [ ] **Trace volume.** A 30-minute captured run is large. Bounded windowed
-      capture with declared sampling, not best-effort truncation.
+- [ ] **Trace volume — measured, and it blocks G1.** A coalescing capture shard
+      costs **21 JSON items per event**, and every rank records every collective
+      it takes part in, so each per-rank shard carries the whole event list. The
+      bounded loader that merges them admits **~94,000 events per shard**
+      (`max_json_items = 2,000,000`), and `max_input_bytes = 64 MB` binds just
+      after at ~118,000. Meanwhile `max_stored_events` declares **1,000,000** —
+      an order of magnitude that can never be loaded. This is what has been
+      failing the scheduled scale benchmark since 2026-08-17.
+
+      G1's 20-40 minute serving run produces 10^5-10^6 collectives, so it cannot
+      be merged as a single capture. Fixed for now at the write side: capture
+      refuses to emit a shard the merge loader could not read back, so the
+      failure lands while the capture is still in hand rather than after the run
+      has finished and the evidence is gone.
+
+      The real fix is a design decision and is deliberately not taken here:
+      either raise the limits coherently — noting the loader's bounds exist for
+      *untrusted* input while capture shards are self-produced, a different
+      threat model — or add shard rollover so a rank writes several readable
+      shards instead of one unreadable one. Rollover is the option that makes
+      long captures work rather than merely fail earlier.
 
 ---
 

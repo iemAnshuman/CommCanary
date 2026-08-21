@@ -21,7 +21,7 @@ from commcanary.compare import compare_reports
 from commcanary.compiler import compile_trace, synthesize_behavioral_canary
 from commcanary.interop import canary_to_param_comms_trace
 from commcanary.replay import replay_canary, verify_report_against_canary
-from commcanary.resources import DEFAULT_RESOURCE_LIMITS
+from commcanary.resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
 from commcanary.schema import (
     JsonDict,
     SchemaError,
@@ -148,6 +148,36 @@ def _capture_merge_singleton_fast_path(context: OperationContext) -> Mapping[str
 @benchmark_operation("capture_merge_coalescing", kinds=("trace",))
 def _capture_merge_coalescing(context: OperationContext) -> Mapping[str, Any]:
     return _merge_prepared_capture(context, "capture_merge_coalescing")
+
+
+def _coalescing_shard_event_budget(limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS) -> int:
+    """Largest per-rank coalescing shard the bounded merge loader will accept.
+
+    Derived from the limits rather than written down, so the benchmark tracks
+    the boundary if either the limits or the shard encoding change.
+    """
+
+    # Measured on the coalescing fixture: exactly 21 JSON items per event plus
+    # a 12-item envelope (format, workload, system). A small margin keeps the
+    # shard off the boundary itself, where an encoding change of one field per
+    # event would silently push it back over.
+    items_per_event = 21
+    envelope_items = 12
+    margin = 0.99
+    usable = max(0, limits.max_json_items - envelope_items)
+    return max(1, int(usable * margin) // items_per_event)
+
+
+def _cap_coalescing_document(document: Mapping[str, Any]) -> Tuple[Mapping[str, Any], Optional[int]]:
+    events = document.get("events")
+    if not isinstance(events, list):
+        return document, None
+    budget = _coalescing_shard_event_budget()
+    if len(events) <= budget:
+        return document, None
+    capped = dict(document)
+    capped["events"] = events[:budget]
+    return capped, budget
 
 
 def _merge_prepared_capture(context: OperationContext, operation: str) -> Mapping[str, Any]:
@@ -320,7 +350,16 @@ def _prepare_operation(
     }:
         fixture_mode = "coalescing" if operation == "capture_merge_coalescing" else "singleton_fast_path"
         shard_dir = workspace / f"capture-shards-{fixture_mode}"
+        capped_events = None
         if fixture_mode == "coalescing":
+            # Every rank records every collective it takes part in, so a
+            # coalescing shard carries the whole event list at roughly 21 JSON
+            # items per event. The bounded loader that merges it admits about
+            # 95,000 events per shard, well under max_stored_events, so the
+            # standard 100,000-event case cannot be merged at all. Measure the
+            # largest case that fits and record the cap rather than failing:
+            # the limitation itself is tracked as a capture-windowing item.
+            document, capped_events = _cap_coalescing_document(document)
             shard_paths = materialize_capture_coalescing_shards(document, shard_dir)
         else:
             shard_paths = materialize_capture_shards(document, shard_dir)
@@ -333,6 +372,8 @@ def _prepare_operation(
             "workload_name": workload_name,
             "fixture_mode": fixture_mode,
         }
+        if capped_events is not None:
+            prepared_capture["capped_stored_events"] = capped_events
         shard_hashes = [
             {"name": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in shard_paths
         ]
