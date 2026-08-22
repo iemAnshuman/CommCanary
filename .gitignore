@@ -20,3 +20,15 @@ context.md
 plan-github-stars.md
 TODO.md
 STRATEGY.md
+
+# Internal planning, cluster operations, and business strategy. These are
+# working documents, not public artifacts: HANDOFF.md carries cluster paths,
+# job ids and operator detail, and the plan files carry commercial strategy.
+future_plan.md
+plan.md
+HANDOFF.md
+SHIP.md
+
+# Build and scratch output
+output/
+tmp/
