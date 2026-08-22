@@ -9,6 +9,7 @@ from .active_physical_synthesis import (
 )
 from .behavior_search import synthesize_behavioral_canary, validate_behavior_search_evidence
 from .compile import compile_trace
+from .fidelity import score_fidelity
 from .physical_gate import evaluate_physical_gate
 from .physical_synthesis import PhysicalSynthesisResult, synthesize_physical_decision_canary
 from .qualification import prepare_qualification_request, verify_qualification_request
@@ -23,6 +24,7 @@ __all__ = [
     "ddmin_ranking_reduction",
     "evaluate_qualification_observations",
     "evaluate_physical_gate",
+    "score_fidelity",
     "import_failure_readiness_report",
     "prepare_qualification_request",
     "PhysicalCandidateRequest",
