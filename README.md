@@ -1,11 +1,15 @@
 # CommCanary
 
-**We replaced `nccl-tests` with a faithful replay of a real workload's
-communication. It ranked GPU configurations _worse_ than the microbenchmark it
-was built to replace.**
+**We replaced `nccl-tests` with a faithful replay of a tensor-parallel decode
+workload's communication. It ranked GPU configurations _worse_ than the
+microbenchmark it was built to replace.**
 
 That result is the reason this project exists. Measured on 280 verified cells
-across four A100s, against the real workload over 28 configuration pairs:
+across four A100s over 28 configuration pairs, against `W-full`: a four-rank
+decode loop of 32 layers × 256 tokens, each layer a sharded GEMM sized to
+realistic per-layer decode compute followed by a bf16 all-reduce. It is a
+synthetic workload shaped like decode, not a served model — skew and overlap
+arise from kernel jitter rather than injection.
 
 | proxy | pair agreement | Kendall τ‑b |
 |---|---:|---:|
