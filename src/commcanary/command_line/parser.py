@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Generator, Tuple
 
 CommandHandler = Callable[[Any], int]
-NEWCOMER_COMMAND_METAVAR = "{demo,capture,compile,replay,compare,gate,build,doctor}"
+NEWCOMER_COMMAND_METAVAR = "{demo,capture,compile,replay,compare,fidelity,gate,build,doctor}"
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,7 @@ class CommandHandlers:
     compile: CommandHandler
     replay: CommandHandler
     compare: CommandHandler
+    fidelity: CommandHandler
     verify_fidelity: CommandHandler
     verify_behavior: CommandHandler
     baseline: CommandHandler
@@ -288,6 +289,31 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     compare_parser.add_argument("--breakdown-absolute-threshold-us", type=float)
     compare_parser.add_argument("--allow-mismatch", action="store_true")
     compare_parser.set_defaults(func=handlers.compare)
+
+    fidelity_parser = sub.add_parser(
+        "fidelity",
+        help="score proxy recommendations against repeated reference measurements",
+    )
+    fidelity_parser.add_argument("--reference", required=True, help="reference measurement-set JSON")
+    fidelity_parser.add_argument(
+        "--proxy",
+        action="append",
+        required=True,
+        help="proxy measurement-set JSON; repeat for every proxy",
+    )
+    fidelity_parser.add_argument("--output", "-o", required=True, help="fidelity JSON artifact")
+    fidelity_parser.add_argument("--html", required=True, help="fidelity HTML report")
+    fidelity_parser.add_argument(
+        "--tie-tolerance",
+        type=float,
+        default=0.0,
+        help="absolute floor for pairwise IQR tie tolerances",
+    )
+    fidelity_parser.add_argument("--bootstrap-confidence", type=float, default=0.95)
+    fidelity_parser.add_argument("--bootstrap-resamples", type=int, default=2000)
+    fidelity_parser.add_argument("--bootstrap-seed", type=int, default=0)
+    fidelity_parser.add_argument("--minimum-replicates", type=int, default=3)
+    fidelity_parser.set_defaults(func=handlers.fidelity)
 
     verify_parser = sub.add_parser("verify-fidelity", help=argparse.SUPPRESS)
     verify_parser.add_argument("trace")

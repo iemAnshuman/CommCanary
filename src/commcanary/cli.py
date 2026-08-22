@@ -35,6 +35,7 @@ from .command_line.commands import (
     evaluate_qualification_command,
     execute_materialization_command,
     export_param_command,
+    fidelity_command,
     gate_command,
     import_kineto_command,
     materialize_qualification_command,
@@ -175,6 +176,10 @@ def _cmd_compare(args: Any) -> int:
     return compare_command(args)
 
 
+def _cmd_fidelity(args: Any) -> int:
+    return fidelity_command(args)
+
+
 def _cmd_verify_fidelity(args: Any) -> int:
     return verify_fidelity_command(args)
 
@@ -209,6 +214,7 @@ def _build_parser() -> argparse.ArgumentParser:
             compile=_cmd_compile,
             replay=_cmd_replay,
             compare=_cmd_compare,
+            fidelity=_cmd_fidelity,
             verify_fidelity=_cmd_verify_fidelity,
             verify_behavior=_cmd_verify_behavior,
             baseline=_cmd_baseline,

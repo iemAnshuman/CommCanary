@@ -50,6 +50,7 @@ from ..reporting import (
     physical_gate_sarif,
     render_physical_gate_html,
     write_compare_html,
+    write_fidelity_html,
     write_report_html,
 )
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits
@@ -61,6 +62,7 @@ from ..services import (
     import_failure_readiness_report,
     prepare_qualification_request,
     qualification_readiness_report,
+    score_fidelity,
     synthesize_behavioral_canary,
     verify_qualification_request,
 )
@@ -811,6 +813,37 @@ def compare_command(args: Any) -> int:
     return 0 if comparison["verdict"] != "fail" else 1
 
 
+def fidelity_command(args: Any) -> int:
+    reference = load_json(args.reference)
+    proxies = [load_json(path) for path in args.proxy]
+    report = score_fidelity(
+        [reference, *proxies],
+        tie_tolerance=args.tie_tolerance,
+        confidence=args.bootstrap_confidence,
+        bootstrap_resamples=args.bootstrap_resamples,
+        seed=args.bootstrap_seed,
+        minimum_replicates=args.minimum_replicates,
+    )
+    write_json(args.output, report)
+    write_fidelity_html(args.html, report)
+    print("Proxy                         Regret@1  Regret@2  Regret@3  Agreement  Disaster")
+    for row in report["proxies"]:
+        shortlists = {int(item["k"]): item for item in row["regret_at_k"]}
+        quality = row["ranking_quality"]
+        disaster = row["disaster_detection"]
+        print(
+            f"{str(row['name']):<29} "
+            f"{float(row['regret_at_1_pct']):>8.2f}% "
+            f"{float(shortlists[2]['regret_pct']):>8.2f}% "
+            f"{float(shortlists[3]['regret_pct']):>8.2f}% "
+            f"{float(quality['pairwise_decision_agreement_pct']):>8.1f}% "
+            f"{'detected' if disaster['in_bottom_quartile'] else 'MISSED'}"
+        )
+    if report["rankings_diverge"]:
+        print("Decision ranking differs from ranking-quality ranking.")
+    return EXIT_SUCCESS
+
+
 def verify_fidelity_command(args: Any) -> int:
     trace = load_json(args.trace)
     canary = load_json(args.canary)
@@ -889,6 +922,7 @@ __all__ = [
     "compare_command",
     "compile_command",
     "export_param_command",
+    "fidelity_command",
     "gate_command",
     "import_kineto_command",
     "reduce_command",
