@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Generator, Tuple
 
 CommandHandler = Callable[[Any], int]
+NEWCOMER_COMMAND_METAVAR = "{demo,capture,compile,replay,compare,gate,build,doctor}"
 
 
 @dataclass(frozen=True)
 class CommandHandlers:
+    demo: CommandHandler
     doctor: CommandHandler
     build: CommandHandler
     gate: CommandHandler
@@ -33,6 +35,24 @@ class CommandHandlers:
     verify_report: CommandHandler
     capture: CommandHandler
     report: CommandHandler
+
+
+class TopLevelHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Omit suppressed subcommands from the top-level command summary."""
+
+    def _iter_indented_subactions(self, action: argparse.Action) -> Generator[argparse.Action, None, None]:
+        for subaction in super()._iter_indented_subactions(action):
+            if subaction.help != argparse.SUPPRESS:
+                yield subaction
+
+    def _metavar_formatter(
+        self,
+        action: argparse.Action,
+        default_metavar: str,
+    ) -> Callable[[int], Tuple[str, ...]]:
+        if action.dest == "command":
+            return lambda size: (NEWCOMER_COMMAND_METAVAR,) * size
+        return super()._metavar_formatter(action, default_metavar)
 
 
 def _add_kineto_profile_arguments(parser: argparse.ArgumentParser) -> None:
@@ -79,7 +99,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     parser = argparse.ArgumentParser(
         prog="commcanary",
         description="Workload-derived communication canaries.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=TopLevelHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=version)
     parser.add_argument(
@@ -87,7 +107,20 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
         action="store_true",
         help="emit machine-readable JSON Lines diagnostics on stderr",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(
+        dest="command",
+        required=True,
+    )
+
+    demo_parser = sub.add_parser(
+        "demo",
+        help="run the bundled deterministic regression demo",
+    )
+    demo_parser.add_argument(
+        "--output-dir",
+        help="artifact directory; defaults to a new temporary directory",
+    )
+    demo_parser.set_defaults(func=handlers.demo)
 
     doctor_parser = sub.add_parser(
         "doctor",
@@ -256,13 +289,13 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     compare_parser.add_argument("--allow-mismatch", action="store_true")
     compare_parser.set_defaults(func=handlers.compare)
 
-    verify_parser = sub.add_parser("verify-fidelity", help="verify canary fidelity against a source trace")
+    verify_parser = sub.add_parser("verify-fidelity", help=argparse.SUPPRESS)
     verify_parser.add_argument("trace")
     verify_parser.add_argument("canary")
     verify_parser.add_argument("--output", "-o", required=True)
     verify_parser.set_defaults(func=handlers.verify_fidelity)
 
-    behavior_parser = sub.add_parser("verify-behavior", help="verify canary replay behavior against a source trace")
+    behavior_parser = sub.add_parser("verify-behavior", help=argparse.SUPPRESS)
     behavior_parser.add_argument("trace")
     behavior_parser.add_argument("canary")
     behavior_parser.add_argument("--output", "-o", required=True)
@@ -273,7 +306,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     behavior_parser.add_argument("--ranking-tie-tolerance-us", type=float, default=0.001)
     behavior_parser.set_defaults(func=handlers.verify_behavior)
 
-    baseline_parser = sub.add_parser("baseline", help="generate research baseline traces for comparison experiments")
+    baseline_parser = sub.add_parser("baseline", help=argparse.SUPPRESS)
     baseline_parser.add_argument("trace")
     baseline_parser.add_argument("--output", "-o", required=True)
     baseline_parser.add_argument(
@@ -299,7 +332,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     reduce_parser = sub.add_parser(
         "reduce",
-        help="ddmin-style decision-preserving event reduction (research baseline)",
+        help=argparse.SUPPRESS,
     )
     reduce_parser.add_argument("trace")
     reduce_parser.add_argument("--output", "-o", required=True)
@@ -315,7 +348,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     import_parser = sub.add_parser(
         "import-kineto",
-        help="import record_param_comms collectives from a PyTorch Kineto profiler trace",
+        help=argparse.SUPPRESS,
     )
     _add_kineto_profile_arguments(import_parser)
     import_parser.add_argument("--output", "-o", required=True)
@@ -336,7 +369,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     qualification_parser = sub.add_parser(
         "prepare-qualification",
-        help="prepare a source-verified portable owner-to-lab qualification request",
+        help=argparse.SUPPRESS,
     )
     _add_kineto_profile_arguments(qualification_parser)
     qualification_parser.add_argument(
@@ -355,14 +388,14 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     qualification_verify_parser = sub.add_parser(
         "verify-qualification",
-        help="independently verify a portable qualification request directory",
+        help=argparse.SUPPRESS,
     )
     qualification_verify_parser.add_argument("bundle_directory")
     qualification_verify_parser.set_defaults(func=handlers.verify_qualification)
 
     qualification_materialize_parser = sub.add_parser(
         "materialize-qualification",
-        help="materialize deterministic exact rank-local work from a verified request",
+        help=argparse.SUPPRESS,
     )
     qualification_materialize_parser.add_argument("bundle_directory")
     qualification_materialize_parser.add_argument("--output-directory", "-o", required=True)
@@ -370,7 +403,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     materialization_verify_parser = sub.add_parser(
         "verify-materialization",
-        help="recompute a qualification materialization from its verified request",
+        help=argparse.SUPPRESS,
     )
     materialization_verify_parser.add_argument("bundle_directory")
     materialization_verify_parser.add_argument("materialization_directory")
@@ -378,7 +411,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     materialization_execute_parser = sub.add_parser(
         "execute-materialization",
-        help="run a verified materialization with the unvalidated torch.distributed reference executor",
+        help=argparse.SUPPRESS,
     )
     materialization_execute_parser.add_argument("bundle_directory")
     materialization_execute_parser.add_argument("materialization_directory")
@@ -405,14 +438,14 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     policy_verify_parser = sub.add_parser(
         "verify-policy",
-        help="validate a predeclared physical qualification policy",
+        help=argparse.SUPPRESS,
     )
     policy_verify_parser.add_argument("policy")
     policy_verify_parser.set_defaults(func=handlers.verify_policy)
 
     qualification_evaluate_parser = sub.add_parser(
         "evaluate-qualification",
-        help="apply a bound policy to baseline and candidate physical observations",
+        help=argparse.SUPPRESS,
     )
     qualification_evaluate_parser.add_argument("policy")
     qualification_evaluate_parser.add_argument("baseline_observation")
@@ -422,7 +455,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
 
     export_parser = sub.add_parser(
         "export-param",
-        help="export the legacy PARAM-basic-derived JSON encoding (not current upstream PARAM)",
+        help=argparse.SUPPRESS,
     )
     export_parser.add_argument("canary")
     export_parser.add_argument("--output", "-o", required=True)
@@ -464,7 +497,7 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     )
     export_parser.set_defaults(func=handlers.export_param)
 
-    report_verify_parser = sub.add_parser("verify-report", help="recompute a report from a canary and backend settings")
+    report_verify_parser = sub.add_parser("verify-report", help=argparse.SUPPRESS)
     report_verify_parser.add_argument("report")
     report_verify_parser.add_argument("canary")
     report_verify_parser.add_argument("--output", "-o", required=True)
@@ -495,12 +528,12 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     capture_parser.add_argument("command", nargs=argparse.REMAINDER)
     capture_parser.set_defaults(func=handlers.capture)
 
-    render_parser = sub.add_parser("render-html", help="render an existing JSON report as standalone HTML")
+    render_parser = sub.add_parser("render-html", help=argparse.SUPPRESS)
     render_parser.add_argument("report")
     render_parser.add_argument("--output", "-o", required=True)
     render_parser.set_defaults(func=handlers.report, deprecated_report_alias=False)
 
-    report_parser = sub.add_parser("report", help="deprecated alias for render-html")
+    report_parser = sub.add_parser("report", help=argparse.SUPPRESS)
     report_parser.add_argument("report")
     report_parser.add_argument("--output", "-o", required=True)
     report_parser.set_defaults(func=handlers.report, deprecated_report_alias=True)
@@ -508,4 +541,4 @@ def build_parser(*, handlers: CommandHandlers, version: str) -> argparse.Argumen
     return parser
 
 
-__all__ = ["CommandHandler", "CommandHandlers", "build_parser"]
+__all__ = ["CommandHandler", "CommandHandlers", "TopLevelHelpFormatter", "build_parser"]
