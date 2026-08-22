@@ -35,11 +35,7 @@ jobs:
       - name: Build demo site
         run: |
           mkdir -p site
-          python -m commcanary compile examples/traces/llama70b_tp8_trace.json -o site/workload.canary.json
-          python -m commcanary replay site/workload.canary.json -o site/baseline.report.json --html site/baseline.report.html --include-samples
-          python -m commcanary replay site/workload.canary.json -o site/candidate.report.json --html site/candidate.report.html --latency-floor-us 12 --include-samples
-          # compare exits 1 on the demo's intentional fail verdict; anything else is a real error
-          python -m commcanary compare site/baseline.report.json site/candidate.report.json -o site/comparison.json --html site/comparison.html || [ "$?" -eq 1 ]
+          python -m commcanary demo --output-dir site
           test -s site/comparison.html
           cp docs/demo/index.html site/index.html
           cp -R schemas site/schemas
