@@ -30,6 +30,7 @@ from .command_line.commands import (
     build_command,
     compare_command,
     compile_command,
+    demo_command,
     doctor_command,
     evaluate_qualification_command,
     execute_materialization_command,
@@ -100,6 +101,10 @@ def _cmd_compile(args: Any) -> int:
         diagnostic_emitter=_emit_diagnostic,
         elapsed_clock=_elapsed_seconds,
     )
+
+
+def _cmd_demo(args: Any) -> int:
+    return demo_command(args)
 
 
 def _cmd_build(args: Any) -> int:
@@ -197,6 +202,7 @@ def _cmd_report(args: Any) -> int:
 def _build_parser() -> argparse.ArgumentParser:
     return build_parser(
         handlers=CommandHandlers(
+            demo=_cmd_demo,
             doctor=_cmd_doctor,
             build=_cmd_build,
             gate=_cmd_gate,

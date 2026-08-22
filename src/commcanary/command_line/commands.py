@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 from dataclasses import replace
+from importlib import resources
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 
 from ..adapters.chakra_capture import commcanary_trace_to_chakra
@@ -74,6 +77,57 @@ from .codes import EXIT_NEGATIVE_RESULT, EXIT_SUCCESS
 DiagnosticEmitter = Callable[..., None]
 ElapsedClock = Callable[[float], float]
 AblationSplitter = Callable[[List[str]], List[str]]
+
+DEMO_TRACE_NAME = "llama70b_tp8_trace.json"
+
+
+def _load_demo_trace() -> JsonDict:
+    try:
+        resource = resources.files("commcanary.demo_data").joinpath(DEMO_TRACE_NAME)
+        if resource.is_file():
+            with resources.as_file(resource) as resource_path:
+                return load_json(str(resource_path))
+    except (FileNotFoundError, ModuleNotFoundError):
+        pass
+    source_path = Path(__file__).resolve().parents[3] / "examples" / "traces" / DEMO_TRACE_NAME
+    return load_json(str(source_path))
+
+
+def demo_command(args: Any) -> int:
+    output_directory = (
+        Path(tempfile.mkdtemp(prefix="commcanary-demo-"))
+        if args.output_dir is None
+        else Path(args.output_dir).expanduser().resolve()
+    )
+    canary_path = output_directory / "workload.canary.json"
+    baseline_path = output_directory / "baseline.report.json"
+    baseline_html_path = output_directory / "baseline.report.html"
+    candidate_path = output_directory / "candidate.report.json"
+    candidate_html_path = output_directory / "candidate.report.html"
+    comparison_path = output_directory / "comparison.json"
+    comparison_html_path = output_directory / "comparison.html"
+
+    trace = _load_demo_trace()
+    canary = compile_trace(trace)
+    baseline = replay_canary(canary, include_samples=True)
+    candidate = replay_canary(canary, latency_floor_us=12.0, include_samples=True)
+    comparison = compare_reports(baseline, candidate)
+    if comparison["verdict"] != "fail":
+        raise CommCanaryError("bundled demo did not produce its expected regression verdict")
+
+    write_json(str(canary_path), canary)
+    write_json(str(baseline_path), baseline)
+    write_report_html(str(baseline_html_path), baseline)
+    write_json(str(candidate_path), candidate)
+    write_report_html(str(candidate_html_path), candidate)
+    write_json(str(comparison_path), comparison)
+    write_compare_html(str(comparison_html_path), comparison)
+
+    print(f"Compared {DEMO_TRACE_NAME}: baseline latency floor 7.5 us versus candidate 12 us.")
+    print(f"Comparison verdict: {comparison['verdict']} (intentional demo regression).")
+    print("This is a deterministic simulator over a bundled example trace, not physical evidence.")
+    print(comparison_html_path)
+    return EXIT_SUCCESS
 
 
 def build_command(args: Any) -> int:
