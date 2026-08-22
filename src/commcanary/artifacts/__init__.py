@@ -32,6 +32,7 @@ from .io import (
     atomic_write_text,
 )
 from .json_codec import canonical_json_bytes, formatted_json_bytes
+from .measurement_set import validate_measurement_set
 from .qualification import (
     QUALIFICATION_ARTIFACT_FORMATS,
     QUALIFICATION_ARTIFACT_FORMATS_V1,
@@ -153,6 +154,7 @@ __all__ = [
     "qualification_verdict_sha256",
     "require_format",
     "validate_canary",
+    "validate_measurement_set",
     "validate_comparison",
     "validate_report",
     "validate_qualification_request",
