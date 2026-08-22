@@ -15,6 +15,7 @@ from commcanary.replay import SIMULATION_MODEL_VERSION
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "contracts"
 COMMANDS = (
+    "demo",
     "build",
     "gate",
     "compile",
@@ -146,10 +147,11 @@ def test_every_subcommand_has_help_and_usage_contract(command: str) -> None:
     assert help_result.stdout.startswith(f"usage: commcanary {command}")
     assert help_result.stderr == ""
 
-    usage_result = _run_cli([command])
-    assert usage_result.returncode == 2
-    assert usage_result.stderr.startswith(f"usage: commcanary {command}")
-    assert "Traceback" not in usage_result.stderr
+    if command != "demo":
+        usage_result = _run_cli([command])
+        assert usage_result.returncode == 2
+        assert usage_result.stderr.startswith(f"usage: commcanary {command}")
+        assert "Traceback" not in usage_result.stderr
 
 
 @pytest.mark.parametrize(

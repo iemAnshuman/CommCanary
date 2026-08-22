@@ -38,6 +38,7 @@ def test_legacy_cli_surface_and_private_handler_signatures_are_preserved() -> No
     assert list(inspect.signature(legacy_cli._build_parser).parameters) == []
     for name in (
         "_cmd_compile",
+        "_cmd_demo",
         "_cmd_baseline",
         "_cmd_reduce",
         "_cmd_import_kineto",
@@ -61,6 +62,7 @@ def test_legacy_cli_surface_and_private_handler_signatures_are_preserved() -> No
 def test_cli_responsibilities_live_in_distinct_modules() -> None:
     assert _definitions(COMMAND_LINE / "parser.py") == {
         "CommandHandlers",
+        "TopLevelHelpFormatter",
         "_add_kineto_profile_arguments",
         "build_parser",
     }

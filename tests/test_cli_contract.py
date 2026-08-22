@@ -17,6 +17,7 @@ from commcanary.cli import (
     _build_parser,
     main,
 )
+from commcanary.command_line import commands as commands_module
 from commcanary.formats import CANONICAL_JSON_VERSION, format_capabilities
 from commcanary.replay import SIMULATION_MODEL_VERSION
 from commcanary.version import __version__
@@ -48,18 +49,24 @@ def test_version_reports_package_formats_canonicalization_and_model(
         assert capability.format_id in output
 
 
-def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture[str]) -> None:
+def test_help_lists_only_the_newcomer_command_surface(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as raised:
         _build_parser().parse_args(["--help"])
 
     assert raised.value.code == EXIT_SUCCESS
     output = capsys.readouterr().out
     for command in (
-        "build",
-        "gate",
+        "demo",
+        "capture",
         "compile",
         "replay",
         "compare",
+        "gate",
+        "build",
+        "doctor",
+    ):
+        assert f"    {command}" in output
+    for command in (
         "verify-fidelity",
         "verify-behavior",
         "baseline",
@@ -74,11 +81,55 @@ def test_help_lists_the_documented_command_surface(capsys: pytest.CaptureFixture
         "evaluate-qualification",
         "export-param",
         "verify-report",
-        "capture",
         "render-html",
         "report",
     ):
-        assert command in output
+        assert f"    {command}" not in output
+
+
+def test_demo_succeeds_without_options_and_writes_readable_html(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_directory = tmp_path / "generated-demo"
+
+    def make_demo_directory(*, prefix: str) -> str:
+        assert prefix == "commcanary-demo-"
+        output_directory.mkdir()
+        return str(output_directory)
+
+    monkeypatch.setattr(commands_module.tempfile, "mkdtemp", make_demo_directory)
+
+    assert main(["demo"]) == EXIT_SUCCESS
+    captured = capsys.readouterr()
+    report_path = Path(captured.out.splitlines()[-1])
+    html = report_path.read_text(encoding="utf-8")
+
+    assert captured.err == ""
+    assert "Comparison verdict: fail" in captured.out
+    assert "deterministic simulator" in captured.out
+    assert report_path == output_directory / "comparison.html"
+    assert "CommCanary Compare" in html
+    assert "Comparison FAIL" in html
+
+
+def test_demo_trace_package_data_matches_source_and_has_a_source_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_path = Path(__file__).parents[1] / "examples" / "traces" / commands_module.DEMO_TRACE_NAME
+    resource = commands_module.resources.files("commcanary.demo_data").joinpath(commands_module.DEMO_TRACE_NAME)
+    assert resource.read_bytes() == source_path.read_bytes()
+
+    def missing_package_data(_package: str) -> object:
+        raise ModuleNotFoundError("package data unavailable")
+
+    source_module = Path(__file__).parents[1] / "src" / "commcanary" / "command_line" / "commands.py"
+    monkeypatch.setattr(commands_module, "__file__", str(source_module))
+    monkeypatch.setattr(commands_module.resources, "files", missing_package_data)
+
+    trace = commands_module._load_demo_trace()
+    assert trace["workload"]["name"] == "llama70b-tp8-synthetic"
 
 
 def test_execute_materialization_parser_binds_a_bounded_distributed_timeout() -> None:
@@ -225,6 +276,8 @@ def test_render_html_is_primary_and_report_alias_is_deprecated(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    assert "    render-html" not in _build_parser().format_help()
+
     report = Path(__file__).parent / "fixtures" / "contracts" / "report.valid.json"
     primary = tmp_path / "primary.html"
     compatible = tmp_path / "compatible.html"
