@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
 BOUNDARY_PREFIXES: Tuple[Tuple[str, str], ...] = (
     ("commcanary.artifacts", "artifacts"),
+    ("commcanary.demo_data", "artifacts"),
     ("commcanary.schemas", "artifacts"),
     ("commcanary.operation_identity", "artifacts"),
     ("commcanary.behavior_config", "artifacts"),

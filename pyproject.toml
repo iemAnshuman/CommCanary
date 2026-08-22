@@ -69,7 +69,7 @@ commcanary = "commcanary.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-commcanary = ["py.typed", "schemas/*.json"]
+commcanary = ["demo_data/*.json", "py.typed", "schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
