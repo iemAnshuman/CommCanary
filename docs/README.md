@@ -30,4 +30,3 @@ Use this index to find the document that matches the work at hand.
 
 - [Integrity and claim dimensions](integrity.md): Assurance states and the properties each verification path demonstrates.
 - [Metadata privacy and redaction](privacy.md): Disclosure risks, redaction boundaries, and review guidance.
-

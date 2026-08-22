@@ -41,4 +41,3 @@ body:
     attributes:
       label: Additional context
       description: Add logs, tracebacks, or other details that may help isolate the problem.
-

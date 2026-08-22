@@ -3,4 +3,3 @@ contact_links:
   - name: Report a security vulnerability
     url: https://github.com/iemAnshuman/commcanary/security/advisories/new
     about: Report suspected vulnerabilities through GitHub's private reporting flow.
-

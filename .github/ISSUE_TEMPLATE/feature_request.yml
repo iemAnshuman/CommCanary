@@ -22,4 +22,3 @@ body:
     attributes:
       label: Supporting context
       description: Add examples, constraints, or evidence that would help evaluate the request.
-

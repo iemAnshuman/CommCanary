@@ -14,4 +14,3 @@ Describe the behavior or contract changed and the evidence that checks it.
 ## Compatibility and risk
 
 Describe compatibility, privacy, resource, and performance consequences. Write "None" where a category is unaffected.
-
