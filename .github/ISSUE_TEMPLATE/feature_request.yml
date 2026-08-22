@@ -1,0 +1,25 @@
+name: Feature request
+description: Propose a change to CommCanary's supported behavior or contracts.
+title: "[Feature] "
+labels: []
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem should this solve?
+      description: Describe the use case and the current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the behavior or contract you would like CommCanary to provide.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting context
+      description: Add examples, constraints, or evidence that would help evaluate the request.
+

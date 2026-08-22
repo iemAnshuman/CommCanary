@@ -37,6 +37,14 @@ Do not rely on `PYTHONPATH=src`; it can hide packaging failures. Do not commit
 caches, generated benchmark data, experiment raw results, build directories, or
 editable-install metadata.
 
+## Documentation claims
+
+Every claim added to documentation must have a corresponding entry in
+[`claims/public-claims.yaml`](claims/public-claims.yaml) with cited evidence.
+Keep the claim's scope, status, and qualification consistent with that registry;
+do not promote a claim that is listed as qualified only after evidence or
+forbidden.
+
 ## Change discipline
 
 - Fix or characterize behavior before moving its implementation.
@@ -75,4 +83,3 @@ part of the contract. Do not mix unrelated formatting and semantic changes.
 Do not open a public issue for a suspected vulnerability, unsafe parser case,
 path escape, denial-of-service vector, or disclosure of sensitive trace
 metadata. Follow [SECURITY.md](SECURITY.md).
-

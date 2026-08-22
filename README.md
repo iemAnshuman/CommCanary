@@ -9,14 +9,27 @@ across four A100s, against the real workload over 28 configuration pairs:
 
 | proxy | pair agreement | Kendall τ‑b |
 |---|---:|---:|
-| `W-shared-overlap` — replay carrying compute/communication concurrency | **71.4%** | **0.708** |
+| `W-shared-overlap` — shared-trace overlap replay | **71.4%** | **0.708** |
 | `W-micro` — an isolated microbenchmark, the `nccl-tests` analogue | 64.3% | 0.490 |
 | `W-canary` — faithful communication-only replay | **57.1%** | **0.204** |
+| `W-canary-overlap` — per-configuration overlap replay | 53.6% | 0.677 |
 
-Replaying the communication exactly is *not* enough. Only replay that reproduces
-compute/communication **concurrency** beats the microbenchmark — and only it
-ranks the workload's genuinely worst configuration last, which is the failure
-that started this work.
+Replaying the communication exactly is *not* enough. Communication-only replay
+scores below the microbenchmark it was built to replace, and ranks
+`nccl-2.20.5-tree-ll` — the full workload's worst configuration, +38% against
+the best — as second best. Only overlap-bearing replay beats the microbenchmark,
+**and it still disagrees on 8 of 28 pairs.**
+
+The fourth row is the honest complication: `W-canary-overlap` carries overlap and
+still lands last on agreement. Its medians span 144–178 µs, producing 13 policy
+ties that the agreement metric counts as disagreement and Kendall τ does not —
+which is why its τ of 0.677 sits far above its agreement.
+
+What this supports is a **decomposition of which trace properties carry a ranking
+decision**. It is not decision preservation, and it is not a cost argument: at
+this workload size the proxies are not cheaper, with median per-cell wall time of
+7.9 s for the full workload against 17.2 s for communication-only replay and
+11.4 s for overlap replay.
 
 This generalises past CommCanary. Chakra replay, ASTRA-sim, AICB/SimAI and PARAM
 comms-replay all replay communication. This data says communication alone is not
