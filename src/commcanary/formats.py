@@ -43,6 +43,7 @@ APPLICATION_MEASUREMENT_FORMAT = "commcanary.application_measurement.v1"
 APPLICATION_ORACLE_FORMAT = "commcanary.application_oracle.v1"
 APPLICATION_EVIDENCE_SET_FORMAT = "commcanary.application_evidence_set.v1"
 ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT = "commcanary.active_physical_study_ledger.v1"
+MEASUREMENT_SET_FORMAT = "commcanary.measurement_set.v1"
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,15 @@ class FormatCapability:
 
 
 FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
+    FormatCapability(
+        artifact="measurement_set",
+        format_id=MEASUREMENT_SET_FORMAT,
+        schema="schemas/commcanary.measurement_set.v1.schema.json",
+        read=True,
+        write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
     FormatCapability(
         artifact="trace",
         format_id=TRACE_FORMAT,
@@ -310,6 +320,7 @@ __all__ = [
     "FIDELITY_VERIFICATION_FORMAT",
     "FORMAT_CAPABILITIES",
     "FormatCapability",
+    "MEASUREMENT_SET_FORMAT",
     "PHYSICAL_CANARY_POLICY_FORMAT",
     "PHYSICAL_DECISION_CANARY_FORMAT",
     "PHYSICAL_EXECUTION_MEASUREMENT_FORMAT",

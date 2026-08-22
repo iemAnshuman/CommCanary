@@ -17,6 +17,7 @@ from commcanary.formats import (
     CHAKRA_PROJECTION_FORMAT,
     COMPARE_FORMAT,
     FIDELITY_VERIFICATION_FORMAT,
+    MEASUREMENT_SET_FORMAT,
     PHYSICAL_CANARY_POLICY_FORMAT,
     PHYSICAL_DECISION_CANARY_FORMAT,
     PHYSICAL_EXECUTION_EVIDENCE_SET_FORMAT,
@@ -42,6 +43,7 @@ def test_format_capabilities_are_exact_unique_and_immutable() -> None:
     capabilities = format_capabilities()
     expected = {
         ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT,
+        MEASUREMENT_SET_FORMAT,
         APPLICATION_EVIDENCE_SET_FORMAT,
         APPLICATION_MEASUREMENT_FORMAT,
         APPLICATION_ORACLE_FORMAT,
