@@ -61,6 +61,7 @@ def test_help_lists_only_the_newcomer_command_surface(capsys: pytest.CaptureFixt
         "compile",
         "replay",
         "compare",
+        "fidelity",
         "gate",
         "build",
         "doctor",

@@ -87,6 +87,7 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
         "FIDELITY_VERIFICATION_FORMAT",
         "FORMAT_CAPABILITIES",
         "FormatCapability",
+        "MEASUREMENT_SET_FORMAT",
         "PHYSICAL_CANARY_POLICY_FORMAT",
         "PHYSICAL_DECISION_CANARY_FORMAT",
         "PHYSICAL_EXECUTION_MEASUREMENT_FORMAT",
@@ -113,9 +114,9 @@ def test_top_level_and_format_module_exports_are_golden() -> None:
 def test_capability_query_matches_published_schema_files_and_is_immutable() -> None:
     capabilities = format_capabilities()
     assert capabilities is format_capabilities()
-    assert len(capabilities) == 25
-    assert len({capability.artifact for capability in capabilities}) == 25
-    assert len({capability.format_id for capability in capabilities}) == 25
+    assert len(capabilities) == 26
+    assert len({capability.artifact for capability in capabilities}) == 26
+    assert len({capability.format_id for capability in capabilities}) == 26
     for capability in capabilities:
         schema_path = ROOT / capability.schema
         assert schema_path.is_file()

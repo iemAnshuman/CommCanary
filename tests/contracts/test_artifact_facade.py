@@ -159,6 +159,7 @@ ARTIFACT_PUBLIC_EXPORTS = [
     "qualification_verdict_sha256",
     "require_format",
     "validate_canary",
+    "validate_measurement_set",
     "validate_comparison",
     "validate_report",
     "validate_qualification_request",

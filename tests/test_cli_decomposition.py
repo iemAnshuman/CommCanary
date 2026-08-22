@@ -43,6 +43,7 @@ def test_legacy_cli_surface_and_private_handler_signatures_are_preserved() -> No
         "_cmd_reduce",
         "_cmd_import_kineto",
         "_cmd_export_param",
+        "_cmd_fidelity",
         "_cmd_prepare_qualification",
         "_cmd_verify_qualification",
         "_cmd_materialize_qualification",

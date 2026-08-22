@@ -21,6 +21,7 @@ COMMANDS = (
     "compile",
     "replay",
     "compare",
+    "fidelity",
     "verify-fidelity",
     "verify-behavior",
     "baseline",
@@ -160,6 +161,17 @@ def test_every_subcommand_has_help_and_usage_contract(command: str) -> None:
         ("compile", "{missing}", "--output", "{output}"),
         ("replay", "{missing}", "--output", "{output}"),
         ("compare", "{missing}", "{missing2}", "--output", "{output}"),
+        (
+            "fidelity",
+            "--reference",
+            "{missing}",
+            "--proxy",
+            "{missing2}",
+            "--output",
+            "{output}",
+            "--html",
+            "{output2}",
+        ),
         ("verify-fidelity", "{missing}", "{missing2}", "--output", "{output}"),
         ("verify-behavior", "{missing}", "{missing2}", "--output", "{output}"),
         ("baseline", "{missing}", "--method", "frequency", "--output", "{output}"),
@@ -188,6 +200,7 @@ def test_path_consuming_commands_map_missing_inputs_to_application_error(
         "{missing}": str(tmp_path / "missing-a.json"),
         "{missing2}": str(tmp_path / "missing-b.json"),
         "{output}": str(tmp_path / "output.json"),
+        "{output2}": str(tmp_path / "output.html"),
     }
     rendered = [replacements.get(argument, argument) for argument in arguments]
 

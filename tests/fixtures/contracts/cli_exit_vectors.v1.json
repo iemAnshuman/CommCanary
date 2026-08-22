@@ -36,6 +36,7 @@
         "canonicalization: commcanary.canonical-json.v1",
         "replay-model: deterministic-scheduler-v4",
         "formats:",
+        "  measurement_set: commcanary.measurement_set.v1",
         "  trace: commcanary.trace.v1",
         "  canary: commcanary.canary.v2",
         "  report: commcanary.report.v2",
