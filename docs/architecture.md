@@ -100,19 +100,23 @@ outputs are detached snapshots. Semantic hashes exclude only documented
 volatile/self-referential fields; clocks, files, environment, subprocesses, and
 progress live outside the functional core.
 
-## Compatibility facades
+## Public import facades
 
-The historical modules `schema`, `compiler`, `compare`, `capture`, `interop`,
-`html_report`, `reduce`, and `cli`, plus the historical `replay` package surface,
-preserve documented imports during the 0.3 compatibility window. They contain
-wiring, aliases, and explicitly characterized monkeypatch seams—not parallel
-implementations. Tests assert facade object identity and dependency ownership. New
-packages import `artifacts` or the owning engine directly and never route back
+The top-level modules `schema`, `compiler`, `compare`, `capture`, `interop`,
+`html_report`, `reduce`, and `cli`, plus the `replay` package surface, are the
+short import paths the user documentation teaches: `docs/api.md`, the
+examples, the benchmarks, and the `capture` command's own error message all
+point at them, and `from commcanary.capture import record_collective` is how a
+workload is instrumented. They contain wiring, aliases, and explicitly
+characterized monkeypatch seams, not parallel implementations. Tests assert
+facade object identity and dependency ownership. Code inside the package
+imports `artifacts` or the owning engine directly and never routes back
 through a facade.
 
-Normal stable-API removals receive at least one released minor version of
-deprecation. Wire-format compatibility remains governed separately by exact
-format IDs and the compatibility matrix.
+No version has been released, so no external user depends on an older layout.
+Once 0.3.0 is released, removing or renaming one of these paths needs at least
+one released minor version of deprecation. Wire-format compatibility remains
+governed separately by exact format IDs and the compatibility matrix.
 
 ## Extension points
 
