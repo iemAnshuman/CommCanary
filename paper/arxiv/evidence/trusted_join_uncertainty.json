@@ -1,0 +1,336 @@
+{
+  "all_configurations": {
+    "agreement": {
+      "W-canary": {
+        "interval_95": [
+          12.0,
+          17.0
+        ],
+        "point": 16
+      },
+      "W-canary-overlap": {
+        "interval_95": [
+          8.0,
+          21.0
+        ],
+        "point": 15
+      },
+      "W-micro": {
+        "interval_95": [
+          17.0,
+          20.0
+        ],
+        "point": 18
+      },
+      "W-shared-overlap": {
+        "interval_95": [
+          18.0,
+          23.0
+        ],
+        "point": 20
+      }
+    },
+    "differences": [
+      {
+        "comparison": "W-canary minus W-micro",
+        "interval_95": [
+          -7.0,
+          -1.0
+        ],
+        "point": -2,
+        "share_of_draws_at_zero": 0.02,
+        "share_of_draws_below_zero": 0.98
+      },
+      {
+        "comparison": "W-canary-overlap minus W-canary",
+        "interval_95": [
+          -7.0,
+          6.0
+        ],
+        "point": -1,
+        "share_of_draws_at_zero": 0.128,
+        "share_of_draws_below_zero": 0.347
+      },
+      {
+        "comparison": "W-shared-overlap minus W-micro",
+        "interval_95": [
+          -1.0,
+          5.0
+        ],
+        "point": 2,
+        "share_of_draws_at_zero": 0.149,
+        "share_of_draws_below_zero": 0.069
+      },
+      {
+        "comparison": "W-shared-overlap minus W-canary",
+        "interval_95": [
+          2.0,
+          9.0
+        ],
+        "point": 4,
+        "share_of_draws_at_zero": 0.001,
+        "share_of_draws_below_zero": 0.0
+      }
+    ],
+    "pairs": 28,
+    "reference_labels_kept_in_under_95pct_of_draws": [
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-ring-ll128",
+        "share_of_draws_keeping_label": 0.466
+      },
+      {
+        "pair": "nccl-2.20.5-default|nccl-2.20.5-ring-ll128",
+        "share_of_draws_keeping_label": 0.643
+      },
+      {
+        "pair": "nccl-2.20.5-ring-ll|nccl-2.20.5-ring-simple",
+        "share_of_draws_keeping_label": 0.885
+      },
+      {
+        "pair": "nccl-2.20.5-default|nccl-2.20.5-ring-ll",
+        "share_of_draws_keeping_label": 0.905
+      },
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-default",
+        "share_of_draws_keeping_label": 0.908
+      },
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-ring-ll",
+        "share_of_draws_keeping_label": 0.908
+      }
+    ]
+  },
+  "exact_work_gate_agreement": {
+    "exact_work": 26,
+    "isolated": 19,
+    "no_overlap": 18,
+    "no_rank_skew": 24,
+    "stratified": 10
+  },
+  "excluding": {
+    "agreement": {
+      "W-canary": {
+        "interval_95": [
+          11.0,
+          16.0
+        ],
+        "point": 15
+      },
+      "W-canary-overlap": {
+        "interval_95": [
+          5.0,
+          14.0
+        ],
+        "point": 8
+      },
+      "W-micro": {
+        "interval_95": [
+          12.0,
+          15.0
+        ],
+        "point": 13
+      },
+      "W-shared-overlap": {
+        "interval_95": [
+          11.0,
+          16.0
+        ],
+        "point": 13
+      }
+    },
+    "configuration": "nccl-2.20.5-tree-ll",
+    "differences": [
+      {
+        "comparison": "W-canary minus W-micro",
+        "interval_95": [
+          -3.0,
+          4.0
+        ],
+        "point": 2,
+        "share_of_draws_at_zero": 0.164,
+        "share_of_draws_below_zero": 0.327
+      },
+      {
+        "comparison": "W-canary-overlap minus W-canary",
+        "interval_95": [
+          -10.0,
+          1.0
+        ],
+        "point": -7,
+        "share_of_draws_at_zero": 0.032,
+        "share_of_draws_below_zero": 0.941
+      },
+      {
+        "comparison": "W-shared-overlap minus W-micro",
+        "interval_95": [
+          -3.0,
+          3.0
+        ],
+        "point": 0,
+        "share_of_draws_at_zero": 0.253,
+        "share_of_draws_below_zero": 0.447
+      },
+      {
+        "comparison": "W-shared-overlap minus W-canary",
+        "interval_95": [
+          -4.0,
+          3.0
+        ],
+        "point": -2,
+        "share_of_draws_at_zero": 0.188,
+        "share_of_draws_below_zero": 0.573
+      }
+    ],
+    "pairs": 21,
+    "reference_labels_kept_in_under_95pct_of_draws": [
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-ring-ll128",
+        "share_of_draws_keeping_label": 0.462
+      },
+      {
+        "pair": "nccl-2.20.5-default|nccl-2.20.5-ring-ll128",
+        "share_of_draws_keeping_label": 0.642
+      },
+      {
+        "pair": "nccl-2.20.5-ring-ll|nccl-2.20.5-ring-simple",
+        "share_of_draws_keeping_label": 0.881
+      },
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-ring-ll",
+        "share_of_draws_keeping_label": 0.901
+      },
+      {
+        "pair": "nccl-2.20.5-default|nccl-2.20.5-ring-ll",
+        "share_of_draws_keeping_label": 0.901
+      },
+      {
+        "pair": "nccl-2.19.3-default|nccl-2.20.5-default",
+        "share_of_draws_keeping_label": 0.902
+      }
+    ]
+  },
+  "inputs": {
+    "experiments/rostam/results/publications/decision-gate-20260801-r3-analysis-1300d12-primary/decision-fidelity-verdict.json": "3da7a5bf1af833276af84f448f9278f9e2bac1b0e7bdee5a1c365bb0a4dce29a",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.csv": "b5ff79a23abaf8bb5c5260c9c30ddef88858c82ce47c859d623d50f911af1257",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json": "7a43e57ec4576f2f67e74d419bd793b6c639eccaec01fbdf769bdc0946220e2f"
+  },
+  "ll_protocol_ranks": {
+    "nccl-2.20.5-ring-ll": {
+      "W-canary": 1,
+      "W-canary-overlap": 5,
+      "W-full": 5,
+      "W-micro": 1,
+      "W-shared-overlap": 5
+    },
+    "nccl-2.20.5-tree-ll": {
+      "W-canary": 2,
+      "W-canary-overlap": 8,
+      "W-full": 8,
+      "W-micro": 6,
+      "W-shared-overlap": 8
+    }
+  },
+  "method": {
+    "caveat": "five repetitions per cell make this bootstrap optimistic; read intervals as lower bounds on uncertainty",
+    "draws": 4000,
+    "interval": "percentile, 95%",
+    "resampling": "each cell's selected repetitions resampled with replacement, independently per cell",
+    "rule": "median and Tukey-hinge IQR over selected repetitions; tie when |median difference| < max IQR",
+    "seed": 20260919
+  },
+  "published_label_structure": {
+    "W-canary": {
+      "agree": 16,
+      "both_tie": 2,
+      "concordant": 14,
+      "discordant": 9,
+      "ties_reference_only": 2,
+      "ties_workload_only": 1
+    },
+    "W-canary-overlap": {
+      "agree": 15,
+      "both_tie": 4,
+      "concordant": 11,
+      "discordant": 0,
+      "ties_reference_only": 0,
+      "ties_workload_only": 13
+    },
+    "W-micro": {
+      "agree": 18,
+      "both_tie": 1,
+      "concordant": 17,
+      "discordant": 5,
+      "ties_reference_only": 3,
+      "ties_workload_only": 2
+    },
+    "W-shared-overlap": {
+      "agree": 20,
+      "both_tie": 1,
+      "concordant": 19,
+      "discordant": 2,
+      "ties_reference_only": 3,
+      "ties_workload_only": 3
+    }
+  },
+  "schema": "commcanary.paper.trusted_join_uncertainty.v1",
+  "stability": {
+    "exact_work_gate_limit_pct": 20.0,
+    "largest": {
+      "configuration": "nccl-2.20.5-tree-ll",
+      "relative_iqr_pct": 10.06,
+      "workload": "W-canary-overlap"
+    },
+    "relative_iqr_pct": {
+      "W-canary": {
+        "nccl-2.19.3-default": 1.04,
+        "nccl-2.20.5-default": 1.25,
+        "nccl-2.20.5-ring-ll": 1.02,
+        "nccl-2.20.5-ring-ll128": 2.65,
+        "nccl-2.20.5-ring-simple": 1.6,
+        "nccl-2.20.5-tree-ll": 0.87,
+        "nccl-2.20.5-tree-ll128": 4.98,
+        "nccl-2.20.5-tree-simple": 3.64
+      },
+      "W-canary-overlap": {
+        "nccl-2.19.3-default": 6.69,
+        "nccl-2.20.5-default": 0.7,
+        "nccl-2.20.5-ring-ll": 4.2,
+        "nccl-2.20.5-ring-ll128": 7.09,
+        "nccl-2.20.5-ring-simple": 8.87,
+        "nccl-2.20.5-tree-ll": 10.06,
+        "nccl-2.20.5-tree-ll128": 3.97,
+        "nccl-2.20.5-tree-simple": 1.36
+      },
+      "W-full": {
+        "nccl-2.19.3-default": 0.14,
+        "nccl-2.20.5-default": 0.51,
+        "nccl-2.20.5-ring-ll": 1.98,
+        "nccl-2.20.5-ring-ll128": 0.49,
+        "nccl-2.20.5-ring-simple": 0.32,
+        "nccl-2.20.5-tree-ll": 7.25,
+        "nccl-2.20.5-tree-ll128": 0.34,
+        "nccl-2.20.5-tree-simple": 0.16
+      },
+      "W-micro": {
+        "nccl-2.19.3-default": 1.17,
+        "nccl-2.20.5-default": 1.17,
+        "nccl-2.20.5-ring-ll": 3.41,
+        "nccl-2.20.5-ring-ll128": 1.86,
+        "nccl-2.20.5-ring-simple": 1.76,
+        "nccl-2.20.5-tree-ll": 2.38,
+        "nccl-2.20.5-tree-ll128": 1.81,
+        "nccl-2.20.5-tree-simple": 2.55
+      },
+      "W-shared-overlap": {
+        "nccl-2.19.3-default": 0.7,
+        "nccl-2.20.5-default": 0.7,
+        "nccl-2.20.5-ring-ll": 1.72,
+        "nccl-2.20.5-ring-ll128": 0.0,
+        "nccl-2.20.5-ring-simple": 0.0,
+        "nccl-2.20.5-tree-ll": 2.61,
+        "nccl-2.20.5-tree-ll128": 0.33,
+        "nccl-2.20.5-tree-simple": 0.0
+      }
+    }
+  }
+}
