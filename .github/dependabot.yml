@@ -9,6 +9,11 @@ updates:
     groups:
       development-tooling:
         dependency-type: development
+    ignore:
+      # mypy 2 cannot type-check for Python 3.9, which Rostam's nasrin nodes
+      # still run. Keep the <2 pin until 3.9 support is dropped on purpose.
+      - dependency-name: mypy
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
