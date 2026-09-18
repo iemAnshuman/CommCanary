@@ -11,6 +11,7 @@ from ..baselines import (
     random_sampling_baseline_trace,
     stratified_sampling_baseline_trace,
 )
+from ..services.phase_reduction import phase_representative_reduction, segment_iterations
 from ..services.reduction import ddmin_ranking_reduction
 
 __all__ = [
@@ -18,6 +19,8 @@ __all__ = [
     "ddmin_ranking_reduction",
     "frequency_representative_baseline_trace",
     "isolated_collective_baseline_trace",
+    "phase_representative_reduction",
     "random_sampling_baseline_trace",
+    "segment_iterations",
     "stratified_sampling_baseline_trace",
 ]

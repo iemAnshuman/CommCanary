@@ -121,3 +121,13 @@ def test_public_api_is_explicit_and_version_comes_from_distribution_metadata() -
     assert "ddmin_ranking_reduction" not in commcanary.__all__
     assert callable(ddmin_ranking_reduction)
     assert callable(isolated_collective_baseline_trace)
+
+
+def test_phase_reduction_is_reachable_as_an_experimental_service() -> None:
+    """It had no entry point at all: nothing in the package imported it."""
+
+    from commcanary import experimental
+    from commcanary.services import phase_reduction
+
+    assert experimental.phase_representative_reduction is phase_reduction.phase_representative_reduction
+    assert experimental.segment_iterations is phase_reduction.segment_iterations

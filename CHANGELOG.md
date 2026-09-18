@@ -15,7 +15,9 @@
   the process so a hung engine cannot hold GPUs, and the vLLM driver now
   releases its engine, worker processes, and process group in a `finally`
   instead of leaving that to interpreter exit.
-- Phase reduction now samples proportionally instead of by typicality.
+- Phase reduction, an experimental library service with no command yet
+  (`commcanary.experimental.phase_representative_reduction`), now samples
+  proportionally instead of by typicality.
   Percentiles are proportions, so an artifact only reproduces them if its phase
   mix matches the source. Medoid-only selection put p95/p99 58-80% under;
   reserving budget for the longest-iteration clusters recovered p99 but pushed
