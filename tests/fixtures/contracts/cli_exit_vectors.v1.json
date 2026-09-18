@@ -37,6 +37,8 @@
         "replay-model: deterministic-scheduler-v4",
         "formats:",
         "  measurement_set: commcanary.measurement_set.v1",
+        "  traffic_trace: commcanary.traffic_trace.v1",
+        "  serving_measurement: commcanary.serving_measurement.v1",
         "  trace: commcanary.trace.v1",
         "  canary: commcanary.canary.v2",
         "  report: commcanary.report.v2",

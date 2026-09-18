@@ -55,6 +55,7 @@ class ResourceLimits:
     max_execution_timeout_seconds: int = 3_600
     max_capture_shards: int = 65_536
     max_capture_events: int = 1_000_000
+    max_traffic_requests: int = 1_000_000
     max_behavior_configurations: int = 32
     max_behavior_candidates: int = 4096
     max_behavior_ranking_comparisons: int = 10_000_000
@@ -99,6 +100,7 @@ class ResourceLimits:
             "max_execution_timeout_seconds",
             "max_capture_shards",
             "max_capture_events",
+            "max_traffic_requests",
             "max_behavior_configurations",
             "max_behavior_candidates",
             "max_behavior_ranking_comparisons",

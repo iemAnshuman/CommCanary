@@ -66,7 +66,21 @@ from .qualification_materialization import (
 )
 from .report import validate_report
 from .schemas import load_schema_bytes
+from .serving_measurement import (
+    build_serving_measurement,
+    decision_metric,
+    meets_latency_budget,
+    summarize_serving_run,
+    validate_serving_measurement,
+)
 from .trace import validate_trace
+from .traffic_trace import (
+    require_measured_traffic_trace,
+    traffic_trace_from_observation,
+    traffic_trace_id,
+    validate_length_distribution,
+    validate_traffic_trace,
+)
 from .wire import (
     MAX_ABS_INTEGER,
     MAX_RANK_COUNT,
@@ -155,6 +169,16 @@ __all__ = [
     "require_format",
     "validate_canary",
     "validate_measurement_set",
+    "build_serving_measurement",
+    "decision_metric",
+    "meets_latency_budget",
+    "summarize_serving_run",
+    "validate_serving_measurement",
+    "require_measured_traffic_trace",
+    "traffic_trace_from_observation",
+    "traffic_trace_id",
+    "validate_length_distribution",
+    "validate_traffic_trace",
     "validate_comparison",
     "validate_report",
     "validate_qualification_request",

@@ -38,6 +38,8 @@ matrix together with `commcanary.canonical-json.v1` and the replay model.
 | Application oracle | `commcanary.application_oracle.v1` | `commcanary.application_oracle.v1.schema.json` | Yes | Yes | `validate_application_oracle` | None |
 | Application evidence set | `commcanary.application_evidence_set.v1` | `commcanary.application_evidence_set.v1.schema.json` | Yes | Yes | `validate_application_evidence_set` | None |
 | Active physical study ledger | `commcanary.active_physical_study_ledger.v1` | `commcanary.active_physical_study_ledger.v1.schema.json` | Yes | Yes | `validate_active_physical_study_ledger` | None |
+| Traffic trace | `commcanary.traffic_trace.v1` | `commcanary.traffic_trace.v1.schema.json` | Yes, by `synthesize_traffic_trace` (marked synthetic) or from a measured observation | Yes | `validate_traffic_trace`; `require_measured_traffic_trace` refuses synthetic traffic where qualification is claimed | None |
+| Serving measurement | `commcanary.serving_measurement.v1` | `commcanary.serving_measurement.v1.schema.json` | Yes, by the serving harness | Yes | `validate_serving_measurement` | None |
 
 Behavior search additionally emits the explicitly experimental
 `commcanary.behavior_search_evidence.experimental.v1` sidecar. It is omitted

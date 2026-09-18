@@ -44,6 +44,8 @@ APPLICATION_ORACLE_FORMAT = "commcanary.application_oracle.v1"
 APPLICATION_EVIDENCE_SET_FORMAT = "commcanary.application_evidence_set.v1"
 ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT = "commcanary.active_physical_study_ledger.v1"
 MEASUREMENT_SET_FORMAT = "commcanary.measurement_set.v1"
+TRAFFIC_TRACE_FORMAT = "commcanary.traffic_trace.v1"
+SERVING_MEASUREMENT_FORMAT = "commcanary.serving_measurement.v1"
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,24 @@ FORMAT_CAPABILITIES: Tuple[FormatCapability, ...] = (
         schema="schemas/commcanary.measurement_set.v1.schema.json",
         read=True,
         write=False,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="traffic_trace",
+        format_id=TRAFFIC_TRACE_FORMAT,
+        schema="schemas/commcanary.traffic_trace.v1.schema.json",
+        read=True,
+        write=True,
+        migrate=False,
+        semantic_validator=True,
+    ),
+    FormatCapability(
+        artifact="serving_measurement",
+        format_id=SERVING_MEASUREMENT_FORMAT,
+        schema="schemas/commcanary.serving_measurement.v1.schema.json",
+        read=True,
+        write=True,
         migrate=False,
         semantic_validator=True,
     ),
@@ -338,7 +358,9 @@ __all__ = [
     "QUALIFICATION_REQUEST_V1_FORMAT",
     "QUALIFICATION_VERDICT_FORMAT",
     "REPORT_FORMAT",
+    "SERVING_MEASUREMENT_FORMAT",
     "REPORT_VERIFICATION_FORMAT",
     "TRACE_FORMAT",
+    "TRAFFIC_TRACE_FORMAT",
     "format_capabilities",
 ]

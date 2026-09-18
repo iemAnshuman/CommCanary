@@ -16,6 +16,7 @@ from .qualification import prepare_qualification_request, verify_qualification_r
 from .qualification_decision import evaluate_qualification_observations
 from .readiness import import_failure_readiness_report, qualification_readiness_report, validate_doctor_report
 from .reduction import ddmin_ranking_reduction
+from .traffic_synthesis import sample_token_length, synthesize_traffic_trace
 
 __all__ = [
     "ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT",
@@ -24,6 +25,7 @@ __all__ = [
     "ddmin_ranking_reduction",
     "evaluate_qualification_observations",
     "evaluate_physical_gate",
+    "sample_token_length",
     "score_fidelity",
     "import_failure_readiness_report",
     "prepare_qualification_request",
@@ -33,6 +35,7 @@ __all__ = [
     "synthesize_behavioral_canary",
     "synthesize_active_physical_canary",
     "synthesize_physical_decision_canary",
+    "synthesize_traffic_trace",
     "validate_behavior_search_evidence",
     "validate_active_physical_study_ledger",
     "validate_doctor_report",

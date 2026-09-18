@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.traffic_trace.v1.schema.json",
+  "title": "CommCanary traffic trace v1",
+  "description": "A frozen request sequence driving a sustained serving reference workload. Arrival offsets are integer microseconds from the start of the run.",
+  "type": "object",
+  "required": ["format", "trace_id", "name", "source", "arrival_model", "length_model", "requests", "summary"],
+  "properties": {
+    "format": {"const": "commcanary.traffic_trace.v1"},
+    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "name": {"type": "string", "minLength": 1},
+    "source": {
+      "enum": ["synthetic", "measured"],
+      "description": "Synthetic traffic may drive a sensitivity precheck but cannot qualify a canary."
+    },
+    "arrival_model": {
+      "type": "object",
+      "required": ["kind", "seed", "mean_interarrival_us"],
+      "properties": {
+        "kind": {"enum": ["poisson", "deterministic", "replayed"]},
+        "seed": {"type": ["integer", "null"], "minimum": 0},
+        "mean_interarrival_us": {"type": ["integer", "null"], "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "length_model": {
+      "type": "object",
+      "required": ["kind", "seed", "input", "output"],
+      "properties": {
+        "kind": {"enum": ["lognormal", "replayed"]},
+        "seed": {"type": ["integer", "null"], "minimum": 0},
+        "input": {"$ref": "#/$defs/lengthDistribution"},
+        "output": {"$ref": "#/$defs/lengthDistribution"}
+      },
+      "additionalProperties": false
+    },
+    "requests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["request_id", "arrival_offset_us", "input_length", "output_length"],
+        "properties": {
+          "request_id": {"type": "string", "pattern": "^r-[0-9]{6}$"},
+          "arrival_offset_us": {"type": "integer", "minimum": 0},
+          "input_length": {"type": "integer", "minimum": 1},
+          "output_length": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "request_count",
+        "first_arrival_offset_us",
+        "last_arrival_offset_us",
+        "total_input_tokens",
+        "total_output_tokens"
+      ],
+      "properties": {
+        "request_count": {"type": "integer", "minimum": 1},
+        "first_arrival_offset_us": {"type": "integer", "minimum": 0},
+        "last_arrival_offset_us": {"type": "integer", "minimum": 0},
+        "total_input_tokens": {"type": "integer", "minimum": 1},
+        "total_output_tokens": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "lengthDistribution": {
+      "type": ["object", "null"],
+      "required": ["median_tokens", "sigma", "minimum_tokens", "maximum_tokens"],
+      "properties": {
+        "median_tokens": {"type": "integer", "minimum": 1},
+        "sigma": {"type": "number", "exclusiveMinimum": 0},
+        "minimum_tokens": {"type": "integer", "minimum": 1},
+        "maximum_tokens": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    }
+  }
+}

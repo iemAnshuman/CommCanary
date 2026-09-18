@@ -33,7 +33,9 @@ from commcanary.formats import (
     QUALIFICATION_VERDICT_FORMAT,
     REPORT_FORMAT,
     REPORT_VERIFICATION_FORMAT,
+    SERVING_MEASUREMENT_FORMAT,
     TRACE_FORMAT,
+    TRAFFIC_TRACE_FORMAT,
     format_capabilities,
 )
 from commcanary.version import SOURCE_TREE_VERSION, package_version
@@ -44,6 +46,8 @@ def test_format_capabilities_are_exact_unique_and_immutable() -> None:
     expected = {
         ACTIVE_PHYSICAL_STUDY_LEDGER_FORMAT,
         MEASUREMENT_SET_FORMAT,
+        SERVING_MEASUREMENT_FORMAT,
+        TRAFFIC_TRACE_FORMAT,
         APPLICATION_EVIDENCE_SET_FORMAT,
         APPLICATION_MEASUREMENT_FORMAT,
         APPLICATION_ORACLE_FORMAT,

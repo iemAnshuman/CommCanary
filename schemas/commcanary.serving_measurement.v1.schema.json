@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://commcanary.dev/schemas/commcanary.serving_measurement.v1.schema.json",
+  "title": "CommCanary serving measurement v1",
+  "description": "One sustained serving run. The decision metric is sustained output throughput over a declared steady-state window, reported alongside the latency distributions that qualify it.",
+  "type": "object",
+  "required": ["format", "measurement_id", "traffic_trace_id", "configuration_id", "window", "requests", "summary"],
+  "properties": {
+    "format": {"const": "commcanary.serving_measurement.v1"},
+    "measurement_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "traffic_trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Identity of the traffic trace whose requests were issued."
+    },
+    "configuration_id": {"type": "string", "minLength": 1},
+    "window": {
+      "type": "object",
+      "description": "Steady-state window. Only requests arriving inside it are counted, so a ramp cannot inflate throughput.",
+      "required": ["start_us", "end_us"],
+      "properties": {
+        "start_us": {"type": "integer", "minimum": 0},
+        "end_us": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "requests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "outcome",
+          "arrival_offset_us",
+          "first_token_offset_us",
+          "completion_offset_us",
+          "input_length",
+          "output_length"
+        ],
+        "properties": {
+          "request_id": {"type": "string", "minLength": 1},
+          "outcome": {"enum": ["completed", "failed"]},
+          "arrival_offset_us": {"type": "integer", "minimum": 0},
+          "first_token_offset_us": {"type": ["integer", "null"], "minimum": 0},
+          "completion_offset_us": {"type": ["integer", "null"], "minimum": 0},
+          "input_length": {"type": "integer", "minimum": 1},
+          "output_length": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "requests_in_window",
+        "requests_excluded_by_window",
+        "completed_requests",
+        "failed_requests",
+        "single_token_completions",
+        "output_tokens",
+        "window_seconds",
+        "sustained_output_tokens_per_second",
+        "time_to_first_token_us",
+        "inter_token_latency_us",
+        "end_to_end_latency_us"
+      ],
+      "properties": {
+        "requests_in_window": {"type": "integer", "minimum": 0},
+        "requests_excluded_by_window": {"type": "integer", "minimum": 0},
+        "completed_requests": {"type": "integer", "minimum": 0},
+        "failed_requests": {"type": "integer", "minimum": 0},
+        "single_token_completions": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "window_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "sustained_output_tokens_per_second": {"type": "number", "minimum": 0},
+        "time_to_first_token_us": {"$ref": "#/$defs/distribution"},
+        "inter_token_latency_us": {"$ref": "#/$defs/distribution"},
+        "end_to_end_latency_us": {"$ref": "#/$defs/distribution"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "distribution": {
+      "type": "object",
+      "description": "Null rather than zero where there were no observations; zero is a latency, absence is not.",
+      "required": ["count", "mean_us", "p50", "p95", "p99"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 0},
+        "mean_us": {"type": ["number", "null"]},
+        "p50": {"type": ["number", "null"]},
+        "p95": {"type": ["number", "null"]},
+        "p99": {"type": ["number", "null"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}
