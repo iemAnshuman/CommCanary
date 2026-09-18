@@ -261,7 +261,7 @@ def _event_features(events: Sequence[Any]) -> Tuple[Tuple[str, ...], ...]:
         # An event that never declared its overlap is not an event measured at
         # zero overlap. Collapsing the two tags a real workload as genuinely
         # non-overlapping, which is the configuration the Rostam campaign
-        # measured at tau=0.204 -- below the microbenchmark it replaces.
+        # measured agreeing with the full workload on only 16 of 28 pairs.
         overlap_raw = raw_event.get("compute_overlap_us")
         has_recipe = bool(raw_event.get("compute_recipe_by_rank"))
         if has_recipe or (overlap_raw is not None and as_float(overlap_raw) > 0.0):

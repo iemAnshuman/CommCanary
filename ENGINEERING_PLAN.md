@@ -298,9 +298,11 @@ configuration pairs: shared-trace overlap replay agrees on 71.4% of pairs
 (Kendall tau 0.708), the isolated microbenchmark on 64.3% (0.490), faithful
 communication-only replay on 57.1% (0.204), and per-configuration overlap
 replay on 53.6% (0.677, depressed by 13 policy ties). Faithful
-communication-only replay therefore ranks *below* an isolated microbenchmark
-and places the workload's worst configuration (`nccl-2.20.5-tree-ll`, +38%
-against the best) second best, while both overlap-bearing replays rank it last.
+communication-only replay places the workload's worst configuration
+(`nccl-2.20.5-tree-ll`, +38% against the best) second best, while both
+overlap-bearing replays rank it last. Its two-pair deficit against the
+microbenchmark does not survive removing that configuration; the intervals and
+sensitivity analysis are in `paper/arxiv/evidence/trusted_join_uncertainty.json`.
 The regression 2x2 for `nccl-2.19.3-default` against `nccl-2.20.5-default` is
 all true negatives, and median wall time per cell is 7.9 s for the full
 workload against 17.2 s for communication-only replay, so this campaign

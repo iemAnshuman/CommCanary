@@ -79,10 +79,11 @@ Measured against `W-full` across 28 configuration pairs:
 
 The design question at the top of this document asked whether a minimized,
 behavior-verified canary preserves the decision. On this workload it does not.
-Faithful communication-only replay scores *below* an isolated microbenchmark
-and ranks `nccl-2.20.5-tree-ll`, the full workload's worst configuration at
-+38% against the best, as second best. Only overlap-bearing replay beats the
-microbenchmark, and it still disagrees on 8 of 28 pairs.
+Faithful communication-only replay ranks `nccl-2.20.5-tree-ll`, the full
+workload's worst configuration at +38% against the best, as second best.
+Shared-trace overlap replay agrees most often and still disagrees on 8 of 28
+pairs. The ordering between proxies rests on that one configuration and does
+not survive its removal; see `paper/arxiv/evidence/trusted_join_uncertainty.json`.
 
 Two further honest limits of this campaign. The regression 2x2 for
 `nccl-2.19.3-default` against `nccl-2.20.5-default` is all true negatives, so
