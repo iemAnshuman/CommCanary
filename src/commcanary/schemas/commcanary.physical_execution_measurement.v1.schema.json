@@ -3,7 +3,7 @@
   "$id": "https://commcanary.dev/schemas/commcanary.physical_execution_measurement.v1.schema.json",
   "title": "CommCanary physical execution measurement v1",
   "type": "object",
-  "required": ["format", "measurement_id", "role", "runner", "subject_sha256", "perturbation_id", "source_et_sha256", "executable_sha256", "projection_id", "selected_region_ids", "selected_node_ids", "execution", "correctness", "samples", "physical_metrics", "environment", "environment_sha256", "telemetry", "telemetry_assessment"],
+  "required": ["format", "measurement_id", "role", "runner", "subject_sha256", "perturbation_id", "source_et_sha256", "executable_sha256", "projection_id", "selected_region_ids", "selected_node_ids", "execution", "correctness", "cost", "samples", "physical_metrics", "environment", "environment_sha256", "telemetry", "telemetry_assessment"],
   "properties": {
     "format": {"const": "commcanary.physical_execution_measurement.v1"},
     "measurement_id": {"$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/sha256"},
@@ -69,6 +69,30 @@
         },
         "additionalProperties": false
       }
+    },
+    "cost": {
+      "type": "object",
+      "description": "Wall clock split into setup and measured time so a reduction ratio can be reported both ways. Instrumentation time is excluded from both totals and published separately.",
+      "required": ["setup_seconds", "measured_seconds", "instrumentation_seconds", "total_seconds", "steady_state_seconds_per_iteration"],
+      "properties": {
+        "setup_seconds": {
+          "type": "object",
+          "required": ["program_preparation", "runtime_initialization", "allocation_and_correctness", "warmups", "total"],
+          "properties": {
+            "program_preparation": {"type": "number", "minimum": 0},
+            "runtime_initialization": {"type": "number", "minimum": 0},
+            "allocation_and_correctness": {"type": "number", "minimum": 0},
+            "warmups": {"type": "number", "minimum": 0},
+            "total": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "measured_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "instrumentation_seconds": {"type": "number", "minimum": 0},
+        "total_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "steady_state_seconds_per_iteration": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
     },
     "samples": {
       "type": "array",

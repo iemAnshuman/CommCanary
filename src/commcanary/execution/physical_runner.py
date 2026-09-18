@@ -16,17 +16,22 @@ import platform
 import socket
 import statistics
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from ..artifacts.chakra import decode_chakra_execution_trace, encode_chakra_subgraph
 from ..artifacts.dtypes import dtype_size_bytes, require_canonical_dtype
 from ..artifacts.io import SENSITIVE_JSON_POLICY, atomic_write_json
 from ..artifacts.json_codec import canonical_json_bytes
 from ..artifacts.physical_canary import validate_chakra_projection
-from ..artifacts.physical_execution import telemetry_assessment, validate_physical_execution_measurement
+from ..artifacts.physical_execution import (
+    SETUP_COST_PHASES,
+    telemetry_assessment,
+    validate_physical_execution_measurement,
+)
 from ..errors import SchemaError
 from ..formats import PHYSICAL_EXECUTION_MEASUREMENT_FORMAT
 from ..resources import DEFAULT_RESOURCE_LIMITS, ResourceLimits, decode_bounded_json_bytes
@@ -333,6 +338,71 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _CostClock:
+    """Wall-clock accounting that separates workload cost from instrumentation.
+
+    A reduction ratio is only meaningful against the cost a user actually pays.
+    This runner shells out to ``nvidia-smi`` once per measured iteration for
+    telemetry; a customer's canary does not. Instrumentation time is therefore
+    accumulated on its own and excluded from both setup and measured totals,
+    and the excluded amount is published so the exclusion is auditable rather
+    than merely asserted.
+
+    Every duration here is rank 0's view. Ranks are barriered around each phase,
+    so rank 0's wall clock is the run's wall clock.
+    """
+
+    def __init__(self) -> None:
+        self._phases: Dict[str, int] = {}
+        self._instrumentation_ns = 0
+
+    @contextmanager
+    def phase(self, name: str) -> Iterator[None]:
+        started = time.perf_counter_ns()
+        try:
+            yield
+        finally:
+            self._phases[name] = self._phases.get(name, 0) + (time.perf_counter_ns() - started)
+
+    @contextmanager
+    def instrumentation(self) -> Iterator[None]:
+        started = time.perf_counter_ns()
+        try:
+            yield
+        finally:
+            self._instrumentation_ns += time.perf_counter_ns() - started
+
+    def seconds(self, name: str) -> float:
+        return self._phases.get(name, 0) / 1_000_000_000.0
+
+    @property
+    def instrumentation_seconds(self) -> float:
+        return self._instrumentation_ns / 1_000_000_000.0
+
+
+def cost_accounting(clock: "_CostClock", *, iterations: int) -> Dict[str, Any]:
+    """Split one run's wall clock into setup and measured time.
+
+    Reduction claims are made both ways and this is what makes that possible.
+    ``total_seconds`` is what a user pays per run; ``measured_seconds`` divided
+    by ``iterations`` is the steady-state cost that amortizes once the canary
+    runs long enough to bury its own setup. Publishing only the second is how
+    an eight-second job with six seconds of ``init_process_group`` gets
+    reported as a fast canary.
+    """
+
+    setup = {name: clock.seconds(name) for name in SETUP_COST_PHASES}
+    setup_total = math.fsum(setup.values())
+    measured = clock.seconds("measured")
+    return {
+        "setup_seconds": {**setup, "total": setup_total},
+        "measured_seconds": measured,
+        "instrumentation_seconds": clock.instrumentation_seconds,
+        "total_seconds": setup_total + measured,
+        "steady_state_seconds_per_iteration": measured / iterations,
+    }
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
     if args.warmups < 0 or args.iterations < 2:
@@ -353,86 +423,98 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if output.exists():
         raise FileExistsError(f"refusing to overwrite physical execution evidence: {output}")
 
-    source_raw = _bounded_bytes(Path(args.source_et))
-    executable_raw = _bounded_bytes(Path(args.executable_et))
-    projection_raw = _bounded_bytes(Path(args.projection))
-    projection_value = decode_bounded_json_bytes(projection_raw)
-    if not isinstance(projection_value, Mapping):
-        raise SchemaError("physical runner projection must be a JSON object")
+    clock = _CostClock()
+    with clock.phase("program_preparation"):
+        source_raw = _bounded_bytes(Path(args.source_et))
+        executable_raw = _bounded_bytes(Path(args.executable_et))
+        projection_raw = _bounded_bytes(Path(args.projection))
+        projection_value = decode_bounded_json_bytes(projection_raw)
+        if not isinstance(projection_value, Mapping):
+            raise SchemaError("physical runner projection must be a JSON object")
 
-    world_size_environment = os.environ.get("WORLD_SIZE")
-    if world_size_environment is None or not world_size_environment.isdigit():
-        raise SchemaError("physical runner requires torchrun WORLD_SIZE")
-    program = prepare_physical_program(
-        source_raw,
-        executable_raw,
-        projection_value,
-        args.selected_region,
-        world_size=int(world_size_environment),
-        max_workspace_bytes=args.max_workspace_bytes,
-        communication_only=bool(args.communication_only),
-    )
-
-    import torch  # type: ignore[import-not-found]
-    import torch.distributed as dist  # type: ignore[import-not-found]
-
-    local_rank = _environment_int("LOCAL_RANK")
-    torch.cuda.set_device(local_rank)
-    dist.init_process_group(
-        backend="nccl",
-        timeout=timedelta(seconds=args.distributed_timeout_seconds),
-    )
-    rank = dist.get_rank()
-    if dist.get_world_size() != program.world_size:
-        raise RuntimeError("initialized process-group size does not match the compiled physical program")
-    runtime = _TorchProgramRuntime(torch, dist, program, rank=rank, local_rank=local_rank)
-    telemetry: List[Dict[str, Any]] = []
-    if rank == 0:
-        telemetry.append(capture_cycle_telemetry("before_correctness"))
-    dist.barrier()
-    correctness = runtime.validate_complete_program(disable_overlap=args.disable_overlap)
-    gathered_correctness: List[Any] = [None for _ in range(program.world_size)]
-    dist.all_gather_object(gathered_correctness, correctness)
-    if not all(row.get("passed") is True for row in gathered_correctness):
-        raise RuntimeError("physical runner complete-program correctness validation failed")
-
-    for _ in range(args.warmups):
-        dist.barrier()
-        runtime.execute_pass(
-            disable_overlap=args.disable_overlap,
-            rank_skew_us=args.rank_skew_us,
-            timed=False,
+        world_size_environment = os.environ.get("WORLD_SIZE")
+        if world_size_environment is None or not world_size_environment.isdigit():
+            raise SchemaError("physical runner requires torchrun WORLD_SIZE")
+        program = prepare_physical_program(
+            source_raw,
+            executable_raw,
+            projection_value,
+            args.selected_region,
+            world_size=int(world_size_environment),
+            max_workspace_bytes=args.max_workspace_bytes,
+            communication_only=bool(args.communication_only),
         )
-    dist.barrier()
+
+    with clock.phase("runtime_initialization"):
+        import torch  # type: ignore[import-not-found]
+        import torch.distributed as dist  # type: ignore[import-not-found]
+
+        local_rank = _environment_int("LOCAL_RANK")
+        torch.cuda.set_device(local_rank)
+        dist.init_process_group(
+            backend="nccl",
+            timeout=timedelta(seconds=args.distributed_timeout_seconds),
+        )
+        rank = dist.get_rank()
+        if dist.get_world_size() != program.world_size:
+            raise RuntimeError("initialized process-group size does not match the compiled physical program")
+
+    telemetry: List[Dict[str, Any]] = []
+    with clock.phase("allocation_and_correctness"):
+        runtime = _TorchProgramRuntime(torch, dist, program, rank=rank, local_rank=local_rank)
+        if rank == 0:
+            with clock.instrumentation():
+                telemetry.append(capture_cycle_telemetry("before_correctness"))
+        dist.barrier()
+        correctness = runtime.validate_complete_program(disable_overlap=args.disable_overlap)
+        gathered_correctness: List[Any] = [None for _ in range(program.world_size)]
+        dist.all_gather_object(gathered_correctness, correctness)
+        if not all(row.get("passed") is True for row in gathered_correctness):
+            raise RuntimeError("physical runner complete-program correctness validation failed")
+
+    with clock.phase("warmups"):
+        for _ in range(args.warmups):
+            dist.barrier()
+            runtime.execute_pass(
+                disable_overlap=args.disable_overlap,
+                rank_skew_us=args.rank_skew_us,
+                timed=False,
+            )
+        dist.barrier()
     if rank == 0:
-        telemetry.append(capture_cycle_telemetry("before_measured_cycle_1"))
+        with clock.instrumentation():
+            telemetry.append(capture_cycle_telemetry("before_measured_cycle_1"))
     dist.barrier()
 
     samples: List[Dict[str, Any]] = []
     for iteration in range(args.iterations):
-        dist.barrier()
-        local_sample = runtime.execute_pass(
-            disable_overlap=args.disable_overlap,
-            rank_skew_us=args.rank_skew_us,
-            timed=True,
-        )
-        gathered: List[Any] = [None for _ in range(program.world_size)]
-        dist.all_gather_object(gathered, local_sample)
-        if rank == 0:
-            samples.append(
-                {
-                    "iteration": iteration,
-                    "cuda_seconds_by_rank": [float(row["cuda_seconds"]) for row in gathered],
-                    "host_seconds_by_rank": [float(row["host_seconds"]) for row in gathered],
-                    "physical_runtime_seconds": max(float(row["cuda_seconds"]) for row in gathered),
-                    "peak_memory_bytes_by_rank": [int(row["peak_memory_bytes"]) for row in gathered],
-                }
+        with clock.phase("measured"):
+            dist.barrier()
+            local_sample = runtime.execute_pass(
+                disable_overlap=args.disable_overlap,
+                rank_skew_us=args.rank_skew_us,
+                timed=True,
             )
-            telemetry.append(capture_cycle_telemetry(f"after_measured_cycle_{iteration + 1}"))
+            gathered: List[Any] = [None for _ in range(program.world_size)]
+            dist.all_gather_object(gathered, local_sample)
+            if rank == 0:
+                samples.append(
+                    {
+                        "iteration": iteration,
+                        "cuda_seconds_by_rank": [float(row["cuda_seconds"]) for row in gathered],
+                        "host_seconds_by_rank": [float(row["host_seconds"]) for row in gathered],
+                        "physical_runtime_seconds": max(float(row["cuda_seconds"]) for row in gathered),
+                        "peak_memory_bytes_by_rank": [int(row["peak_memory_bytes"]) for row in gathered],
+                    }
+                )
+        if rank == 0:
+            with clock.instrumentation():
+                telemetry.append(capture_cycle_telemetry(f"after_measured_cycle_{iteration + 1}"))
         dist.barrier()
 
     if rank == 0:
-        telemetry.append(capture_cycle_telemetry("final"))
+        with clock.instrumentation():
+            telemetry.append(capture_cycle_telemetry("final"))
         measurement = _measurement(
             args=args,
             program=program,
@@ -440,6 +522,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             correctness=gathered_correctness,
             telemetry=telemetry,
             torch=torch,
+            cost=cost_accounting(clock, iterations=args.iterations),
         )
         validate_physical_execution_measurement(measurement)
         policy = replace(
@@ -657,6 +740,7 @@ def _measurement(
     correctness: Sequence[Mapping[str, Any]],
     telemetry: Sequence[Mapping[str, Any]],
     torch: Any,
+    cost: Mapping[str, Any],
 ) -> Dict[str, Any]:
     runtimes = [float(row["physical_runtime_seconds"]) for row in samples]
     peak_memory = max(max(int(value) for value in row["peak_memory_bytes_by_rank"]) for row in samples)
@@ -698,6 +782,7 @@ def _measurement(
             "workspace_bytes_max_rank": program.workspace_bytes_max_rank,
         },
         "correctness": list(correctness),
+        "cost": dict(cost),
         "samples": list(samples),
         "physical_metrics": {
             "physical_runtime_seconds": statistics.median(runtimes),

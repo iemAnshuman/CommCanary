@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import sys
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -280,6 +281,19 @@ def _measurement() -> Dict[str, Any]:
             }
             for rank in range(4)
         ],
+        "cost": {
+            "setup_seconds": {
+                "program_preparation": 0.01,
+                "runtime_initialization": 1.5,
+                "allocation_and_correctness": 0.25,
+                "warmups": 0.1,
+                "total": 1.86,
+            },
+            "measured_seconds": 0.4,
+            "instrumentation_seconds": 0.75,
+            "total_seconds": 2.26,
+            "steady_state_seconds_per_iteration": 0.2,
+        },
         "samples": [
             {
                 "iteration": 0,
@@ -401,16 +415,24 @@ class _FakeWork:
 class _FakeEvent:
     def __init__(self, *, enable_timing: bool) -> None:
         assert enable_timing is True
+        self._recorded_ns = 0
 
     def record(self) -> None:
-        return None
+        # Track the real monotonic clock rather than returning a constant. A
+        # device cannot spend more time on a pass than the host spent waiting
+        # for it, and the measurement validator now enforces that, so a fake
+        # reporting a fixed 100 ms inside a microsecond-long loop would assert
+        # something no real run can produce.
+        self._recorded_ns = time.perf_counter_ns()
 
     def synchronize(self) -> None:
         return None
 
     def elapsed_time(self, other: Any) -> float:
         assert isinstance(other, _FakeEvent)
-        return 100.0
+        elapsed_ms = abs(other._recorded_ns - self._recorded_ns) / 1_000_000.0
+        # Positive by contract; a pass too fast for the clock still happened.
+        return max(elapsed_ms, 1e-4)
 
 
 def _fake_torch_and_dist(world_size: int) -> tuple[ModuleType, ModuleType]:
@@ -452,11 +474,16 @@ def _fake_torch_and_dist(world_size: int) -> tuple[ModuleType, ModuleType]:
         elif "rank" in value:
             destination[:] = [{**value, "rank": rank} for rank in range(world_size)]
         else:
+            # Rank spread is proportional, not a fixed 30 ms added to a
+            # loop that runs in microseconds. The validator now requires the
+            # measured wall clock to cover the CUDA time inside it, and an
+            # absolute offset made the fake assert device time no host could
+            # have waited for.
             destination[:] = [
                 {
                     **value,
-                    "cuda_seconds": float(value["cuda_seconds"]) + rank / 100.0,
-                    "host_seconds": float(value["host_seconds"]) + rank / 100.0,
+                    "cuda_seconds": float(value["cuda_seconds"]) * (1.0 + rank / 100.0),
+                    "host_seconds": float(value["host_seconds"]) * (1.0 + rank / 100.0),
                 }
                 for rank in range(world_size)
             ]
@@ -540,3 +567,82 @@ def test_physical_runner_executes_complete_program_and_writes_valid_evidence(
     assert measurement["physical_metrics"]["executed_flops"] == 192
     assert measurement["telemetry_assessment"]["comparable"] is True
     validate_physical_execution_measurement(measurement)
+
+
+def _sealed(mutate: Any) -> Dict[str, Any]:
+    document = _measurement()
+    mutate(document)
+    document["measurement_id"] = hashlib.sha256(
+        canonical_json_bytes({key: value for key, value in document.items() if key != "measurement_id"})
+    ).hexdigest()
+    return document
+
+
+def _set_cost(**overrides: Any) -> Any:
+    def mutate(document: Dict[str, Any]) -> None:
+        document["cost"] = {**document["cost"], **overrides}
+
+    return mutate
+
+
+def test_cost_split_recomputes_and_separates_instrumentation() -> None:
+    document = _measurement()
+    cost = document["cost"]
+
+    # Both ratios the reduction claim is reported against must be derivable.
+    assert cost["total_seconds"] == pytest.approx(cost["setup_seconds"]["total"] + cost["measured_seconds"])
+    assert cost["steady_state_seconds_per_iteration"] == pytest.approx(
+        cost["measured_seconds"] / document["execution"]["iterations"]
+    )
+    # Telemetry cost is published but excluded from what a user pays.
+    assert cost["instrumentation_seconds"] > 0.0
+    assert cost["instrumentation_seconds"] not in (cost["measured_seconds"], cost["total_seconds"])
+    validate_physical_execution_measurement(document)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (_set_cost(total_seconds=99.0), "total seconds do not recompute"),
+        (_set_cost(steady_state_seconds_per_iteration=99.0), "steady-state seconds do not recompute"),
+        (_set_cost(measured_seconds=-1.0), "measured seconds must be finite and positive"),
+        (_set_cost(instrumentation_seconds=-1.0), "instrumentation seconds must be finite and non-negative"),
+        (
+            _set_cost(
+                setup_seconds={
+                    "program_preparation": 0.01,
+                    "runtime_initialization": 1.5,
+                    "allocation_and_correctness": 0.25,
+                    "warmups": 0.1,
+                    "total": 99.0,
+                }
+            ),
+            "setup total does not equal the sum of its phases",
+        ),
+        (
+            _set_cost(setup_seconds={"total": 1.86}),
+            "setup cost fields are not closed",
+        ),
+    ],
+)
+def test_cost_split_refuses_inconsistent_accounting(mutate: Any, message: str) -> None:
+    with pytest.raises(SchemaError, match=message):
+        validate_physical_execution_measurement(_sealed(mutate))
+
+
+def test_measured_wall_clock_must_cover_the_device_time_it_contains() -> None:
+    # A canary that reports less wall time than the CUDA time inside it has
+    # either mistimed its loop or excluded work from it; either way the
+    # reduction ratio computed from it is wrong.
+    def shrink(document: Dict[str, Any]) -> None:
+        runtimes = sum(sample["physical_runtime_seconds"] for sample in document["samples"])
+        measured = runtimes / 2.0
+        document["cost"] = {
+            **document["cost"],
+            "measured_seconds": measured,
+            "total_seconds": document["cost"]["setup_seconds"]["total"] + measured,
+            "steady_state_seconds_per_iteration": measured / document["execution"]["iterations"],
+        }
+
+    with pytest.raises(SchemaError, match="measured seconds are shorter than the samples"):
+        validate_physical_execution_measurement(_sealed(shrink))

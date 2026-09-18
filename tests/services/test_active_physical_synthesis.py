@@ -346,6 +346,19 @@ def _physical_measurement(
             }
             for rank in range(4)
         ],
+        "cost": {
+            "setup_seconds": {
+                "program_preparation": 0.01,
+                "runtime_initialization": 1.5,
+                "allocation_and_correctness": 0.25,
+                "warmups": runtime,
+                "total": 1.76 + runtime,
+            },
+            "measured_seconds": runtime * 2.0,
+            "instrumentation_seconds": 0.5,
+            "total_seconds": 1.76 + runtime + runtime * 2.0,
+            "steady_state_seconds_per_iteration": runtime,
+        },
         "samples": [
             {
                 "iteration": iteration,

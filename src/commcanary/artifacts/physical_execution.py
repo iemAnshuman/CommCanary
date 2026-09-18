@@ -12,6 +12,16 @@ from ..statistics import median
 from .json_codec import canonical_json_bytes
 
 _RUNNER_PROTOCOL = "chakra-et-collective-graph.v1"
+
+#: Setup phases in execution order. Named rather than totalled so a consumer
+#: can attribute where a run's fixed cost went; the runner produces exactly
+#: these keys and the validator refuses any other set.
+SETUP_COST_PHASES = (
+    "program_preparation",
+    "runtime_initialization",
+    "allocation_and_correctness",
+    "warmups",
+)
 _EVIDENCE_METHODS = frozenset(
     {
         "reduced_decision_canary",
@@ -43,6 +53,7 @@ def validate_physical_execution_measurement(measurement: Mapping[str, Any]) -> N
             "selected_node_ids",
             "execution",
             "correctness",
+            "cost",
             "samples",
             "physical_metrics",
             "environment",
@@ -193,6 +204,42 @@ def validate_physical_execution_measurement(measurement: Mapping[str, Any]) -> N
         _bounded_int(metrics.get(field), f"physical execution {field}", 0, (1 << 63) - 1)
     if metrics.get("peak_memory_bytes") != max(peak_memory_values):
         raise SchemaError("physical execution peak memory does not recompute")
+
+    cost = _as_mapping(measurement.get("cost"), "physical execution cost")
+    _closed_fields(
+        cost,
+        {
+            "setup_seconds",
+            "measured_seconds",
+            "instrumentation_seconds",
+            "total_seconds",
+            "steady_state_seconds_per_iteration",
+        },
+        "physical execution cost",
+    )
+    setup = _as_mapping(cost.get("setup_seconds"), "physical execution setup cost")
+    _closed_fields(setup, set(SETUP_COST_PHASES) | {"total"}, "physical execution setup cost")
+    phase_values = [
+        _finite_non_negative(setup.get(name), f"physical execution setup {name}") for name in SETUP_COST_PHASES
+    ]
+    setup_total = _finite_non_negative(setup.get("total"), "physical execution setup total")
+    if not math.isclose(setup_total, math.fsum(phase_values), rel_tol=1e-9, abs_tol=1e-12):
+        raise SchemaError("physical execution setup total does not equal the sum of its phases")
+    measured_seconds = _finite_positive(cost.get("measured_seconds"), "physical execution measured seconds")
+    _finite_non_negative(cost.get("instrumentation_seconds"), "physical execution instrumentation seconds")
+    total_seconds = _finite_positive(cost.get("total_seconds"), "physical execution total seconds")
+    if not math.isclose(total_seconds, setup_total + measured_seconds, rel_tol=1e-9, abs_tol=1e-12):
+        raise SchemaError("physical execution total seconds do not recompute from setup and measured seconds")
+    steady_state = _finite_positive(
+        cost.get("steady_state_seconds_per_iteration"), "physical execution steady-state seconds"
+    )
+    if not math.isclose(steady_state, measured_seconds / iterations, rel_tol=1e-9, abs_tol=1e-12):
+        raise SchemaError("physical execution steady-state seconds do not recompute from measured seconds")
+    # Wall time across the measured loop must cover the CUDA time it contains.
+    # A run reporting less has either mistimed the loop or excluded work from
+    # it, and either way the reduction ratio computed from it is wrong.
+    if measured_seconds + 1e-9 < math.fsum(runtimes):
+        raise SchemaError("physical execution measured seconds are shorter than the samples they contain")
 
     environment = _as_mapping(measurement.get("environment"), "physical execution environment")
     expected_environment_id = hashlib.sha256(canonical_json_bytes(environment)).hexdigest()
@@ -351,6 +398,15 @@ def _bounded_int(value: Any, label: str, lower: int, upper: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or not lower <= value <= upper:
         raise SchemaError(f"{label} must be an integer in [{lower}, {upper}]")
     return value
+
+
+def _finite_non_negative(value: Any, label: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise SchemaError(f"{label} must be a number")
+    number = float(value)
+    if not math.isfinite(number) or number < 0.0:
+        raise SchemaError(f"{label} must be finite and non-negative")
+    return number
 
 
 def _finite_positive(value: Any, label: str) -> float:
