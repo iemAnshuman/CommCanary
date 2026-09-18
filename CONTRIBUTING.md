@@ -7,7 +7,7 @@ mutation test for every changed claim.
 
 ## Development setup
 
-CommCanary supports CPython 3.9 through 3.13. Create an isolated environment and
+CommCanary supports CPython 3.9 through 3.14. Create an isolated environment and
 install the constrained development extra:
 
 ```bash

@@ -35,6 +35,9 @@ jobs:
           - os: ubuntu-latest
             python-version: "3.13"
             gate-args: ""
+          - os: ubuntu-latest
+            python-version: "3.14"
+            gate-args: ""
           - os: macos-latest
             python-version: "3.12"
             gate-args: ""

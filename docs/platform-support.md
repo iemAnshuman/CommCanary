@@ -2,7 +2,7 @@
 
 ## Python versions
 
-The supported interpreter range is CPython 3.9 through 3.13. Linux is tested on
+The supported interpreter range is CPython 3.9 through 3.14. Linux is tested on
 every supported Python version. macOS is tested on CPython 3.12 as a portability
 representative. Build metadata and the documented compatibility matrix are the
 source of truth; support is not implied for an interpreter outside that range.
