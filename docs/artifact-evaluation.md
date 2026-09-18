@@ -3,11 +3,18 @@
 This guide separates repository-local engineering verification from physical
 execution on Rostam. Historical pre-cluster sections below describe what had
 not yet run at their recorded checkpoint; they are not claims about the current
-repository state. The paper and legacy design document also report an earlier
-narrow Rostam campaign whose complete raw attempt archive is not tracked here,
-so this workflow does not silently treat those reported numbers as a
-reproducible current campaign. The later verified-evidence section records the
-new manifest-bound campaigns separately.
+repository state.
+
+The historical draft `paper/draft.md` and the legacy design document report an
+earlier narrow Rostam campaign whose complete raw attempt archive was never
+retained, so this workflow does not treat those numbers as a reproducible
+campaign. That applies only to the draft. Every campaign behind the v0.4
+preprint and the arXiv revision (`core-20260724-r7`,
+`shared-replay-20260720-r2`, `overlap-20260724-r1`,
+`decision-gate-20260801-r3` and `qualification-exact-20260730-r3`) has its raw
+evidence committed under `experiments/rostam/results/`, the large archives
+through Git LFS. The later verified-evidence section records those
+manifest-bound campaigns separately.
 
 ## Local reproducibility checks
 
