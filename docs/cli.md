@@ -28,8 +28,62 @@ commcanary --version
 ```
 
 The stable multi-line output includes the package version, canonicalization ID,
-replay-model version, and all 25 exact artifact format IDs. Package metadata,
+replay-model version, and every exact artifact format ID that
+`commcanary.format_capabilities()` returns. Package metadata,
 `commcanary.__version__`, and this output must agree.
+
+## Demo
+
+```console
+commcanary demo --output-dir demo-output
+```
+
+Compiles a bundled example trace into a canary, replays a baseline and a
+deliberately regressed candidate with the deterministic simulator, compares
+them, and writes JSON artifacts plus `baseline.report.html`,
+`candidate.report.html` and `comparison.html` to the output directory. Without
+`--output-dir` it uses a new temporary directory. It prints the comparison
+report's path and exits 0; it does not open a browser. The numbers illustrate
+the workflow and measure no hardware.
+
+## Simulator workflow
+
+```console
+commcanary compile trace.json -o trace.canary.json
+commcanary replay trace.canary.json -o baseline.report.json --latency-floor-us 7.5
+commcanary replay trace.canary.json -o candidate.report.json --latency-floor-us 12
+commcanary compare baseline.report.json candidate.report.json -o comparison.json --html comparison.html
+```
+
+`compile` reduces a `commcanary.trace.v1` source trace to a compact canary and
+verifies its fidelity to the source within the stated error bounds. `replay`
+runs a canary through the deterministic simulator under the given bandwidth,
+latency-floor, compute-pressure and overlap settings and writes a report.
+`compare` applies median, p95 and p99 thresholds to two reports and exits 1
+when the candidate regresses beyond them; the comparison file is written either
+way. This is the simulated path `demo` walks; it measures no hardware.
+
+## Proxy fidelity
+
+```console
+commcanary fidelity --reference examples/fidelity/reference.json \
+  --proxy examples/fidelity/comm-only.json \
+  --proxy examples/fidelity/microbenchmark.json \
+  --proxy examples/fidelity/overlap-canary.json \
+  --output fidelity.json --html fidelity.html
+```
+
+Scores each proxy `commcanary.measurement_set.v1` against the reference by what
+trusting it would cost: regret of the configuration it picks, as a percentage
+of the reference optimum, for its first choice and its top two and three; exact
+pairwise agreement; and whether it ranks the reference's worst configuration
+in its own bottom quartile. A seeded percentile bootstrap over replicates
+gives an interval on first-choice regret (`--bootstrap-confidence`,
+`--bootstrap-resamples`, `--bootstrap-seed`); a measurement set with fewer than
+`--minimum-replicates` replicates for any configuration is refused. `--tie-tolerance` sets an
+absolute floor under the per-pair IQR tie rule. The report says when ranking
+proxies by decision regret disagrees with ranking them by agreement. The
+bundled examples are the frozen Rostam trusted-join measurements.
 
 ## JSON diagnostics
 
