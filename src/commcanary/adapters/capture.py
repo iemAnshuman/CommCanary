@@ -55,6 +55,18 @@ class TraceRecorder:
         workload_snapshot = _snapshot_json_mapping(workload, "workload", limits=limits)
         system_snapshot = _snapshot_json_mapping(system, "system", limits=limits)
         self._limits = limits
+        # Step segmentation is opt in. A recorder that is never told where a
+        # step begins emits no iteration_index at all, because a partially
+        # declared segmentation is worse than none: phase reduction refuses
+        # it, and a silently defaulted zero would assert one long iteration
+        # that never happened.
+        self._iteration_index: Optional[int] = None
+        # The last index actually written to an event. Tracked separately
+        # from the counter because a per-event override can outrun it, and
+        # a trace whose indices go backwards is refused at validation --
+        # after the run has finished and the evidence is gone. Refuse it
+        # here instead, while the workload is still in hand.
+        self._last_stamped_iteration: Optional[int] = None
         self._requested_output_path = output_path
         self._recorder_id = uuid.uuid4().hex
         self._trace_root = _configured_trace_root()
@@ -128,6 +140,38 @@ class TraceRecorder:
     def elapsed_us(self) -> float:
         return (time.perf_counter_ns() - self._start_ns) / 1000.0
 
+    def begin_iteration(self, index: Optional[int] = None) -> int:
+        """Mark the start of a workload step and stamp later events with it.
+
+        A serving engine's step is the repetition unit the whole reduction
+        argument rests on, and it cannot be recovered from the collective
+        stream afterwards: every compression objective over that stream is
+        maximised by shredding it to single events. So the workload declares
+        the boundary while it still knows where it is.
+
+        Ranks call this in lockstep, once per engine step, so their counters
+        agree without communicating. Pass ``index`` explicitly where the
+        workload already has a step number to bind to.
+        """
+
+        with self._lock:
+            if index is None:
+                self._iteration_index = 0 if self._iteration_index is None else self._iteration_index + 1
+            else:
+                parsed = as_int(index)
+                if parsed < 0:
+                    raise SchemaError("iteration index must be non-negative")
+                if self._iteration_index is not None and parsed < self._iteration_index:
+                    raise SchemaError("iteration index must not move backwards")
+                self._iteration_index = parsed
+            return self._iteration_index
+
+    @property
+    def current_iteration(self) -> Optional[int]:
+        """Return the step events are being stamped with, or None if unsegmented."""
+
+        return self._iteration_index
+
     def record_collective(
         self,
         *,
@@ -155,6 +199,7 @@ class TraceRecorder:
         reduction_op: Optional[str] = None,
         compute_recipe: Optional[List[Mapping[str, Any]]] = None,
         compute_recipe_by_rank: Optional[Mapping[str, List[Mapping[str, Any]]]] = None,
+        iteration_index: Optional[int] = None,
     ) -> None:
         self._require_open()
         with self._lock:
@@ -266,6 +311,17 @@ class TraceRecorder:
                 "compute_pressure": round(parsed_pressure, 6),
                 "concurrent_groups": parsed_groups,
             }
+            stamped = self._iteration_index if iteration_index is None else as_int(iteration_index)
+            if stamped is not None:
+                if stamped < 0:
+                    raise SchemaError("iteration_index must be non-negative")
+                if self._last_stamped_iteration is not None and stamped < self._last_stamped_iteration:
+                    raise SchemaError(
+                        f"iteration_index {stamped} moves backwards from {self._last_stamped_iteration}; "
+                        "a trace whose step numbers decrease is refused"
+                    )
+                self._last_stamped_iteration = stamped
+                event["iteration_index"] = stamped
             if parsed_dtype is not None:
                 event["dtype"] = parsed_dtype
             if collective_id is not None:
@@ -554,6 +610,14 @@ class NullRecorder:
     def record_collective(self, **kwargs: Any) -> None:
         return None
 
+    def begin_iteration(self, index: Optional[int] = None) -> int:
+        # Capture is off; a workload that segments its steps still runs.
+        return 0 if index is None else as_int(index)
+
+    @property
+    def current_iteration(self) -> Optional[int]:
+        return None
+
     def save(self) -> None:
         return None
 
@@ -691,6 +755,17 @@ def _close_auto_recorder_at_exit() -> None:
             recorder.close()
 
 
+def begin_iteration(index: Optional[int] = None) -> int:
+    """Mark a workload step boundary on the environment-managed recorder.
+
+    Call once per engine step, from every rank, before the step's collectives
+    are issued. Without it the capture carries no segmentation and phase
+    reduction refuses to guess one.
+    """
+
+    return int(get_recorder().begin_iteration(index))
+
+
 def record_collective(
     *,
     op: str,
@@ -718,6 +793,7 @@ def record_collective(
     reduction_op: Optional[str] = None,
     compute_recipe: Optional[List[Mapping[str, Any]]] = None,
     compute_recipe_by_rank: Optional[Mapping[str, List[Mapping[str, Any]]]] = None,
+    iteration_index: Optional[int] = None,
 ) -> None:
     """Record one collective through the environment-managed recorder.
 
@@ -757,6 +833,7 @@ def record_collective(
         reduction_op=reduction_op,
         compute_recipe=compute_recipe,
         compute_recipe_by_rank=compute_recipe_by_rank,
+        iteration_index=iteration_index,
     )
 
 

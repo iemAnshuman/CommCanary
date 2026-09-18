@@ -110,6 +110,11 @@
         "ranks"
       ],
       "properties": {
+        "iteration_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Workload step this collective belongs to. Optional, but all or nothing across a trace: a partially declared segmentation is refused."
+        },
         "op": {
           "$ref": "https://commcanary.dev/schemas/common.schema.json#/$defs/nonEmptyString"
         },

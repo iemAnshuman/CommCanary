@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from ..errors import SchemaError
 from ..formats import TRACE_FORMAT
@@ -27,6 +27,42 @@ from .wire import (
 )
 
 
+def _validate_iteration_segmentation(events: Sequence[Any]) -> None:
+    """Check declared step boundaries are complete and ordered.
+
+    Segmentation is optional, but it is all or nothing. A trace where only some
+    events carry ``iteration_index`` describes a workload whose steps are known
+    in places and unknowable elsewhere, and every consumer of it would have to
+    invent a rule for the gaps. Indices never decrease because they name
+    positions in a sequence that ran once, forwards.
+    """
+
+    declared = [
+        (index, event.get("iteration_index"))
+        for index, event in enumerate(events)
+        if isinstance(event, Mapping) and "iteration_index" in event
+    ]
+    if not declared:
+        return
+    if len(declared) != len(events):
+        missing = next(
+            index
+            for index in range(len(events))
+            if not (isinstance(events[index], Mapping) and "iteration_index" in events[index])
+        )
+        raise SchemaError(
+            f"trace event {missing} is missing 'iteration_index' while other events declare it; "
+            "a partially declared segmentation is refused"
+        )
+    previous = -1
+    for index, raw in declared:
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            raise SchemaError(f"trace event {index} iteration_index must be a non-negative integer")
+        if raw < previous:
+            raise SchemaError(f"trace event {index} iteration_index moves backwards")
+        previous = raw
+
+
 def validate_trace(
     trace: Mapping[str, Any],
     *,
@@ -49,6 +85,7 @@ def validate_trace(
         )
     except JsonResourceError as exc:
         raise SchemaError(str(exc)) from exc
+    _validate_iteration_segmentation(events)
     for index, event in enumerate(events):
         if not isinstance(event, Mapping):
             raise SchemaError(f"trace event {index} must be an object")

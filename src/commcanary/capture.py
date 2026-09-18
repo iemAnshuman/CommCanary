@@ -13,6 +13,7 @@ from .adapters import capture as _implementation
 from .adapters.capture import (
     NullRecorder,
     TraceRecorder,
+    begin_iteration,
     get_recorder,
     merge_trace_shards,
     record_collective,
@@ -20,6 +21,7 @@ from .adapters.capture import (
 
 __all__ = [
     "NullRecorder",
+    "begin_iteration",
     "TraceRecorder",
     "get_recorder",
     "merge_trace_shards",
