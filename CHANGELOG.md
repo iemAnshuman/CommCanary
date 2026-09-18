@@ -4,9 +4,11 @@
 
 ### Decision safety
 
-- Hardened both application drivers after job `180257` left all four A100s on
-  `toranj1` in "GPU requires reset" on 2026-08-04, where they remained for
-  sixteen days while Slurm kept scheduling onto the node. CUDA graphs and
+- Hardened both application drivers after all four A100s on `toranj1` went
+  into "GPU requires reset" on 2026-08-04 while job `180257` was running on
+  them. The node was reset on 2026-08-20. Whether the job caused the state is
+  not established: the same driver/GSP reset failure had hit `toranj0` and
+  `toranj1` under other work in July. CUDA graphs and
   peer-to-peer custom all-reduce -- both outside the domain
   `docs/product-status.md` declares qualified -- now default **off** and must be
   opted into with `--allow-cuda-graphs` / `--allow-custom-all-reduce`, which
