@@ -13,6 +13,8 @@ import binascii
 import hashlib
 import hmac
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -256,12 +258,50 @@ def _write_private_temp(path: Path, value: bytes) -> None:
         raise
 
 
+_OPENSSL_VERSIONS: Dict[str, str] = {}
+
+
+def _require_openssl3(*, failure: str, verification: bool) -> None:
+    """Refuse an ``openssl`` that cannot do raw Ed25519 before using it.
+
+    ``pkeyutl -rawin`` with Ed25519 needs OpenSSL 3. The ``openssl`` a stock
+    macOS puts on PATH is LibreSSL, which has no Ed25519 at all, and it failed
+    here with "unable to load key" -- true, and no help in finding the cause.
+    """
+
+    error_type = SchemaError if verification else CommCanaryError
+    resolved = shutil.which("openssl")
+    if resolved is None:
+        raise error_type(f"{failure}: openssl is not on PATH; Ed25519 signing needs OpenSSL 3.0 or newer")
+    reported = _OPENSSL_VERSIONS.get(resolved)
+    if reported is None:
+        try:
+            completed = subprocess.run(
+                [resolved, "version"],
+                check=False,
+                capture_output=True,
+                timeout=OPENSSL_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise error_type(f"{failure}: cannot run {resolved}: {type(exc).__name__}: {exc}") from exc
+        reported = completed.stdout.decode("utf-8", errors="replace").strip()
+        _OPENSSL_VERSIONS[resolved] = reported
+    match = re.match(r"OpenSSL (\d+)\.", reported)
+    if match is None or int(match.group(1)) < 3:
+        raise error_type(
+            f"{failure}: Ed25519 signing needs OpenSSL 3.0 or newer, but openssl on PATH "
+            f"({resolved}) reports {reported or 'no version'!r}. The openssl that ships with "
+            "macOS is LibreSSL; install OpenSSL 3 and put it first on PATH"
+        )
+
+
 def _openssl(
     arguments: Sequence[str],
     *,
     failure: str,
     verification: bool = False,
 ) -> bytes:
+    _require_openssl3(failure=failure, verification=verification)
     try:
         completed = subprocess.run(
             ["openssl", *arguments],

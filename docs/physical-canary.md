@@ -243,7 +243,9 @@ exact manifest, omits the source ET, source projection, corpus, selection
 ledger, and raw application and physical evidence, and retains their signed
 content commitments. Verification requires the owner's independently supplied
 public key. Signing uses the local OpenSSL command and refuses encrypted,
-non-Ed25519, or mismatched keys.
+non-Ed25519, or mismatched keys. It needs OpenSSL 3.0 or newer on `PATH`. The
+`openssl` that ships with macOS is LibreSSL, which has no Ed25519; signing
+names that and stops rather than failing inside it.
 
 The leakage score covers five declared inference categories: model family,
 hidden dimension, parallelism degree, batch/token geometry, and topology. It

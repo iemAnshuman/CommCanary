@@ -15,6 +15,10 @@ source of truth; support is not implied for an interpreter outside that range.
 | macOS | Supported | Library, CLI, capture, package/install gate, and benchmark smoke; physical GPU/SLURM experiments are excluded |
 | Windows | Unsupported in 0.3 | The core library may work, but it is not in CI and filesystem permission, subprocess, capture ownership, and shell contracts are not claimed |
 
+Signing and verifying private-exchange bundles shells out to `openssl` and needs
+OpenSSL 3.0 or newer. On macOS the system `openssl` is LibreSSL, so install
+OpenSSL 3 (for example with Homebrew) and put it first on `PATH`.
+
 Windows is explicitly unsupported rather than silently treated as portable.
 A future support change requires a CI matrix entry plus path, atomic-write,
 permissions, subprocess-exit, installed-wheel, and command-line tests on Windows.
