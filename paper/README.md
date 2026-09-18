@@ -18,6 +18,13 @@ snapshot, provenance checks, and packaging procedure for a corrected deposit.
 It does not claim to be the lost original authoring tree or to regenerate the
 published PDF byte for byte.
 
+## arXiv revision
+
+[`arxiv/`](arxiv/README.md) is the revision prepared for arXiv. It adds
+uncertainty and sensitivity analysis to the trusted join, drops the version
+from the title, and withdraws the comparative claims that depend on a single
+configuration. `preprint-0.4/` stays the record of the published version.
+
 ## Historical draft
 
 `draft.md` is preserved as a historical research draft. The complete raw
