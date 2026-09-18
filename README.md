@@ -1,61 +1,79 @@
 # CommCanary
 
-**We replaced `nccl-tests` with a faithful replay of a tensor-parallel decode
-workload's communication. It ranked GPU configurations _worse_ than the
-microbenchmark it was built to replace.**
+**Replaying a workload's communication exactly does not reproduce the
+configuration ranking of the workload itself.** On four A100s, a faithful
+replay of a tensor-parallel decode loop's collectives agreed with the real
+workload on 16 of 28 NCCL configuration pairs, and ranked the real workload's
+slowest configuration second.
 
-That result is the reason this project exists. Measured on 280 verified cells
-across four A100s over 28 configuration pairs, against `W-full`: a four-rank
-decode loop of 32 layers × 256 tokens, each layer a sharded GEMM sized to
-realistic per-layer decode compute followed by a bf16 all-reduce. It is a
-synthetic workload shaped like decode, not a served model — skew and overlap
-arise from kernel jitter rather than injection.
+CommCanary exists to make that kind of statement checkable. It turns a
+workload into a shareable proxy that carries its own fidelity claim, measured
+against the full workload and bound to hash-verified evidence, so that a team
+qualifying new silicon, an interconnect or an NCCL version can give a vendor
+something faithful without handing over weights or prompts.
 
-| proxy | pair agreement | Kendall τ‑b |
-|---|---:|---:|
-| `W-shared-overlap` — shared-trace overlap replay | **71.4%** | **0.708** |
-| `W-micro` — an isolated microbenchmark, the `nccl-tests` analogue | 64.3% | 0.490 |
-| `W-canary` — faithful communication-only replay | **57.1%** | **0.204** |
-| `W-canary-overlap` — per-configuration overlap replay | 53.6% | 0.677 |
+The measurement, over 280 verified cells, against `W-full`: a four-rank decode
+loop of 32 layers × 256 tokens, each layer a sharded GEMM sized to realistic
+per-layer decode compute followed by a bf16 all-reduce. It is a synthetic
+workload shaped like decode, not a served model — skew and overlap arise from
+kernel jitter rather than injection.
 
-Replaying the communication exactly is *not* enough. Communication-only replay
-scores below the microbenchmark it was built to replace, and ranks
-`nccl-2.20.5-tree-ll` — the full workload's worst configuration, +38% against
-the best — as second best. Only overlap-bearing replay beats the microbenchmark,
-**and it still disagrees on 8 of 28 pairs.**
+| proxy | pair agreement | 95% interval | Kendall τ‑b | pairs reversed |
+|---|---:|---:|---:|---:|
+| `W-shared-overlap` — shared-trace overlap replay | **20/28** | 18–23 | **0.708** | 2 |
+| `W-micro` — an isolated microbenchmark, the `nccl-tests` analogue | 18/28 | 17–20 | 0.490 | 5 |
+| `W-canary` — faithful communication-only replay | **16/28** | 12–17 | **0.204** | **9** |
+| `W-canary-overlap` — per-configuration overlap replay | 15/28 | 8–21 | 0.677 | 0 |
 
-The fourth row is the honest complication: `W-canary-overlap` carries overlap and
-still lands last on agreement. Its medians span 144–178 µs, producing 13 policy
-ties that the agreement metric counts as disagreement and Kendall τ does not —
-which is why its τ of 0.677 sits far above its agreement.
+What the data supports:
 
-What this supports is a **decomposition of which trace properties carry a ranking
-decision**. It is not decision preservation, and it is not a cost argument: at
-this workload size the proxies are not cheaper, with median per-cell wall time of
-7.9 s for the full workload against 17.2 s for communication-only replay and
-11.4 s for overlap replay.
+- **Communication alone is not the load-bearing variable.** Communication-only
+  replay puts the two low-latency-protocol configurations first and second;
+  the real workload puts them fifth and last. Both overlap replays, which keep
+  compute concurrent with communication, place them exactly where the real
+  workload does, and shared-trace overlap replay beats communication-only
+  replay in 99.9% of bootstrap draws.
+- **The proxies differ from each other through one configuration.** Remove
+  `nccl-2.20.5-tree-ll` and no proxy is distinguishable from another, so this
+  does not show that communication-only replay is generally worse than a
+  microbenchmark.
+- **Low agreement is not always wrong order.** `W-canary-overlap` never
+  reverses a pair; its 13 disagreements are all ties, because most of its
+  medians sit within a few microseconds of each other while its spreads reach
+  18 µs.
+- **It is not a cost argument.** At this workload size the proxies are not
+  cheaper: median per-cell wall time was 7.9 s for the full workload against
+  17.2 s for communication-only replay and 11.4 s for overlap replay.
 
-This generalises past CommCanary. Chakra replay, ASTRA-sim, AICB/SimAI and PARAM
-comms-replay all replay communication. This data says communication alone is not
-the load-bearing variable.
+Chakra replay, ASTRA-sim, AICB/SimAI and PARAM comms-replay all replay
+communication; this is why a proxy's fidelity has to be measured rather than
+assumed.
 
-Every number above regenerates byte-for-byte from
-[the frozen evidence](experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json).
+The point values are read from
+[the frozen evidence](experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json);
+the intervals and the sensitivity analysis come from
+[a script](paper/arxiv/scripts/trusted_join_uncertainty.py) that regenerates
+[its output](paper/arxiv/evidence/trusted_join_uncertainty.json) from that
+evidence under test. Regenerating the aggregate itself means restoring the
+campaigns' raw workspaces first, about 8.7 GiB; see
+[the results guide](experiments/rostam/results/README.md).
 
 ## Try it in sixty seconds
 
 ```console
-pip install "git+https://github.com/iemAnshuman/CommCanary"
+GIT_LFS_SKIP_SMUDGE=1 pip install "git+https://github.com/iemAnshuman/CommCanary"
 commcanary demo
 ```
 
 CommCanary is not on PyPI yet, so install from the repository for now.
+`GIT_LFS_SKIP_SMUDGE=1` keeps Git from downloading the experiment archives,
+about 770 MB of Git LFS objects the package does not need.
 
 That compiles a bundled example trace into a canary, replays a baseline and a
-deliberately regressed candidate, compares them, and opens an HTML report. It
-needs no GPUs, no cluster, and no input files. The replay is a deterministic
-simulator over a bundled example, so the demo's numbers illustrate the workflow
-rather than measuring your hardware.
+deliberately regressed candidate, compares them, and writes an HTML report,
+printing its path. It needs no GPUs, no cluster, and no input files. The replay
+is a deterministic simulator over a bundled example, so the demo's numbers
+illustrate the workflow rather than measuring your hardware.
 
 ![The comparison report commcanary demo produces](docs/images/comparison-report.png)
 
@@ -67,12 +85,13 @@ so the site and the local run cannot diverge.
 
 ## What this is
 
-CommCanary's goal is to turn an expensive distributed-AI workload and a
-regression policy into a short physical test that predicts whether a stack
-change should ship, with enough retained evidence to audit the decision. Chakra
-carries the execution graph. CommCanary owns dependency-closed selection,
-policy-conditioned minimization, asymmetric regression safety, and the evidence
-bundle.
+CommCanary's goal is a workload proxy that can leave the building: a compact,
+replayable artifact derived from a private distributed-AI workload, with a
+measured fidelity claim against that workload and enough retained evidence for
+a receiver to audit the claim. Chakra carries the execution graph. CommCanary
+owns dependency-closed selection, policy-conditioned minimization, the
+fidelity measurement, and the evidence bundle, including signed private
+exchange.
 
 That goal is **not yet achieved**, and this README will not pretend otherwise.
 What is built, what is measured, and what remains unproven are listed below.
