@@ -126,6 +126,42 @@ analysis tooling validates the normalized member inventory; publications embed
 their regeneration command. [`../../../docs/artifact-evaluation.md`](../../../docs/artifact-evaluation.md)
 documents the fail-closed analysis and reproduction procedure.
 
+## Regenerating a publication
+
+The campaign directories here hold manifests, attempts, selections and
+verdicts. The files those attempts reference live only in the raw archives, so
+a publication cannot be regenerated from a fresh clone until they are restored:
+
+```console
+git lfs pull
+python -m experiments.rostam.restore_workspaces \
+  --run-directory experiments/rostam/results/shared-replay-20260720-r2 \
+  --descriptor experiments/rostam/results/archives/shared-replay-20260720-r2-primary-b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db.raw-archive-descriptor.json \
+  --archive experiments/rostam/results/archives/shared-replay-20260720-r2-primary-b6cd1aae4cfb2de020a840f941031d4a910d0d47d4c83aee1c09e0f5f6bc98db.raw.tar.gz
+```
+
+The tool restores exactly the files the selected attempts reference into the
+run's `workspaces/`, which Git ignores; checks the archive against its
+descriptor and every file against its attempt's SHA-256; and refuses to start
+without enough free disk. `--dry-run` reports what it would restore.
+
+Then run the regeneration command recorded in the publication's
+`aggregate.json`, with the analyzer source that produced it (below), an
+`--output-directory` in scratch space, and `--regeneration-command` set to the
+recorded command so that it is embedded unchanged. Compare the three files with
+the committed ones. For `shared-replay-20260720-r2-primary` this was checked on
+2026-09-19: with analyzer `6757c83` all three files regenerate byte for byte.
+
+Space needed for the selected workspaces:
+
+| Campaign | Files | Restored size |
+| --- | ---: | ---: |
+| `shared-replay-20260720-r2` | 120 | under 6 MiB |
+| `core-20260724-r7` | 640 | 4.6 GiB |
+| `overlap-20260724-r1` | 400 | 4.1 GiB |
+
+The trusted join needs all three, about 8.7 GiB.
+
 Historical publication bytes must be regenerated with the analyzer source that
 created them. `analyzer-sources/` preserves deterministic source-only
 `git archive` exports for analyzer identities that should not depend on later
