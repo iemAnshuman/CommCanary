@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, MutableMapping, Sequence, Tuple
+import dataclasses
+from dataclasses import dataclass
+from typing import Any, Dict, List, Mapping, MutableMapping, Sequence, Tuple
 
 from ..errors import SchemaError
 from ..formats import (
@@ -107,6 +109,62 @@ def validate_canary(
     allow_legacy_unverified: bool = False,
     limits: ResourceLimits = DEFAULT_RESOURCE_LIMITS,
 ) -> None:
+    compiler, profiled_integrity, events = _validate_canary_header(
+        canary, allow_legacy_unverified=allow_legacy_unverified
+    )
+    expansion = preflight_canary_expansion(events, limits=limits)
+    _validate_stored_event_source_blocks(events, profiled_integrity=profiled_integrity)
+    stored_recursive_records = sum(
+        stored_event_timing_record_count(event) for event in iter_canary_stored_leaf_events(events, limits=limits)
+    )
+    stored_approximate_records = sum(
+        _event_approximate_record_count(event) for event in iter_canary_stored_leaf_events(events, limits=limits)
+    )
+
+    totals = _EventTotals()
+    for index, event in enumerate(iter_canary_logical_events(events, limits=limits)):
+        _validate_logical_event(index, event, totals, profiled_integrity=profiled_integrity, limits=limits)
+
+    observed = totals.observed_flags
+    if observed and any(observed) and not all(observed):
+        raise SchemaError("observed_exposed_us must be present on all timing records or none")
+
+    _validate_compiler_counts(
+        compiler,
+        totals,
+        stored_events=len(events),
+        expanded_events=expansion.logical_events,
+        stored_recursive_records=stored_recursive_records,
+        stored_approximate_records=stored_approximate_records,
+    )
+    _validate_capture_uncertainty(compiler, totals.compute_uncertain_events)
+    _validate_compiler_hashes(canary, compiler, profiled_integrity=profiled_integrity, limits=limits)
+    _validate_compiler_integers(compiler)
+    _validate_behavior_search_summary(compiler)
+    _validate_timing_sample_limits(compiler)
+    fidelity = _validate_fidelity(compiler, totals)
+    _validate_fidelity_budget(compiler, fidelity)
+    _validate_tail_signal(compiler, observed)
+
+
+@dataclass
+class _EventTotals:
+    """What the logical events add up to, for the compiler record to match."""
+
+    total_repeat: int = 0
+    observed_flags: List[bool] = dataclasses.field(default_factory=list)
+    recursive_records: int = 0
+    approximate_records: int = 0
+    encoded_gap_total: float = 0.0
+    compute_uncertain_events: int = 0
+    fidelity_maxima: Dict[str, float] = dataclasses.field(
+        default_factory=lambda: {key: 0.0 for key in FIDELITY_ERROR_FIELDS}
+    )
+
+
+def _validate_canary_header(
+    canary: Mapping[str, Any], *, allow_legacy_unverified: bool
+) -> Tuple[Mapping[str, Any], bool, List[Any]]:
     require_format(canary, CANARY_FORMAT, "canary")
     require_optional_mapping(canary, "workload", "canary")
     require_optional_mapping(canary, "system", "canary")
@@ -131,205 +189,238 @@ def validate_canary(
     events = canary.get("events")
     if not isinstance(events, list):
         raise SchemaError("canary must contain an 'events' list")
+    return compiler, profiled_integrity, events
 
-    expansion = preflight_canary_expansion(events, limits=limits)
-    _validate_stored_event_source_blocks(events, profiled_integrity=profiled_integrity)
-    actual_stored_recursive_records = sum(
-        stored_event_timing_record_count(event) for event in iter_canary_stored_leaf_events(events, limits=limits)
-    )
-    actual_stored_approximate_records = sum(
-        _event_approximate_record_count(event) for event in iter_canary_stored_leaf_events(events, limits=limits)
-    )
 
-    total_repeat = 0
-    all_leaf_observed_flags: List[bool] = []
-    actual_recursive_records = 0
-    actual_approximate_records = 0
-    actual_encoded_gap_total = 0.0
-    actual_compute_uncertain_events = 0
-    actual_fidelity_maxima = {field: 0.0 for field in FIDELITY_ERROR_FIELDS}
-    for index, event in enumerate(iter_canary_logical_events(events, limits=limits)):
-        if not isinstance(event, Mapping):
-            raise SchemaError(f"canary event {index} must be an object")
-        for key in ("op", "bytes", "ranks", "repeat"):
-            if key not in event:
-                raise SchemaError(f"canary event {index} is missing {key!r}")
-        validate_op(event.get("op"), f"canary event {index}", custom=event.get("custom_op") is True)
-        if "dtype" in event:
-            require_canonical_dtype(event.get("dtype"), label=f"canary event {index} dtype")
-        for text_key in ("phase", "group"):
-            if text_key not in event:
-                raise SchemaError(f"canary event {index} is missing {text_key!r}")
-            validate_nonempty_string(event.get(text_key), f"canary event {index} {text_key}")
-        if as_int(event.get("bytes")) <= 0:
-            raise SchemaError(f"canary event {index} bytes must be positive")
-        repeat = as_int(event.get("repeat"))
-        if repeat <= 0:
-            raise SchemaError(f"canary event {index} repeat must be positive")
-        total_repeat += repeat
+def _validate_logical_event(
+    index: int,
+    event: Any,
+    totals: _EventTotals,
+    *,
+    profiled_integrity: bool,
+    limits: ResourceLimits,
+) -> None:
+    if not isinstance(event, Mapping):
+        raise SchemaError(f"canary event {index} must be an object")
+    repeat = _validate_event_fields(index, event, profiled_integrity=profiled_integrity)
+    totals.total_repeat += repeat
+    ranks = _validate_event_ranks(index, event, limits=limits)
+    _validate_event_timing_samples(index, event, ranks, repeat, totals)
 
-        source = event.get("source")
-        if not isinstance(source, Mapping):
-            raise SchemaError(f"canary event {index} must contain a source object")
-        if "count" not in source:
-            raise SchemaError(f"canary event {index} source.count is required")
-        if as_int(source.get("count")) != repeat:
-            raise SchemaError(f"canary event {index} source.count must match repeat")
-        if profiled_integrity and "digest" not in source:
-            raise SchemaError(f"canary event {index} source.digest is required")
-        if "digest" in source:
-            validate_sha256(source.get("digest"), f"canary event {index} source.digest")
-        if "sampled_timing_records" in source and as_int(source.get("sampled_timing_records")) <= 0:
-            raise SchemaError(f"canary event {index} source.sampled_timing_records must be positive")
-        if "execution_occurrence_base" in event and as_int(event.get("execution_occurrence_base")) < 0:
-            raise SchemaError(f"canary event {index} execution_occurrence_base must be non-negative")
-        if "concurrent_groups" in event and as_int(event.get("concurrent_groups")) <= 0:
-            raise SchemaError(f"canary event {index} concurrent_groups must be positive")
 
-        ranks = normalize_ranks(event.get("ranks"))
-        if len(ranks) > limits.max_ranks:
-            raise SchemaError(f"canary event {index} rank count exceeds resource policy limit={limits.max_ranks}")
-        if "rank_count" in event and as_int(event.get("rank_count")) != len(ranks):
-            raise SchemaError(f"canary event {index} rank_count must match ranks")
-        if "rank_arrival_us" in event:
-            validate_arrival_keys(
-                event.get("rank_arrival_us", {}),
-                ranks,
-                f"canary event {index} rank_arrival_us",
-                allow_subset=event.get("partial_rank_arrival") is True,
-            )
-        if "arrival_offsets_us" in event:
-            offsets = event.get("arrival_offsets_us")
-            if not isinstance(offsets, list) or len(offsets) != len(ranks):
-                raise SchemaError(f"canary event {index} arrival_offsets_us must match ranks")
-            parsed_offsets = [as_float(value) for value in offsets]
-            if any(value < 0.0 for value in parsed_offsets):
-                raise SchemaError(f"canary event {index} arrival offsets must be non-negative")
-            if "arrival_skew_us" in event and as_float(event.get("arrival_skew_us")) < 0.0:
-                raise SchemaError(f"canary event {index} arrival_skew_us must be non-negative")
-            if len(ranks) == 1 and as_float(event.get("arrival_skew_us"), 0.0) > 0.001:
-                raise SchemaError(f"canary event {index} one-rank skew must be zero")
-        validate_broadcast_metadata(event, ranks, f"canary event {index}")
-        validate_point_to_point_metadata(event, ranks, f"canary event {index}")
-        validate_reduction_metadata(event, f"canary event {index}")
+def _validate_event_fields(index: int, event: Mapping[str, Any], *, profiled_integrity: bool) -> int:
+    """Check the event's own fields and its source block; return its repeat."""
 
-        samples = event.get("timing_samples")
-        if not isinstance(samples, list) or not samples:
-            raise SchemaError(f"canary event {index} must contain non-empty timing_samples")
-        weight_total = 0
-        source_indices: List[int] = []
-        intervals: List[Tuple[int, int]] = []
-        for sample_index, sample in enumerate(samples):
-            label = f"canary event {index} timing sample {sample_index}"
-            if not isinstance(sample, Mapping):
-                raise SchemaError(f"{label} must be an object")
-            _validate_timing_record(sample, ranks, label, repeat=repeat)
-            actual_recursive_records += 1
-            actual_encoded_gap_total += _timing_record_gap_sum(sample, label)
-            actual_compute_uncertain_events += _timing_record_logical_uncertain_weight(sample)
-            _accumulate_fidelity_maxima(actual_fidelity_maxima, sample)
-            if sample.get("approximation") == "bounded_interval":
-                actual_approximate_records += 1
+    for key in ("op", "bytes", "ranks", "repeat"):
+        if key not in event:
+            raise SchemaError(f"canary event {index} is missing {key!r}")
+    validate_op(event.get("op"), f"canary event {index}", custom=event.get("custom_op") is True)
+    if "dtype" in event:
+        require_canonical_dtype(event.get("dtype"), label=f"canary event {index} dtype")
+    for text_key in ("phase", "group"):
+        if text_key not in event:
+            raise SchemaError(f"canary event {index} is missing {text_key!r}")
+        validate_nonempty_string(event.get(text_key), f"canary event {index} {text_key}")
+    if as_int(event.get("bytes")) <= 0:
+        raise SchemaError(f"canary event {index} bytes must be positive")
+    repeat = as_int(event.get("repeat"))
+    if repeat <= 0:
+        raise SchemaError(f"canary event {index} repeat must be positive")
 
-            sample_weight = as_int(sample.get("weight", 1))
-            if sample_weight <= 0:
-                raise SchemaError(f"{label} weight must be positive")
-            pattern = sample.get("timing_pattern")
-            if pattern is not None:
-                if not isinstance(pattern, list) or not pattern:
-                    raise SchemaError(f"{label} timing_pattern must be non-empty")
-                pattern_repeats = as_int(sample.get("pattern_repeats", 1))
-                if pattern_repeats <= 0:
-                    raise SchemaError(f"{label} pattern_repeats must be positive")
-                pattern_weight = 0
-                pattern_source_indices: List[int] = []
-                pattern_gap_sum = 0.0
-                for pattern_index, pattern_sample in enumerate(pattern):
-                    pattern_label = f"{label} pattern record {pattern_index}"
-                    if not isinstance(pattern_sample, Mapping):
-                        raise SchemaError(f"{pattern_label} must be an object")
-                    if "timing_pattern" in pattern_sample:
-                        raise SchemaError(f"{pattern_label} must not contain a nested timing_pattern")
-                    _validate_timing_record(pattern_sample, ranks, pattern_label, repeat=repeat)
-                    actual_recursive_records += 1
-                    _accumulate_fidelity_maxima(actual_fidelity_maxima, pattern_sample)
-                    if pattern_sample.get("approximation") == "bounded_interval":
-                        actual_approximate_records += 1
-                    pattern_entry_weight = as_int(pattern_sample.get("weight", 1))
-                    if pattern_entry_weight <= 0:
-                        raise SchemaError(f"{pattern_label} weight must be positive")
-                    pattern_weight += pattern_entry_weight
-                    pattern_gap_sum += _timing_record_gap_sum(pattern_sample, pattern_label)
-                    if "source_index" in pattern_sample:
-                        pattern_source_indices.append(as_int(pattern_sample.get("source_index")))
-                    all_leaf_observed_flags.append("observed_exposed_us" in pattern_sample)
-                if sample_weight != pattern_weight * pattern_repeats:
-                    raise SchemaError(f"{label} pattern weight must match sample weight")
-                _validate_source_indices(pattern_source_indices, f"{label} pattern")
-                parent_gap_sum = _timing_record_gap_sum(sample, label)
-                expected_gap_sum = pattern_gap_sum * pattern_repeats
-                if abs(parent_gap_sum - expected_gap_sum) > 1e-6:
-                    raise SchemaError(f"{label} gap_sum_us must match its repeated timing_pattern")
-            else:
-                _validate_non_pattern_gap_sum(sample, label)
-                all_leaf_observed_flags.append("observed_exposed_us" in sample)
+    source = event.get("source")
+    if not isinstance(source, Mapping):
+        raise SchemaError(f"canary event {index} must contain a source object")
+    if "count" not in source:
+        raise SchemaError(f"canary event {index} source.count is required")
+    if as_int(source.get("count")) != repeat:
+        raise SchemaError(f"canary event {index} source.count must match repeat")
+    if profiled_integrity and "digest" not in source:
+        raise SchemaError(f"canary event {index} source.digest is required")
+    if "digest" in source:
+        validate_sha256(source.get("digest"), f"canary event {index} source.digest")
+    if "sampled_timing_records" in source and as_int(source.get("sampled_timing_records")) <= 0:
+        raise SchemaError(f"canary event {index} source.sampled_timing_records must be positive")
+    if "execution_occurrence_base" in event and as_int(event.get("execution_occurrence_base")) < 0:
+        raise SchemaError(f"canary event {index} execution_occurrence_base must be non-negative")
+    if "concurrent_groups" in event and as_int(event.get("concurrent_groups")) <= 0:
+        raise SchemaError(f"canary event {index} concurrent_groups must be positive")
+    return repeat
 
-            weight_total += sample_weight
-            if "source_index" in sample:
-                source_indices.append(as_int(sample.get("source_index")))
-            intervals.append(_sample_interval(sample, label))
 
-        _validate_source_indices(source_indices, f"canary event {index} timing samples")
-        _validate_intervals(intervals, f"canary event {index} timing samples")
-        if intervals and (intervals[0][0] != 0 or intervals[-1][1] != repeat - 1):
-            raise SchemaError(f"canary event {index} timing samples must cover the full repeat interval")
-        if weight_total != repeat:
-            raise SchemaError(f"canary event {index} timing sample weights must sum to repeat")
-        if repeat == 1 and len(samples) == 1 and isinstance(samples[0], Mapping) and "timing_pattern" not in samples[0]:
-            _validate_event_summary_matches_single_sample(event, samples[0], ranks, f"canary event {index}")
+def _validate_event_ranks(index: int, event: Mapping[str, Any], *, limits: ResourceLimits) -> List[int]:
+    ranks = normalize_ranks(event.get("ranks"))
+    if len(ranks) > limits.max_ranks:
+        raise SchemaError(f"canary event {index} rank count exceeds resource policy limit={limits.max_ranks}")
+    if "rank_count" in event and as_int(event.get("rank_count")) != len(ranks):
+        raise SchemaError(f"canary event {index} rank_count must match ranks")
+    if "rank_arrival_us" in event:
+        validate_arrival_keys(
+            event.get("rank_arrival_us", {}),
+            ranks,
+            f"canary event {index} rank_arrival_us",
+            allow_subset=event.get("partial_rank_arrival") is True,
+        )
+    if "arrival_offsets_us" in event:
+        offsets = event.get("arrival_offsets_us")
+        if not isinstance(offsets, list) or len(offsets) != len(ranks):
+            raise SchemaError(f"canary event {index} arrival_offsets_us must match ranks")
+        parsed_offsets = [as_float(value) for value in offsets]
+        if any(value < 0.0 for value in parsed_offsets):
+            raise SchemaError(f"canary event {index} arrival offsets must be non-negative")
+        if "arrival_skew_us" in event and as_float(event.get("arrival_skew_us")) < 0.0:
+            raise SchemaError(f"canary event {index} arrival_skew_us must be non-negative")
+        if len(ranks) == 1 and as_float(event.get("arrival_skew_us"), 0.0) > 0.001:
+            raise SchemaError(f"canary event {index} one-rank skew must be zero")
+    validate_broadcast_metadata(event, ranks, f"canary event {index}")
+    validate_point_to_point_metadata(event, ranks, f"canary event {index}")
+    validate_reduction_metadata(event, f"canary event {index}")
+    return ranks
 
-    if all_leaf_observed_flags and any(all_leaf_observed_flags) and not all(all_leaf_observed_flags):
-        raise SchemaError("observed_exposed_us must be present on all timing records or none")
 
+def _validate_event_timing_samples(
+    index: int, event: Mapping[str, Any], ranks: List[int], repeat: int, totals: _EventTotals
+) -> None:
+    samples = event.get("timing_samples")
+    if not isinstance(samples, list) or not samples:
+        raise SchemaError(f"canary event {index} must contain non-empty timing_samples")
+    weight_total = 0
+    source_indices: List[int] = []
+    intervals: List[Tuple[int, int]] = []
+    for sample_index, sample in enumerate(samples):
+        label = f"canary event {index} timing sample {sample_index}"
+        if not isinstance(sample, Mapping):
+            raise SchemaError(f"{label} must be an object")
+        _validate_timing_record(sample, ranks, label, repeat=repeat)
+        totals.recursive_records += 1
+        totals.encoded_gap_total += _timing_record_gap_sum(sample, label)
+        totals.compute_uncertain_events += _timing_record_logical_uncertain_weight(sample)
+        _accumulate_fidelity_maxima(totals.fidelity_maxima, sample)
+        if sample.get("approximation") == "bounded_interval":
+            totals.approximate_records += 1
+
+        sample_weight = as_int(sample.get("weight", 1))
+        if sample_weight <= 0:
+            raise SchemaError(f"{label} weight must be positive")
+        if sample.get("timing_pattern") is not None:
+            _validate_timing_pattern(sample, sample_weight, ranks, repeat, label, totals)
+        else:
+            _validate_non_pattern_gap_sum(sample, label)
+            totals.observed_flags.append("observed_exposed_us" in sample)
+
+        weight_total += sample_weight
+        if "source_index" in sample:
+            source_indices.append(as_int(sample.get("source_index")))
+        intervals.append(_sample_interval(sample, label))
+
+    _validate_source_indices(source_indices, f"canary event {index} timing samples")
+    _validate_intervals(intervals, f"canary event {index} timing samples")
+    if intervals and (intervals[0][0] != 0 or intervals[-1][1] != repeat - 1):
+        raise SchemaError(f"canary event {index} timing samples must cover the full repeat interval")
+    if weight_total != repeat:
+        raise SchemaError(f"canary event {index} timing sample weights must sum to repeat")
+    if repeat == 1 and len(samples) == 1 and isinstance(samples[0], Mapping) and "timing_pattern" not in samples[0]:
+        _validate_event_summary_matches_single_sample(event, samples[0], ranks, f"canary event {index}")
+
+
+def _validate_timing_pattern(
+    sample: Mapping[str, Any],
+    sample_weight: int,
+    ranks: List[int],
+    repeat: int,
+    label: str,
+    totals: _EventTotals,
+) -> None:
+    pattern = sample.get("timing_pattern")
+    if not isinstance(pattern, list) or not pattern:
+        raise SchemaError(f"{label} timing_pattern must be non-empty")
+    pattern_repeats = as_int(sample.get("pattern_repeats", 1))
+    if pattern_repeats <= 0:
+        raise SchemaError(f"{label} pattern_repeats must be positive")
+    pattern_weight = 0
+    pattern_source_indices: List[int] = []
+    pattern_gap_sum = 0.0
+    for pattern_index, pattern_sample in enumerate(pattern):
+        pattern_label = f"{label} pattern record {pattern_index}"
+        if not isinstance(pattern_sample, Mapping):
+            raise SchemaError(f"{pattern_label} must be an object")
+        if "timing_pattern" in pattern_sample:
+            raise SchemaError(f"{pattern_label} must not contain a nested timing_pattern")
+        _validate_timing_record(pattern_sample, ranks, pattern_label, repeat=repeat)
+        totals.recursive_records += 1
+        _accumulate_fidelity_maxima(totals.fidelity_maxima, pattern_sample)
+        if pattern_sample.get("approximation") == "bounded_interval":
+            totals.approximate_records += 1
+        pattern_entry_weight = as_int(pattern_sample.get("weight", 1))
+        if pattern_entry_weight <= 0:
+            raise SchemaError(f"{pattern_label} weight must be positive")
+        pattern_weight += pattern_entry_weight
+        pattern_gap_sum += _timing_record_gap_sum(pattern_sample, pattern_label)
+        if "source_index" in pattern_sample:
+            pattern_source_indices.append(as_int(pattern_sample.get("source_index")))
+        totals.observed_flags.append("observed_exposed_us" in pattern_sample)
+    if sample_weight != pattern_weight * pattern_repeats:
+        raise SchemaError(f"{label} pattern weight must match sample weight")
+    _validate_source_indices(pattern_source_indices, f"{label} pattern")
+    parent_gap_sum = _timing_record_gap_sum(sample, label)
+    expected_gap_sum = pattern_gap_sum * pattern_repeats
+    if abs(parent_gap_sum - expected_gap_sum) > 1e-6:
+        raise SchemaError(f"{label} gap_sum_us must match its repeated timing_pattern")
+
+
+def _validate_compiler_counts(
+    compiler: Mapping[str, Any],
+    totals: _EventTotals,
+    *,
+    stored_events: int,
+    expanded_events: int,
+    stored_recursive_records: int,
+    stored_approximate_records: int,
+) -> None:
     if "source_events" not in compiler:
         raise SchemaError("canary compiler.source_events is required")
     source_events = as_int(compiler.get("source_events"))
     if source_events < 0:
         raise SchemaError("canary compiler.source_events must be non-negative")
-    if source_events != total_repeat:
+    if source_events != totals.total_repeat:
         raise SchemaError("canary compiler.source_events must match event repeats")
-    if "canary_events" in compiler and as_int(compiler.get("canary_events")) != len(events):
-        raise SchemaError("canary compiler.canary_events must match stored events")
-    if (
-        "expanded_canary_events" in compiler
-        and as_int(compiler.get("expanded_canary_events")) != expansion.logical_events
+    for key, actual, message in (
+        ("canary_events", stored_events, "canary compiler.canary_events must match stored events"),
+        (
+            "expanded_canary_events",
+            expanded_events,
+            "canary compiler.expanded_canary_events must match expanded events",
+        ),
+        (
+            "recursive_timing_records",
+            totals.recursive_records,
+            "canary compiler.recursive_timing_records must match logical timing records",
+        ),
+        (
+            "approximate_timing_records",
+            totals.approximate_records,
+            "canary compiler.approximate_timing_records must match logical timing records",
+        ),
+        (
+            "stored_recursive_timing_records",
+            stored_recursive_records,
+            "canary compiler.stored_recursive_timing_records must match stored timing records",
+        ),
+        (
+            "stored_approximate_timing_records",
+            stored_approximate_records,
+            "canary compiler.stored_approximate_timing_records must match stored timing records",
+        ),
     ):
-        raise SchemaError("canary compiler.expanded_canary_events must match expanded events")
-    if (
-        "recursive_timing_records" in compiler
-        and as_int(compiler.get("recursive_timing_records")) != actual_recursive_records
-    ):
-        raise SchemaError("canary compiler.recursive_timing_records must match logical timing records")
-    if (
-        "approximate_timing_records" in compiler
-        and as_int(compiler.get("approximate_timing_records")) != actual_approximate_records
-    ):
-        raise SchemaError("canary compiler.approximate_timing_records must match logical timing records")
-    if (
-        "stored_recursive_timing_records" in compiler
-        and as_int(compiler.get("stored_recursive_timing_records")) != actual_stored_recursive_records
-    ):
-        raise SchemaError("canary compiler.stored_recursive_timing_records must match stored timing records")
-    if (
-        "stored_approximate_timing_records" in compiler
-        and as_int(compiler.get("stored_approximate_timing_records")) != actual_stored_approximate_records
-    ):
-        raise SchemaError("canary compiler.stored_approximate_timing_records must match stored timing records")
+        if key in compiler and as_int(compiler.get(key)) != actual:
+            raise SchemaError(message)
+
+
+def _validate_capture_uncertainty(compiler: Mapping[str, Any], compute_uncertain_events: int) -> None:
     capture_uncertainty = compiler.get("capture_uncertainty")
-    if actual_compute_uncertain_events:
+    if compute_uncertain_events:
         if not isinstance(capture_uncertainty, Mapping):
             raise SchemaError("canary compiler.capture_uncertainty is required for uncertain timing records")
-        if as_int(capture_uncertainty.get("compute_fields_uncertain_events")) != actual_compute_uncertain_events:
+        if as_int(capture_uncertainty.get("compute_fields_uncertain_events")) != compute_uncertain_events:
             raise SchemaError("canary compiler.capture_uncertainty compute count must match timing records")
         status = capture_uncertainty.get("status")
         if not isinstance(status, str) or not status:
@@ -339,6 +430,15 @@ def validate_canary(
             raise SchemaError("canary compiler.capture_uncertainty must be an object")
         if as_int(capture_uncertainty.get("compute_fields_uncertain_events"), 0) != 0:
             raise SchemaError("canary compiler.capture_uncertainty contradicts timing records")
+
+
+def _validate_compiler_hashes(
+    canary: Mapping[str, Any],
+    compiler: Mapping[str, Any],
+    *,
+    profiled_integrity: bool,
+    limits: ResourceLimits,
+) -> None:
     required_hashes = (
         "source_trace_sha256",
         "source_normalized_sha256",
@@ -374,6 +474,9 @@ def validate_canary(
         "artifact_provenance_sha256"
     ) != canary_artifact_provenance_sha256(canary):
         raise SchemaError("canary compiler.artifact_provenance_sha256 does not match artifact fields")
+
+
+def _validate_compiler_integers(compiler: Mapping[str, Any]) -> None:
     for integer_key in (
         "source_bytes",
         "canary_bytes",
@@ -386,79 +489,91 @@ def validate_canary(
     ):
         if integer_key in compiler and as_int(compiler.get(integer_key)) < 0:
             raise SchemaError(f"canary compiler.{integer_key} must be non-negative")
-    _validate_behavior_search_summary(compiler)
+
+
+def _validate_timing_sample_limits(compiler: Mapping[str, Any]) -> None:
     timing_limit_mode = compiler.get("timing_sample_limit_mode")
     if timing_limit_mode is not None and timing_limit_mode not in {"uniform", "per_group"}:
         raise SchemaError("canary compiler.timing_sample_limit_mode is invalid")
     raw_group_limits = compiler.get("timing_sample_limits_by_group")
-    if raw_group_limits is not None:
-        if not isinstance(raw_group_limits, Mapping):
-            raise SchemaError("canary compiler.timing_sample_limits_by_group must be an object")
-        default_limit = as_int(compiler.get("timing_sample_limit"), 0)
-        group_count = as_int(compiler.get("timing_group_count"), 0)
-        for raw_group, raw_limit in raw_group_limits.items():
-            group_id = as_int(raw_group)
-            limit = as_int(raw_limit)
-            if group_id < 0:
-                raise SchemaError("canary compiler.timing_sample_limits_by_group keys must be non-negative")
-            if group_count and group_id >= group_count:
-                raise SchemaError("canary compiler.timing_sample_limits_by_group references an unknown group")
-            if limit < 2:
-                raise SchemaError("canary compiler.timing_sample_limits_by_group values must be at least 2")
-            if default_limit and limit > default_limit:
-                raise SchemaError(
-                    "canary compiler.timing_sample_limits_by_group values must not exceed timing_sample_limit"
-                )
-
-    fidelity = compiler.get("fidelity")
-    if actual_approximate_records and fidelity is None:
-        raise SchemaError("canary compiler.fidelity is required for approximate timing records")
-    if fidelity is not None:
-        if not isinstance(fidelity, Mapping):
-            raise SchemaError("canary compiler.fidelity must be an object")
-        mode = fidelity.get("mode")
-        if mode not in {"lossless_timing", "bounded_approximate"}:
-            raise SchemaError("canary compiler.fidelity.mode is invalid")
-        approximate = as_int(fidelity.get("approximate_timing_records"), 0)
-        if approximate != actual_approximate_records:
-            raise SchemaError("canary compiler.fidelity approximate count must match timing records")
-        if (mode == "lossless_timing") != (actual_approximate_records == 0):
-            raise SchemaError("canary compiler.fidelity.mode contradicts approximation records")
-        for key in (*FIDELITY_ERROR_FIELDS, "source_gap_total_us", "encoded_gap_total_us", "total_gap_error_us"):
-            if key in fidelity and as_float(fidelity.get(key)) < 0.0:
-                raise SchemaError(f"canary compiler.fidelity.{key} must be non-negative")
-        for key, expected in actual_fidelity_maxima.items():
-            if key not in fidelity:
-                raise SchemaError(f"canary compiler.fidelity.{key} is required")
-            if abs(as_float(fidelity.get(key)) - expected) > 1e-6:
-                raise SchemaError(f"canary compiler.fidelity.{key} does not match timing records")
-        if "encoded_gap_total_us" in fidelity:
-            if abs(as_float(fidelity.get("encoded_gap_total_us")) - actual_encoded_gap_total) > 1e-6:
-                raise SchemaError("canary compiler.fidelity.encoded_gap_total_us does not match timing records")
-        if all(key in fidelity for key in ("source_gap_total_us", "encoded_gap_total_us", "total_gap_error_us")):
-            expected_error = abs(
-                as_float(fidelity.get("source_gap_total_us")) - as_float(fidelity.get("encoded_gap_total_us"))
+    if raw_group_limits is None:
+        return
+    if not isinstance(raw_group_limits, Mapping):
+        raise SchemaError("canary compiler.timing_sample_limits_by_group must be an object")
+    default_limit = as_int(compiler.get("timing_sample_limit"), 0)
+    group_count = as_int(compiler.get("timing_group_count"), 0)
+    for raw_group, raw_limit in raw_group_limits.items():
+        group_id = as_int(raw_group)
+        limit = as_int(raw_limit)
+        if group_id < 0:
+            raise SchemaError("canary compiler.timing_sample_limits_by_group keys must be non-negative")
+        if group_count and group_id >= group_count:
+            raise SchemaError("canary compiler.timing_sample_limits_by_group references an unknown group")
+        if limit < 2:
+            raise SchemaError("canary compiler.timing_sample_limits_by_group values must be at least 2")
+        if default_limit and limit > default_limit:
+            raise SchemaError(
+                "canary compiler.timing_sample_limits_by_group values must not exceed timing_sample_limit"
             )
-            if abs(expected_error - as_float(fidelity.get("total_gap_error_us"))) > 1e-6:
-                raise SchemaError("canary compiler.fidelity.total_gap_error_us is inconsistent")
 
+
+def _validate_fidelity(compiler: Mapping[str, Any], totals: _EventTotals) -> Any:
+    fidelity = compiler.get("fidelity")
+    if totals.approximate_records and fidelity is None:
+        raise SchemaError("canary compiler.fidelity is required for approximate timing records")
+    if fidelity is None:
+        return None
+    if not isinstance(fidelity, Mapping):
+        raise SchemaError("canary compiler.fidelity must be an object")
+    mode = fidelity.get("mode")
+    if mode not in {"lossless_timing", "bounded_approximate"}:
+        raise SchemaError("canary compiler.fidelity.mode is invalid")
+    approximate = as_int(fidelity.get("approximate_timing_records"), 0)
+    if approximate != totals.approximate_records:
+        raise SchemaError("canary compiler.fidelity approximate count must match timing records")
+    if (mode == "lossless_timing") != (totals.approximate_records == 0):
+        raise SchemaError("canary compiler.fidelity.mode contradicts approximation records")
+    for key in (*FIDELITY_ERROR_FIELDS, "source_gap_total_us", "encoded_gap_total_us", "total_gap_error_us"):
+        if key in fidelity and as_float(fidelity.get(key)) < 0.0:
+            raise SchemaError(f"canary compiler.fidelity.{key} must be non-negative")
+    for key, expected in totals.fidelity_maxima.items():
+        if key not in fidelity:
+            raise SchemaError(f"canary compiler.fidelity.{key} is required")
+        if abs(as_float(fidelity.get(key)) - expected) > 1e-6:
+            raise SchemaError(f"canary compiler.fidelity.{key} does not match timing records")
+    if "encoded_gap_total_us" in fidelity:
+        if abs(as_float(fidelity.get("encoded_gap_total_us")) - totals.encoded_gap_total) > 1e-6:
+            raise SchemaError("canary compiler.fidelity.encoded_gap_total_us does not match timing records")
+    if all(key in fidelity for key in ("source_gap_total_us", "encoded_gap_total_us", "total_gap_error_us")):
+        expected_error = abs(
+            as_float(fidelity.get("source_gap_total_us")) - as_float(fidelity.get("encoded_gap_total_us"))
+        )
+        if abs(expected_error - as_float(fidelity.get("total_gap_error_us"))) > 1e-6:
+            raise SchemaError("canary compiler.fidelity.total_gap_error_us is inconsistent")
+    return fidelity
+
+
+def _validate_fidelity_budget(compiler: Mapping[str, Any], fidelity: Any) -> None:
     fidelity_budget = compiler.get("fidelity_budget")
-    if fidelity_budget is not None:
-        if not isinstance(fidelity_budget, Mapping):
-            raise SchemaError("canary compiler.fidelity_budget must be an object")
-        if fidelity is None:
-            raise SchemaError("canary compiler.fidelity_budget requires compiler.fidelity")
-        for key, budget in fidelity_budget.items():
-            if key not in FIDELITY_ERROR_FIELDS:
-                raise SchemaError(f"canary compiler.fidelity_budget contains unknown field {key!r}")
-            budget_value = as_float(budget)
-            if budget_value < 0.0:
-                raise SchemaError(f"canary compiler.fidelity_budget.{key} must be non-negative")
-            if as_float(fidelity.get(key), 0.0) > budget_value + 1e-6:
-                raise SchemaError(f"canary compiler.fidelity.{key} exceeds recorded fidelity budget")
+    if fidelity_budget is None:
+        return
+    if not isinstance(fidelity_budget, Mapping):
+        raise SchemaError("canary compiler.fidelity_budget must be an object")
+    if fidelity is None:
+        raise SchemaError("canary compiler.fidelity_budget requires compiler.fidelity")
+    for key, budget in fidelity_budget.items():
+        if key not in FIDELITY_ERROR_FIELDS:
+            raise SchemaError(f"canary compiler.fidelity_budget contains unknown field {key!r}")
+        budget_value = as_float(budget)
+        if budget_value < 0.0:
+            raise SchemaError(f"canary compiler.fidelity_budget.{key} must be non-negative")
+        if as_float(fidelity.get(key), 0.0) > budget_value + 1e-6:
+            raise SchemaError(f"canary compiler.fidelity.{key} exceeds recorded fidelity budget")
 
+
+def _validate_tail_signal(compiler: Mapping[str, Any], observed_flags: List[bool]) -> None:
     tail_signal = compiler.get("tail_signal")
-    has_observed = bool(all_leaf_observed_flags and all(all_leaf_observed_flags))
+    has_observed = bool(observed_flags and all(observed_flags))
     if tail_signal == "observed_exposed_us" and not has_observed:
         raise SchemaError("canary compiler.tail_signal requires observed timing records")
     if tail_signal == "structural-proxy" and has_observed:
