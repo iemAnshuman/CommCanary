@@ -10,7 +10,10 @@ dist/
 out/
 .benchmark-data/
 release-metadata/
-experiments/rostam/results/
+# Evidence under experiments/rostam/results/ is tracked, so new campaign output
+# must show up in git status. Only the bulky cluster staging workspaces are
+# ignored; they are preserved in the hash-bound archives under archives/.
+experiments/rostam/results/*/workspaces/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
