@@ -87,6 +87,11 @@
 
 ### Integrity and safety
 
+- Signing and verifying private-exchange bundles now checks that `openssl` is
+  OpenSSL 3.0 or newer before using it. The `openssl` that ships with macOS is
+  LibreSSL, which has no Ed25519, and signing used to fail inside it with
+  "unable to load key".
+
 - Clustering features in `baselines` no longer fabricate concurrency. Absent
   `compute_pressure` defaulted to `0.5`, a midpoint asserting the event was half
   loaded, and absent overlap and preceding compute defaulted to `0.0`; each now
@@ -173,6 +178,21 @@
   are detached from caller-owned nested input.
 
 ### Contracts and API
+
+- Added `commcanary.traffic_trace.v1`, the frozen request sequence of a
+  sustained serving run, with `synthesize_traffic_trace` for synthetic traffic
+  that is marked as such and refused where qualification is claimed; and
+  `commcanary.serving_measurement.v1`, sustained output throughput at a fixed
+  p99 time-to-first-token budget over a declared steady-state window. A
+  sustained serving harness and a vLLM serving engine produce it.
+- `commcanary.physical_execution_measurement.v1` now requires a `cost` block
+  (setup phases, measured, instrumentation and total seconds, steady-state
+  seconds per iteration) that must add up. This changes an unreleased format;
+  no record without it exists.
+- Workloads can declare step boundaries during capture with
+  `begin_iteration`; traces carry an optional, all-or-nothing, non-decreasing
+  `iteration_index` per event.
+- Removed the unused `commcanary.replay.expansion` alias.
 
 - Added the first `physical_decision_canary.v1` compiler contract above Chakra
   ET. A bounded, dependency-validating reader retains complete protobuf
@@ -275,6 +295,21 @@
 
 ### Engineering and reproducibility
 
+- Added `python -m experiments.rostam.restore_workspaces`, which restores the
+  workspace files a campaign's selected attempts reference from its raw
+  archive, after checking the archive against its descriptor and free disk
+  space. Without it no publication could be regenerated from a clone; with it
+  and the recorded analyzer, `shared-replay-20260720-r2-primary` regenerates
+  byte for byte.
+- Stopped ignoring `experiments/rostam/results/`, whose tracked evidence would
+  otherwise never show new campaign output in `git status`; only campaign
+  staging workspaces are ignored.
+- CI and the declared support range now include Python 3.14.
+- `docs/cli.md` documents `demo`, `fidelity`, `compile`, `replay` and
+  `compare`, and a test keeps every public subcommand documented.
+- Split `validate_canary` into named checks with the same order and messages;
+  a differential run over 3,000 damaged canaries found no change.
+
 - Split artifact contracts, compilation, replay, verification, services,
   comparison, adapters, and reporting by dependency boundary behind tested
   compatibility facades; an AST gate now rejects upward imports, cycles,
@@ -356,6 +391,15 @@
   evidence.
 
 ### Research fidelity
+
+- The trusted join now carries 95% repetition-bootstrap intervals and a
+  sensitivity analysis that removes `nccl-2.20.5-tree-ll`
+  (`paper/arxiv/scripts/trusted_join_uncertainty.py`, regenerated under
+  test). Communication-only replay's failure to preserve the ranking survives
+  both; its two-pair deficit against the microbenchmark does not, and the
+  README, claims registry and design notes no longer claim it.
+- Prepared an arXiv revision of the paper in `paper/arxiv/`, leaving the
+  published v0.4 reconstruction untouched.
 
 - Strengthened `verify-behavior` so it separately reports representation fidelity, source verification, behavioral fidelity, and configuration-ranking status.
 - Added queue-wait distribution checks, phase/op behavior checks, tail-event recall, and pairwise backend ranking agreement across latency metrics.
