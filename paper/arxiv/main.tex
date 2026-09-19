@@ -1,53 +1,39 @@
 \documentclass[10pt,twocolumn]{article}
 
-\usepackage[letterpaper,top=0.62in,bottom=0.68in,left=0.64in,right=0.64in,columnsep=0.28in]{geometry}
+\usepackage[letterpaper,margin=1in,columnsep=0.25in]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{microtype}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{enumitem}
-\usepackage{graphicx}
 \usepackage{tabularx}
 \usepackage{tikz}
-\usepackage{xcolor}
 \usepackage{url}
 \usepackage[hidelinks]{hyperref}
-
-\definecolor{paperblue}{HTML}{173A5E}
-\definecolor{paperorange}{HTML}{C97B22}
-\definecolor{papergreen}{HTML}{2F8F83}
-\definecolor{papergray}{HTML}{6C7A89}
 
 \hypersetup{
   pdftitle={Fail-Closed Evidence for Decision-Fidelity Evaluation of Collective Trace Replay},
   pdfauthor={Anshuman Agrawal},
-  pdfsubject={Systems research on independently verifiable collective trace replay experiments},
-  pdfkeywords={collective communication, trace replay, decision fidelity, reproducibility, NCCL},
-  colorlinks=true,
-  linkcolor=paperblue,
-  citecolor=paperblue,
-  urlcolor=paperblue
+  pdfkeywords={collective communication, trace replay, decision fidelity, reproducibility, NCCL}
 }
 
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0pt}
 \setlist{nosep,leftmargin=*}
-\renewcommand{\arraystretch}{1.04}
 \newcommand{\wname}[1]{\texttt{W-#1}}
 \newcommand{\us}{\,\mu\mathrm{s}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 
-\title{\vspace{-1.5em}\bfseries\color{paperblue}
-  Fail-Closed Evidence for Decision-Fidelity Evaluation\\
+\title{Fail-Closed Evidence for Decision-Fidelity Evaluation\\
   of Collective Trace Replay}
-\author{Anshuman Agrawal\\[-0.1em]
-  \small CommCanary Project\\[-0.1em]
+\author{Anshuman Agrawal\\
+  \small CommCanary Project\\
   \small\url{https://github.com/iemAnshuman/CommCanary}}
 \date{}
 
 \begin{document}
 \maketitle
-\vspace{-1.7em}
 
 \begin{abstract}
 Collective communication traces can replace expensive distributed workloads in
@@ -155,7 +141,7 @@ readiness, or runtime savings from a reduced canary.
 
 \section{Background and problem definition}
 
-\subsection{Collective configuration depends on context}
+\subsection{Configuration depends on context}
 
 Collective operations define group communication semantics while leaving
 implementation strategy open~\cite{mpi}. Classic MPI work shows that no single
@@ -173,7 +159,7 @@ buffer lifetimes can also change which configuration is preferred. The
 microbenchmark ranking is therefore an experimental result, not a default
 model of the full-workload ranking.
 
-\subsection{Trace replay and surrogate workloads}
+\subsection{Trace replay and surrogates}
 
 Trace systems support different goals. ScalaTrace compresses and replays
 communication traces~\cite{scalatrace}. LogGOPSim combines traces with an
@@ -191,6 +177,7 @@ simulator. It is a decision-level evaluation coupled to a physical evidence
 boundary that can withhold the claim.
 
 \subsection{Decision fidelity}
+\label{sec:fidelity}
 
 Let $C$ be the measured configurations and $R$ a representation such as the
 full workload, a microbenchmark, or a replay. For each unordered pair $(a,b)$,
@@ -260,7 +247,7 @@ explain an attempt, but cannot replace an aggregate or persisted verdict.
 
 \begin{figure*}[t]
   \centering
-  \resizebox{0.96\textwidth}{!}{\input{figures/figure1-publication-path.tex}}
+  \input{figures/figure1-publication-path.tex}
   \caption{CommCanary publication path. Campaign identity, immutable attempts,
   selection, completeness, archive binding, and publication are separate
   gates. Missing or inconsistent evidence stops the claim path.}
@@ -279,7 +266,7 @@ quantitative results. Product studies that have not run are future work.
 \caption{Claim boundary by evidence grade.}
 \label{tab:grades}
 \centering\small
-\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.40\textwidth}X@{}}
+\begin{tabularx}{\textwidth}{@{}L{0.20\textwidth}L{0.36\textwidth}Y@{}}
 \toprule
 Grade & Included material & Permitted interpretation \\
 \midrule
@@ -309,12 +296,13 @@ machine, and it does not turn a focused analyzer check into release readiness.
 
 \section{Experimental methodology}
 
-\subsection{Campaign inventory and hardware scope}
+\subsection{Campaigns and hardware scope}
 
 Table~\ref{tab:campaigns} lists the evidence packages. The main comparison
 joins three campaigns from one four-GPU A100 node. Eight configurations, seven
 workload profiles, and five selected repetitions produce 280 cells. Each cell
-contributes 100 retained samples after warmup. The exact-work gate has one cell
+reports one median over its retained samples: 256 for the full workload, 200
+for the microbenchmark, and 8,192 for each replay. The exact-work gate has one cell
 per configuration and 20 measured iterations for every representation after
 five warmups. The diagnostic contains one configuration and compares source
 and replay on the same node.
@@ -324,23 +312,23 @@ and campaign identity. No result is extrapolated to NVSwitch, another
 accelerator generation, a multi-node fabric, or concurrent cluster traffic.
 
 \begin{table*}[t]
-\caption{Campaign inventory. Complete means that the manifest-bound
-completeness verdict passed.}
+\caption{Campaign inventory. Every campaign ran on one node with four A100
+GPUs. Selection counts the cells whose manifest-bound completeness verdict
+passed.}
 \label{tab:campaigns}
-\centering\scriptsize
-\begin{tabularx}{\textwidth}{@{}p{0.18\textwidth}p{0.16\textwidth}p{0.34\textwidth}p{0.13\textwidth}X@{}}
+\centering\small
+\begin{tabularx}{\textwidth}{@{}L{0.17\textwidth}L{0.40\textwidth}L{0.11\textwidth}Y@{}}
 \toprule
-Package & Hardware scope & Matrix and sampling & Selection & Claim status \\
+Package & Matrix and sampling & Selection & Claim status \\
 \midrule
-Trusted comparison join & One node; 4 A100 GPUs & 8 configurations, 7
-profiles, 5 selected repetitions per cell, 100 retained samples per cell &
-280 of 280 cells & Complete comparative evidence \\
-Exact-work gate & One node; 4 A100 GPUs & 8 configurations, 28 unordered
-pairs, 20 measured iterations after 5 warmups & 8 of 8 cells & Point criteria
-pass; final verdict inconclusive \\
-Exact-work diagnostic & Same node; four ranks & 1 configuration, 20 source and
-replay samples, 32 deterministic checks & 1 of 1 cell & Complete diagnostic;
-no qualification verdict \\
+Trusted comparison join & 8 configurations, 7 profiles, 5 selected repetitions
+per cell, 200 to 8,192 retained samples per repetition & 280 of 280 & Complete
+comparative evidence \\
+Exact-work gate & 8 configurations, 28 unordered pairs, 20 measured iterations
+after 5 warmups & 8 of 8 & Point criteria pass; final verdict inconclusive \\
+Exact-work diagnostic & 1 configuration, 20 source and replay samples, 32
+deterministic checks & 1 of 1 & Complete diagnostic; no qualification
+verdict \\
 \bottomrule
 \end{tabularx}
 \end{table*}
@@ -389,7 +377,7 @@ Before aggregation, the analyzer validates result schemas, selected attempts,
 campaign identities, and completeness. It computes retained timing
 distributions for each workload and configuration cell. Configuration order
 follows generated medians. Pair labels use the frozen IQR tie rule from
-Section~2.3. We report the 28 exact pair labels and $\tau_b$. Quantitative
+Section~\ref{sec:fidelity}. We report the 28 exact pair labels and $\tau_b$. Quantitative
 tables from the historical paper draft are excluded because their original
 complete evidence was not retained.
 
@@ -430,10 +418,10 @@ regions or when the stability condition fails.
 
 \section{Results}
 
-\subsection{Communication-only replay does not preserve the ranking}
+\subsection{Communication-only replay loses the ranking}
 
-Table~\ref{tab:agreement} and Figures~\ref{fig:agreement} and
-\ref{fig:kendall} report the trusted join. \wname{canary} agrees with
+Table~\ref{tab:agreement} and Figure~\ref{fig:agreement} report the trusted
+join. \wname{canary} agrees with
 \wname{full} on 16 of 28 pairs, or 57.1\%, with $\tau_b=0.204$; its bootstrap
 interval is 12 to 17 pairs. \wname{micro} agrees on 18 pairs, or 64.3\%, with
 $\tau_b=0.490$. Replaying the request and wait structure without computation is
@@ -458,7 +446,8 @@ a microbenchmark, only that it does not preserve the ranking.
 95\% repetition-bootstrap percentiles; reversals count pairs ordered opposite
 to \wname{full}.}
 \label{tab:agreement}
-\centering\small
+\centering\footnotesize
+\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
 Representation & Agreement & Interval & $\tau_b$ & Reversals \\
@@ -474,36 +463,29 @@ Representation & Agreement & Interval & $\tau_b$ & Reversals \\
 \begin{table}[t]
 \caption{Differences in agreeing pairs between proxies, with 95\% bootstrap
 intervals, over all eight configurations and with
-\texttt{nccl-2.20.5-tree-ll} excluded.}
+\texttt{nccl-2.20.5-tree-ll} excluded. Proxy names omit the \texttt{W-} prefix.}
 \label{tab:sensitivity}
 \centering\footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrr@{}}
 \toprule
-Comparison & 28 pairs & No tree-LL (21) \\
+Difference & 28 pairs & No tree-LL (21) \\
 \midrule
-\wname{canary} $-$ \wname{micro} & $-2$ [$-7$, $-1$] & $+2$ [$-3$, $+4$] \\
-\wname{canary-overlap} $-$ \wname{canary} & $-1$ [$-7$, $+6$] & $-7$ [$-10$, $+1$] \\
-\wname{shared-overlap} $-$ \wname{micro} & $+2$ [$-1$, $+5$] & $0$ [$-3$, $+3$] \\
-\wname{shared-overlap} $-$ \wname{canary} & $+4$ [$+2$, $+9$] & $-2$ [$-4$, $+3$] \\
+\texttt{canary} $-$ \texttt{micro} & $-2$ [$-7$, $-1$] & $+2$ [$-3$, $+4$] \\
+\texttt{canary-overlap} $-$ \texttt{canary} & $-1$ [$-7$, $+6$] & $-7$ [$-10$, $+1$] \\
+\texttt{shared-overlap} $-$ \texttt{micro} & $+2$ [$-1$, $+5$] & $0$ [$-3$, $+3$] \\
+\texttt{shared-overlap} $-$ \texttt{canary} & $+4$ [$+2$, $+9$] & $-2$ [$-4$, $+3$] \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \begin{figure}[t]
   \centering
-  \resizebox{0.98\columnwidth}{!}{\input{figures/figure2-agreement.tex}}
-  \caption{Exact three-way pair agreement with the full-workload decision. No
-  measured proxy reaches 80\%.}
+  \input{figures/figure2-agreement.tex}
+  \caption{Pairs on which each proxy agrees with the full workload. Dots are
+  the measured counts; bars are 95\% repetition-bootstrap intervals. No proxy
+  reaches 80\%, which is 22.4 pairs.}
   \label{fig:agreement}
-\end{figure}
-
-\begin{figure}[t]
-  \centering
-  \resizebox{0.98\columnwidth}{!}{\input{figures/figure3-kendall.tex}}
-  \caption{Tie-adjusted Kendall correlation with the full-workload ordering.
-  Correlation and exact three-way agreement answer different questions.}
-  \label{fig:kendall}
 \end{figure}
 
 \subsection{Concurrency changes the ranking}
@@ -538,7 +520,7 @@ We do not apply a new decision threshold after observing the result; the
 intervals and exclusion analysis above qualify the reported counts rather than
 turning them into a gate.
 
-\subsection{Exact work has strong point estimates}
+\subsection{Exact-work point estimates}
 
 Exact work agrees on 26 of 28 pairs, or 92.86\%, with $\tau_b=0.857$. It
 records one false negative and one false positive. Median absolute relative
@@ -579,7 +561,7 @@ Agreement advantage over stratified & 16 pairs & at least 2 pairs & pass \\
 \end{tabular}
 \end{table*}
 
-\subsection{The predeclared verdict is inconclusive}
+\subsection{The verdict is inconclusive}
 \label{sec:verdict}
 
 The persisted outcome is \emph{inconclusive}. Two conditions prevent pass.
@@ -604,19 +586,20 @@ work is a qualified production oracle.
 
 \begin{figure*}[t]
   \centering
-  \resizebox{0.95\textwidth}{!}{\input{figures/figure4-inconclusive.tex}}
-  \caption{Why the exact-work verdict is inconclusive. Representative 95\%
-  intervals cross decision regions, and the tree-LL configuration violates the
-  frozen stability limit.}
+  \input{figures/figure3-inconclusive.tex}
+  \caption{Why the exact-work verdict is inconclusive. (a) Representative
+  pair differences with 95\% bootstrap intervals, in units of each pair's tie
+  threshold; an interval that leaves the shaded tie band or crosses zero does
+  not support one label. (b) \texttt{nccl-2.20.5-tree-ll} exceeds the frozen
+  20\% stability limit in three representations.}
   \label{fig:inconclusive}
 \end{figure*}
 
 \subsection{Same-node diagnostic}
 
 A separate one-cell diagnostic compares retained source and replay timing for
-one exact-work capsule. The source median is $1{,}434.112\us$ and the replay
-median is $1{,}541.0015\us$. The signed difference is $+106.8895\us$, or
-$+7.4533578967\%$. All 32 deterministic checks pass across four ranks.
+one exact-work capsule. The source median is $1{,}434.1\us$ and the replay
+median is $1{,}541.0\us$, a signed difference of $+106.9\us$, or $+7.45\%$. All 32 deterministic checks pass across four ranks.
 Table~\ref{tab:diagnostic} states the complete narrow claim.
 
 The diagnostic confirms deterministic reconstruction checks and a same-node
@@ -628,14 +611,14 @@ decision gate.
 \caption{Exact-work diagnostic. No qualification verdict is issued.}
 \label{tab:diagnostic}
 \centering\small
-\begin{tabularx}{\columnwidth}{@{}lX@{}}
+\begin{tabularx}{\columnwidth}{@{}lY@{}}
 \toprule
 Item & Result \\
 \midrule
-Source median & $1{,}434.1120\us$ \\
-Replay median & $1{,}541.0015\us$ \\
-Signed difference & $+106.8895\us$ ($+7.4534\%$) \\
-Source / replay IQR & $9.2160 / 8.9725\us$ \\
+Source median & $1{,}434.1\us$ \\
+Replay median & $1{,}541.0\us$ \\
+Signed difference & $+106.9\us$ ($+7.45\%$) \\
+Source / replay IQR & $9.2 / 9.0\us$ \\
 Deterministic checks & 32 passed across 4 ranks \\
 Claim status & diagnostic; physical fidelity unproven; verdict not issued \\
 \bottomrule
@@ -687,7 +670,7 @@ slowdown and collective time per configuration under controlled concurrency,
 and repeating the comparison with NCCL channel counts fixed, would test both
 hypotheses.
 
-\subsection{Decision fidelity differs from timing fidelity}
+\subsection{Decision versus timing fidelity}
 
 Absolute error and decision fidelity can diverge. Two configurations may differ
 by less than measurement variability. A replay can have small percentage error
@@ -700,7 +683,7 @@ favorable, but the gate asks whether each operational decision is supported
 under uncertainty. A 92.86\% point agreement is not a 92.86\% probability that
 the replay is correct. An interval can invalidate the point label.
 
-\subsection{Fail-closed evidence changes the default}
+\subsection{Fail-closed evidence as the default}
 
 Experiment scripts often make it easy to produce a number. Missing runs can
 disappear during aggregation, and retries can overwrite failures. A fail-closed
@@ -727,7 +710,7 @@ insufficiency for one measured single-node, four-A100 decision matrix. Such
 replay can still help with debugging, transport isolation, or reproduction of a
 call sequence when the claim remains at that level.
 
-\section{Threats to validity and limitations}
+\section{Threats to validity}
 
 \paragraph{Single system and workload.} All physical data comes from one
 four-A100 PCIe node and one source-derived workload family. GPU topology, CPU
@@ -776,7 +759,7 @@ at a specific evidence commit. Older narrative measurements without complete
 evidence are excluded. This avoids unsupported reuse, although it omits
 historical observations that cannot now be independently reconstructed.
 
-\section{Artifact availability and reproducibility}
+\section{Artifact availability}
 
 The source repository is available at
 \url{https://github.com/iemAnshuman/CommCanary}. Every physical number in this
@@ -803,7 +786,8 @@ under \path{experiments/rostam/results/exact-work-artifacts/publication/}.
 The authoritative directory names are:
 
 \begin{itemize}
-  \item \path{trusted-join-core-shared-overlap-primary/};
+  \item \texttt{trusted-join-core-}\allowbreak
+    \texttt{shared-overlap-primary/};
   \item \texttt{decision-gate-20260801-r3-}\allowbreak
     \texttt{analysis-1300d12-primary/};
   \item the corresponding reproduction directory; and
@@ -819,10 +803,6 @@ values and their paper binding. It does not replace immutable result
 directories. Reproducing physical timings still requires recorded hardware and
 software; deterministic analysis does not imply hardware-independent
 measurements.
-
-No commit, push, issue, Zenodo publication, DOI reservation, or release
-metadata change is performed by the source tree. A focused analyzer or test run
-must not be described as full release readiness.
 
 \section{Related work}
 
@@ -894,25 +874,24 @@ remain open.
 
 Table~\ref{tab:identities} lists abbreviated campaign identities. Full SHA-256
 values remain in \texttt{evidence/verified\_metrics.json} and authoritative
-repository artifacts. M, S, C, and R denote manifest, selection, completeness
-verdict, and repository commit.
+repository artifacts.
 
-\begin{table}[h]
-\caption{Abbreviated manifest-bound campaign identities.}
+\begin{table*}[t]
+\caption{Abbreviated manifest-bound campaign identities (first 12 hex digits).}
 \label{tab:identities}
-\centering\scriptsize
-\begin{tabularx}{\columnwidth}{@{}p{0.42\columnwidth}X@{}}
+\centering\small
+\begin{tabular}{@{}lllll@{}}
 \toprule
-Run / campaign & Bound identities \\
+Run & Manifest & Selection & Completeness & Repository \\
 \midrule
-core-20260724-r7 / rostam-core & M 3bd321ec960c; S d01db822c8e9; C 46d8012b3594; R 2855275288e6 \\
-shared-replay-20260720-r2 / rostam-shared-replay & M a402a4ec73ea; S a1e876861f7f; C b6cd1aae4cfb; R 2855275288e6 \\
-overlap-20260724-r1 / rostam-overlap & M 5d5eb9f4822e; S e012e40613f5; C 5b153d0452df; R 2855275288e6 \\
-decision-gate-20260801-r3 / rostam-decision-gate & M 1b1909b3e856; S c675e42e34e4; C 6377a65bb057; R 4585318ac244 \\
-qualification-exact-20260730-r3 / rostam-qualification-exact & M c0bc2e6a9ecb; S bf23480f39dd; C 593772c09020; R 9b1e58aef91e \\
+\texttt{core-20260724-r7} & \texttt{3bd321ec960c} & \texttt{d01db822c8e9} & \texttt{46d8012b3594} & \texttt{2855275288e6} \\
+\texttt{shared-replay-20260720-r2} & \texttt{a402a4ec73ea} & \texttt{a1e876861f7f} & \texttt{b6cd1aae4cfb} & \texttt{2855275288e6} \\
+\texttt{overlap-20260724-r1} & \texttt{5d5eb9f4822e} & \texttt{e012e40613f5} & \texttt{5b153d0452df} & \texttt{2855275288e6} \\
+\texttt{decision-gate-20260801-r3} & \texttt{1b1909b3e856} & \texttt{c675e42e34e4} & \texttt{6377a65bb057} & \texttt{4585318ac244} \\
+\texttt{qualification-exact-20260730-r3} & \texttt{c0bc2e6a9ecb} & \texttt{bf23480f39dd} & \texttt{593772c09020} & \texttt{9b1e58aef91e} \\
 \bottomrule
-\end{tabularx}
-\end{table}
+\end{tabular}
+\end{table*}
 
 \section{Trusted-join regeneration}
 
@@ -922,33 +901,5 @@ at \texttt{evidence/trusted\_join\_regeneration.txt}. It binds the core
 campaign, primary selection and completeness verdict, joined evidence
 directories, output directory, configuration identities, and median
 thresholds.
-
-\section{Claim ledger}
-
-\paragraph{Supported comparative claim.} The trusted join contains 280 of 280
-selected successful cells. Over the measured eight-configuration set,
-communication-only \wname{canary} agrees on 16 of 28 pairs (95\% bootstrap
-interval 12--17) and \wname{shared-overlap} on 20 (18--23), more than
-\wname{canary} in 99.9\% of draws. Without \texttt{nccl-2.20.5-tree-ll}, no
-proxy is distinguishable from another.
-
-\paragraph{Not supported by the trusted join.} That communication-only replay
-is generally worse than a microbenchmark, or that per-configuration overlap
-replay is worse than plain replay.
-
-\paragraph{Supported gate observation.} Exact work has 26 of 28 point
-agreement, $\tau_b=0.857$, one false negative, one false positive, 1.55\%
-median absolute relative error, and 4.05\% p95 error. The persisted outcome is
-inconclusive.
-
-\paragraph{Supported diagnostic claim.} One same-node exact-work capsule has a
-$1{,}434.112\us$ source median and a $1{,}541.0015\us$ replay median. All 32
-deterministic checks pass. No qualification verdict is issued.
-
-\paragraph{Not supported.} The paper does not support production
-qualification, a passing decision gate, reduced-canary cost savings, held-out
-safety, real vLLM or SGLang validation, multi-node or congestion fidelity,
-CUDA-graph fidelity, general vendor qualification, or generalization beyond the
-measured single-node, four-A100 scope.
 
 \end{document}

@@ -8,8 +8,8 @@ OUTPUT_PDF="$OUTPUT_DIR/commcanary-arxiv.pdf"
 
 mkdir -p "$OUTPUT_DIR"
 python3 "$SOURCE_DIR/scripts/verify_sources.py"
-python3 "$SOURCE_DIR/scripts/generate_figures.py"
 python3 "$SOURCE_DIR/scripts/trusted_join_uncertainty.py" --check
+python3 "$SOURCE_DIR/scripts/generate_figures.py"
 
 (
   cd "$SOURCE_DIR"
