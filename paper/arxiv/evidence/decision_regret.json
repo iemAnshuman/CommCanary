@@ -1,0 +1,851 @@
+{
+  "evidence_commit": "c133ad3fb5883100cb8622b597d5b6233b5efca1",
+  "implementation_commit": "cefad5a086b4723755bbe33b33e96f9f3a2c8e36",
+  "inputs": {
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.csv": "b5ff79a23abaf8bb5c5260c9c30ddef88858c82ce47c859d623d50f911af1257",
+    "experiments/rostam/results/publications/trusted-join-core-shared-overlap-primary/aggregate.json": "7a43e57ec4576f2f67e74d419bd793b6c639eccaec01fbdf769bdc0946220e2f"
+  },
+  "interpretation": "Retrospective analysis of retained repetitions; no new physical run or qualification verdict.",
+  "measurement_sets": [
+    {
+      "direction": "lower_is_better",
+      "format": "commcanary.measurement_set.v1",
+      "measurements": {
+        "nccl-2.19.3-default": [
+          8233.984,
+          8240.128,
+          8226.816,
+          8240.64,
+          8243.712
+        ],
+        "nccl-2.20.5-default": [
+          8230.912,
+          8225.28,
+          8226.816,
+          8252.416,
+          8284.16
+        ],
+        "nccl-2.20.5-ring-ll": [
+          8387.584,
+          8462.848,
+          8570.88,
+          8388.608,
+          8541.184
+        ],
+        "nccl-2.20.5-ring-ll128": [
+          8181.76,
+          8190.976,
+          8218.624,
+          8203.264,
+          8234.496
+        ],
+        "nccl-2.20.5-ring-simple": [
+          8453.632,
+          8428.544,
+          8449.536,
+          8458.752,
+          8430.592
+        ],
+        "nccl-2.20.5-tree-ll": [
+          12501.504,
+          11283.456,
+          11680.768,
+          11254.272,
+          11345.408
+        ],
+        "nccl-2.20.5-tree-ll128": [
+          9039.36,
+          8981.504,
+          8997.376,
+          8993.792,
+          8994.816
+        ],
+        "nccl-2.20.5-tree-simple": [
+          9765.888,
+          9766.912,
+          9773.056,
+          9760.256,
+          9748.48
+        ]
+      },
+      "metric": "median_us",
+      "name": "W-full",
+      "role": "reference"
+    },
+    {
+      "direction": "lower_is_better",
+      "format": "commcanary.measurement_set.v1",
+      "measurements": {
+        "nccl-2.19.3-default": [
+          132.096,
+          133.12,
+          131.072,
+          131.072,
+          131.072
+        ],
+        "nccl-2.20.5-default": [
+          130.048,
+          131.072,
+          131.584,
+          129.536,
+          131.072
+        ],
+        "nccl-2.20.5-ring-ll": [
+          109.056,
+          104.448,
+          104.96,
+          107.52,
+          104.96
+        ],
+        "nccl-2.20.5-ring-ll128": [
+          109.568,
+          110.08,
+          111.616,
+          111.616,
+          109.568
+        ],
+        "nccl-2.20.5-ring-simple": [
+          131.072,
+          130.048,
+          131.584,
+          128.0,
+          131.072
+        ],
+        "nccl-2.20.5-tree-ll": [
+          152.576,
+          148.48,
+          151.552,
+          148.48,
+          150.528
+        ],
+        "nccl-2.20.5-tree-ll128": [
+          155.648,
+          154.624,
+          157.184,
+          153.6,
+          156.672
+        ],
+        "nccl-2.20.5-tree-simple": [
+          206.848,
+          198.656,
+          200.704,
+          199.68,
+          201.728
+        ]
+      },
+      "metric": "median_us",
+      "name": "W-micro",
+      "role": "proxy"
+    },
+    {
+      "direction": "lower_is_better",
+      "format": "commcanary.measurement_set.v1",
+      "measurements": {
+        "nccl-2.19.3-default": [
+          245.275,
+          241.095,
+          241.45,
+          241.28,
+          242.105
+        ],
+        "nccl-2.20.5-default": [
+          243.235,
+          244.58,
+          243.04,
+          247.73,
+          244.645
+        ],
+        "nccl-2.20.5-ring-ll": [
+          222.82,
+          222.955,
+          224.96,
+          225.39,
+          224.57
+        ],
+        "nccl-2.20.5-ring-ll128": [
+          241.8,
+          239.06,
+          242.195,
+          236.79,
+          246.46
+        ],
+        "nccl-2.20.5-ring-simple": [
+          277.07,
+          282.51,
+          277.45,
+          280.9,
+          277.87
+        ],
+        "nccl-2.20.5-tree-ll": [
+          232.96,
+          232.54,
+          235.005,
+          233.155,
+          234.535
+        ],
+        "nccl-2.20.5-tree-ll128": [
+          278.86,
+          272.16,
+          258.185,
+          279.135,
+          277.755
+        ],
+        "nccl-2.20.5-tree-simple": [
+          288.61,
+          287.475,
+          297.17,
+          294.62,
+          300.38
+        ]
+      },
+      "metric": "median_us",
+      "name": "W-canary",
+      "role": "proxy"
+    },
+    {
+      "direction": "lower_is_better",
+      "format": "commcanary.measurement_set.v1",
+      "measurements": {
+        "nccl-2.19.3-default": [
+          145.408,
+          144.384,
+          128.0,
+          146.432,
+          145.408
+        ],
+        "nccl-2.20.5-default": [
+          145.408,
+          145.408,
+          146.432,
+          145.408,
+          144.384
+        ],
+        "nccl-2.20.5-ring-ll": [
+          147.456,
+          137.216,
+          145.408,
+          147.456,
+          146.432
+        ],
+        "nccl-2.20.5-ring-ll128": [
+          144.384,
+          145.408,
+          135.168,
+          137.216,
+          147.456
+        ],
+        "nccl-2.20.5-ring-simple": [
+          144.384,
+          131.072,
+          145.408,
+          145.408,
+          134.144
+        ],
+        "nccl-2.20.5-tree-ll": [
+          167.936,
+          155.648,
+          178.176,
+          180.224,
+          179.2
+        ],
+        "nccl-2.20.5-tree-ll128": [
+          154.624,
+          154.624,
+          155.648,
+          145.408,
+          156.672
+        ],
+        "nccl-2.20.5-tree-simple": [
+          152.576,
+          151.552,
+          150.528,
+          149.504,
+          150.528
+        ]
+      },
+      "metric": "median_us",
+      "name": "W-canary-overlap",
+      "role": "proxy"
+    },
+    {
+      "direction": "lower_is_better",
+      "format": "commcanary.measurement_set.v1",
+      "measurements": {
+        "nccl-2.19.3-default": [
+          145.408,
+          145.408,
+          146.432,
+          146.432,
+          145.408
+        ],
+        "nccl-2.20.5-default": [
+          146.432,
+          145.408,
+          146.432,
+          146.432,
+          145.408
+        ],
+        "nccl-2.20.5-ring-ll": [
+          149.504,
+          147.456,
+          148.48,
+          147.456,
+          150.528
+        ],
+        "nccl-2.20.5-ring-ll128": [
+          147.456,
+          147.456,
+          147.456,
+          147.456,
+          147.456
+        ],
+        "nccl-2.20.5-ring-simple": [
+          146.432,
+          146.432,
+          146.432,
+          146.432,
+          146.432
+        ],
+        "nccl-2.20.5-tree-ll": [
+          178.176,
+          174.08,
+          176.128,
+          176.64,
+          181.248
+        ],
+        "nccl-2.20.5-tree-ll128": [
+          156.672,
+          156.672,
+          156.672,
+          157.696,
+          156.672
+        ],
+        "nccl-2.20.5-tree-simple": [
+          152.576,
+          152.576,
+          152.576,
+          152.576,
+          152.576
+        ]
+      },
+      "metric": "median_us",
+      "name": "W-shared-overlap",
+      "role": "proxy"
+    }
+  ],
+  "report": {
+    "decision_ranking": [
+      "W-canary-overlap",
+      "W-shared-overlap",
+      "W-canary",
+      "W-micro"
+    ],
+    "format": "commcanary.fidelity_report.v1",
+    "method": {
+      "bootstrap": {
+        "confidence": 0.95,
+        "method": "percentile",
+        "minimum_replicates": 5,
+        "resamples": 4000,
+        "seed": 20261004,
+        "seed_derivation": "sha256_canonical_names_first_8_bytes_big_endian"
+      },
+      "point_estimate": "median",
+      "regret_unit": "percent_of_reference_optimum",
+      "shortlist_k": [
+        2,
+        3
+      ],
+      "tie_tolerance": {
+        "absolute_floor": 0.0,
+        "boundary": "difference_less_than_tolerance_is_tie",
+        "method": "maximum_configuration_iqr_with_absolute_floor"
+      }
+    },
+    "proxies": [
+      {
+        "agreement_rank": 4,
+        "direction": "lower_is_better",
+        "disaster_detection": {
+          "bottom_quartile_rank_start": 7,
+          "configuration": "nccl-2.20.5-tree-ll",
+          "in_bottom_quartile": true,
+          "proxy_rank": 8,
+          "reference_value": 11345.408,
+          "true_shortfall_pct": 38.30358257396081
+        },
+        "measurement_set_sha256": "3efa559baba4881fcc63d256cab279276525df0c1c26636664971a2e41a7fa59",
+        "metric": "median_us",
+        "name": "W-canary-overlap",
+        "proxy_ranking": [
+          {
+            "configuration": "nccl-2.20.5-ring-ll128",
+            "rank": 1,
+            "value": 144.384
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-simple",
+            "rank": 2,
+            "value": 144.384
+          },
+          {
+            "configuration": "nccl-2.19.3-default",
+            "rank": 3,
+            "value": 145.408
+          },
+          {
+            "configuration": "nccl-2.20.5-default",
+            "rank": 4,
+            "value": 145.408
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-ll",
+            "rank": 5,
+            "value": 146.432
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-simple",
+            "rank": 6,
+            "value": 150.528
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll128",
+            "rank": 7,
+            "value": 154.624
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll",
+            "rank": 8,
+            "value": 178.176
+          }
+        ],
+        "ranking_quality": {
+          "both_tie": 4,
+          "concordant_pairs": 11,
+          "discordant_pairs": 0,
+          "kendall_tau_b": 0.67700320038633,
+          "metric_class": "ranking_quality",
+          "pair_count": 28,
+          "pairwise_decision_agreement": 0.5357142857142857,
+          "pairwise_decision_agreement_pct": 53.57142857142857,
+          "proxy_ties_only": 13,
+          "reference_ties_only": 0
+        },
+        "recommended_configuration": "nccl-2.20.5-ring-ll128",
+        "recommended_reference_value": 8203.264,
+        "regret_at_1_confidence_interval": {
+          "confidence": 0.95,
+          "derived_seed": 9929257524449807568,
+          "lower_pct": 0.0,
+          "resamples": 4000,
+          "seed": 20261004,
+          "upper_pct": 3.27284105131414
+        },
+        "regret_at_1_pct": 0.0,
+        "regret_at_k": [
+          {
+            "best_reference_configuration": "nccl-2.20.5-ring-ll128",
+            "configurations": [
+              "nccl-2.20.5-ring-ll128",
+              "nccl-2.20.5-ring-simple"
+            ],
+            "effective_k": 2,
+            "k": 2,
+            "regret_pct": 0.0
+          },
+          {
+            "best_reference_configuration": "nccl-2.20.5-ring-ll128",
+            "configurations": [
+              "nccl-2.20.5-ring-ll128",
+              "nccl-2.20.5-ring-simple",
+              "nccl-2.19.3-default"
+            ],
+            "effective_k": 3,
+            "k": 3,
+            "regret_pct": 0.0
+          }
+        ],
+        "regret_rank": 1
+      },
+      {
+        "agreement_rank": 1,
+        "direction": "lower_is_better",
+        "disaster_detection": {
+          "bottom_quartile_rank_start": 7,
+          "configuration": "nccl-2.20.5-tree-ll",
+          "in_bottom_quartile": true,
+          "proxy_rank": 8,
+          "reference_value": 11345.408,
+          "true_shortfall_pct": 38.30358257396081
+        },
+        "measurement_set_sha256": "1e33c7c3c6d3832d0583ce581d0b352d8d5ef0bad3c4a8c8b704d8d1c29ebc89",
+        "metric": "median_us",
+        "name": "W-shared-overlap",
+        "proxy_ranking": [
+          {
+            "configuration": "nccl-2.19.3-default",
+            "rank": 1,
+            "value": 145.408
+          },
+          {
+            "configuration": "nccl-2.20.5-default",
+            "rank": 2,
+            "value": 146.432
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-simple",
+            "rank": 3,
+            "value": 146.432
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-ll128",
+            "rank": 4,
+            "value": 147.456
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-ll",
+            "rank": 5,
+            "value": 148.48
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-simple",
+            "rank": 6,
+            "value": 152.576
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll128",
+            "rank": 7,
+            "value": 156.672
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll",
+            "rank": 8,
+            "value": 176.64
+          }
+        ],
+        "ranking_quality": {
+          "both_tie": 1,
+          "concordant_pairs": 19,
+          "discordant_pairs": 2,
+          "kendall_tau_b": 0.7083333333333334,
+          "metric_class": "ranking_quality",
+          "pair_count": 28,
+          "pairwise_decision_agreement": 0.7142857142857143,
+          "pairwise_decision_agreement_pct": 71.42857142857143,
+          "proxy_ties_only": 3,
+          "reference_ties_only": 3
+        },
+        "recommended_configuration": "nccl-2.19.3-default",
+        "recommended_reference_value": 8240.128,
+        "regret_at_1_confidence_interval": {
+          "confidence": 0.95,
+          "derived_seed": 12467582705031978329,
+          "lower_pct": 0.07461294534602038,
+          "resamples": 4000,
+          "seed": 20261004,
+          "upper_pct": 0.7196495619524308
+        },
+        "regret_at_1_pct": 0.44938209961304915,
+        "regret_at_k": [
+          {
+            "best_reference_configuration": "nccl-2.20.5-default",
+            "configurations": [
+              "nccl-2.19.3-default",
+              "nccl-2.20.5-default"
+            ],
+            "effective_k": 2,
+            "k": 2,
+            "regret_pct": 0.3370365747097869
+          },
+          {
+            "best_reference_configuration": "nccl-2.20.5-default",
+            "configurations": [
+              "nccl-2.19.3-default",
+              "nccl-2.20.5-default",
+              "nccl-2.20.5-ring-simple"
+            ],
+            "effective_k": 3,
+            "k": 3,
+            "regret_pct": 0.3370365747097869
+          }
+        ],
+        "regret_rank": 2
+      },
+      {
+        "agreement_rank": 3,
+        "direction": "lower_is_better",
+        "disaster_detection": {
+          "bottom_quartile_rank_start": 7,
+          "configuration": "nccl-2.20.5-tree-ll",
+          "in_bottom_quartile": false,
+          "proxy_rank": 2,
+          "reference_value": 11345.408,
+          "true_shortfall_pct": 38.30358257396081
+        },
+        "measurement_set_sha256": "4a9812b9ac6c5f89d8aeed193886bf38201e44906d5d1dfbbb5b555c4f91dd9b",
+        "metric": "median_us",
+        "name": "W-canary",
+        "proxy_ranking": [
+          {
+            "configuration": "nccl-2.20.5-ring-ll",
+            "rank": 1,
+            "value": 224.57
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll",
+            "rank": 2,
+            "value": 233.155
+          },
+          {
+            "configuration": "nccl-2.19.3-default",
+            "rank": 3,
+            "value": 241.45
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-ll128",
+            "rank": 4,
+            "value": 241.8
+          },
+          {
+            "configuration": "nccl-2.20.5-default",
+            "rank": 5,
+            "value": 244.58
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll128",
+            "rank": 6,
+            "value": 277.755
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-simple",
+            "rank": 7,
+            "value": 277.87
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-simple",
+            "rank": 8,
+            "value": 294.62
+          }
+        ],
+        "ranking_quality": {
+          "both_tie": 2,
+          "concordant_pairs": 14,
+          "discordant_pairs": 9,
+          "kendall_tau_b": 0.2041241452319315,
+          "metric_class": "ranking_quality",
+          "pair_count": 28,
+          "pairwise_decision_agreement": 0.5714285714285714,
+          "pairwise_decision_agreement_pct": 57.14285714285714,
+          "proxy_ties_only": 1,
+          "reference_ties_only": 2
+        },
+        "recommended_configuration": "nccl-2.20.5-ring-ll",
+        "recommended_reference_value": 8462.848,
+        "regret_at_1_confidence_interval": {
+          "confidence": 0.95,
+          "derived_seed": 3686951180982738460,
+          "lower_pct": 2.055818589583864,
+          "resamples": 4000,
+          "seed": 20261004,
+          "upper_pct": 4.481338160029959
+        },
+        "regret_at_1_pct": 3.164398951441777,
+        "regret_at_k": [
+          {
+            "best_reference_configuration": "nccl-2.20.5-ring-ll",
+            "configurations": [
+              "nccl-2.20.5-ring-ll",
+              "nccl-2.20.5-tree-ll"
+            ],
+            "effective_k": 2,
+            "k": 2,
+            "regret_pct": 3.164398951441777
+          },
+          {
+            "best_reference_configuration": "nccl-2.19.3-default",
+            "configurations": [
+              "nccl-2.20.5-ring-ll",
+              "nccl-2.20.5-tree-ll",
+              "nccl-2.19.3-default"
+            ],
+            "effective_k": 3,
+            "k": 3,
+            "regret_pct": 0.44938209961304915
+          }
+        ],
+        "regret_rank": 3
+      },
+      {
+        "agreement_rank": 2,
+        "direction": "lower_is_better",
+        "disaster_detection": {
+          "bottom_quartile_rank_start": 7,
+          "configuration": "nccl-2.20.5-tree-ll",
+          "in_bottom_quartile": false,
+          "proxy_rank": 6,
+          "reference_value": 11345.408,
+          "true_shortfall_pct": 38.30358257396081
+        },
+        "measurement_set_sha256": "97f17c3b16824869215358146729b9860bab88aebf6a7a04361b30b103003dcc",
+        "metric": "median_us",
+        "name": "W-micro",
+        "proxy_ranking": [
+          {
+            "configuration": "nccl-2.20.5-ring-ll",
+            "rank": 1,
+            "value": 104.96
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-ll128",
+            "rank": 2,
+            "value": 110.08
+          },
+          {
+            "configuration": "nccl-2.19.3-default",
+            "rank": 3,
+            "value": 131.072
+          },
+          {
+            "configuration": "nccl-2.20.5-default",
+            "rank": 4,
+            "value": 131.072
+          },
+          {
+            "configuration": "nccl-2.20.5-ring-simple",
+            "rank": 5,
+            "value": 131.072
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll",
+            "rank": 6,
+            "value": 150.528
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-ll128",
+            "rank": 7,
+            "value": 155.648
+          },
+          {
+            "configuration": "nccl-2.20.5-tree-simple",
+            "rank": 8,
+            "value": 200.704
+          }
+        ],
+        "ranking_quality": {
+          "both_tie": 1,
+          "concordant_pairs": 17,
+          "discordant_pairs": 5,
+          "kendall_tau_b": 0.48989794855663565,
+          "metric_class": "ranking_quality",
+          "pair_count": 28,
+          "pairwise_decision_agreement": 0.6428571428571429,
+          "pairwise_decision_agreement_pct": 64.28571428571429,
+          "proxy_ties_only": 2,
+          "reference_ties_only": 3
+        },
+        "recommended_configuration": "nccl-2.20.5-ring-ll",
+        "recommended_reference_value": 8462.848,
+        "regret_at_1_confidence_interval": {
+          "confidence": 0.95,
+          "derived_seed": 14623693741157192331,
+          "lower_pct": 2.055818589583864,
+          "resamples": 4000,
+          "seed": 20261004,
+          "upper_pct": 4.481338160029959
+        },
+        "regret_at_1_pct": 3.164398951441777,
+        "regret_at_k": [
+          {
+            "best_reference_configuration": "nccl-2.20.5-ring-ll128",
+            "configurations": [
+              "nccl-2.20.5-ring-ll",
+              "nccl-2.20.5-ring-ll128"
+            ],
+            "effective_k": 2,
+            "k": 2,
+            "regret_pct": 0.0
+          },
+          {
+            "best_reference_configuration": "nccl-2.20.5-ring-ll128",
+            "configurations": [
+              "nccl-2.20.5-ring-ll",
+              "nccl-2.20.5-ring-ll128",
+              "nccl-2.19.3-default"
+            ],
+            "effective_k": 3,
+            "k": 3,
+            "regret_pct": 0.0
+          }
+        ],
+        "regret_rank": 4
+      }
+    ],
+    "ranking_quality_ranking": [
+      "W-shared-overlap",
+      "W-micro",
+      "W-canary",
+      "W-canary-overlap"
+    ],
+    "rankings_diverge": true,
+    "reference": {
+      "configuration_count": 8,
+      "direction": "lower_is_better",
+      "measurement_set_sha256": "0c78dab2b3baecbef1006cd00bf2ff2d023574017caf9e939131f042e269ccb0",
+      "metric": "median_us",
+      "name": "W-full",
+      "ranking": [
+        {
+          "configuration": "nccl-2.20.5-ring-ll128",
+          "rank": 1,
+          "value": 8203.264
+        },
+        {
+          "configuration": "nccl-2.20.5-default",
+          "rank": 2,
+          "value": 8230.912
+        },
+        {
+          "configuration": "nccl-2.19.3-default",
+          "rank": 3,
+          "value": 8240.128
+        },
+        {
+          "configuration": "nccl-2.20.5-ring-simple",
+          "rank": 4,
+          "value": 8449.536
+        },
+        {
+          "configuration": "nccl-2.20.5-ring-ll",
+          "rank": 5,
+          "value": 8462.848
+        },
+        {
+          "configuration": "nccl-2.20.5-tree-ll128",
+          "rank": 6,
+          "value": 8994.816
+        },
+        {
+          "configuration": "nccl-2.20.5-tree-simple",
+          "rank": 7,
+          "value": 9765.888
+        },
+        {
+          "configuration": "nccl-2.20.5-tree-ll",
+          "rank": 8,
+          "value": 11345.408
+        }
+      ],
+      "true_optimum": {
+        "configuration": "nccl-2.20.5-ring-ll128",
+        "rank": 1,
+        "value": 8203.264
+      },
+      "true_worst": {
+        "configuration": "nccl-2.20.5-tree-ll",
+        "rank": 8,
+        "value": 11345.408
+      }
+    }
+  },
+  "schema": "commcanary.paper.decision_regret.v1"
+}

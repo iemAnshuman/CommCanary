@@ -23,7 +23,10 @@ published PDF byte for byte.
 [`arxiv/`](arxiv/README.md) is the revision prepared for arXiv. It adds
 uncertainty and sensitivity analysis to the trusted join, drops the version
 from the title, and withdraws the comparative claims that depend on a single
-configuration. `preprint-0.4/` stays the record of the published version.
+configuration. The October 2026 revision describes the current implementation
+and adds reproducible decision-regret analysis of the retained measurements.
+It includes a two-column LaTeX manuscript and a minimal arXiv upload ZIP
+builder. `preprint-0.4/` stays the record of the published version.
 
 ## Historical draft
 

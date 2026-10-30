@@ -29,6 +29,38 @@ the uncertainty and sensitivity analysis. `evidence/verified_metrics.json` recor
 by the reconstruction. `scripts/verify_sources.py` rehashes those inputs and
 checks the headline metrics against the retained aggregate and verdict data.
 
+## October 2026 implementation and retrospective analysis
+
+The implementation description is bound separately to
+`cefad5a086b4723755bbe33b33e96f9f3a2c8e36`. The inspected implementation files
+are identical at the local starting HEAD `c87d8b9234e6`; that later commit
+changes only paper typesetting. The supporting source paths are:
+
+- `src/commcanary/services/fidelity.py` and
+  `src/commcanary/artifacts/measurement_set.py` for decision regret;
+- `src/commcanary/services/phase_reduction.py` and
+  `src/commcanary/experimental/__init__.py` for experimental phase reduction;
+- `src/commcanary/services/physical_gate.py` for the four-state product gate;
+- `src/commcanary/product/serving_harness.py`,
+  `src/commcanary/product/vllm_serving_engine.py`, and
+  `src/commcanary/artifacts/serving_measurement.py` for serving measurements;
+- `src/commcanary/schemas/commcanary.physical_execution_measurement.v1.schema.json`
+  for cost accounting; and
+- `docs/physical-canary.md` and `docs/product-status.md` for graph selection,
+  signed exchange, and the physical qualification boundary. The code takes
+  precedence over the older three-state gate description in the first file.
+
+`scripts/decision_regret.py` reads the retained trusted-join aggregate directly,
+requires its original CSV and JSON digests, verifies the complete 280-cell
+selection, and checks the five repetitions for each of eight configurations
+in the five compared workloads. It uses the current fidelity scorer with
+4,000 resamples, 95% percentile intervals, base seed 20261004, and a five-
+replicate minimum. It reproduces the published agreement counts before writing
+`evidence/decision_regret.json` and `tables/decision-regret.tex`; `--check`
+requires exact regeneration of both. The JSON retains the measurement sets,
+input digests, and per-proxy derived seeds. This is a retrospective analysis,
+not a new campaign or a revised frozen gate policy.
+
 ## Interpretation boundary
 
 The trusted comparison contains 280 selected cells. The exact-work gate

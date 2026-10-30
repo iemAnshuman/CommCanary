@@ -12,8 +12,8 @@ the selected repetition values give a median and a Tukey-hinge IQR, and a pair
 is a tie when |median difference| < max(IQR_a, IQR_b). The script refuses to
 write anything if its point counts disagree with the published aggregate.
 
-Five repetitions per cell make the percentile bootstrap optimistic; the output
-says so. Usage:
+Only five repetitions per cell are available; percentile intervals may
+underrepresent variability and do not guarantee coverage. Usage:
 
     python3 paper/arxiv/scripts/trusted_join_uncertainty.py          # write
     python3 paper/arxiv/scripts/trusted_join_uncertainty.py --check  # verify
@@ -216,7 +216,7 @@ def build() -> Dict[str, object]:
             "draws": DRAWS,
             "seed": SEED,
             "interval": "percentile, 95%",
-            "caveat": "five repetitions per cell make this bootstrap optimistic; read intervals as lower bounds on uncertainty",
+            "caveat": "only five repetitions per cell; percentile intervals may underrepresent variability and do not guarantee coverage",
         },
         "all_configurations": everything,
         "excluding": {"configuration": EXCLUDED, **_analyse(cells, [c for c in configurations if c != EXCLUDED])},

@@ -20,6 +20,7 @@
 }
 
 \setlist{nosep,leftmargin=*}
+\raggedbottom
 \newcommand{\wname}[1]{\texttt{W-#1}}
 \newcommand{\us}{\,\mu\mathrm{s}}
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
@@ -36,15 +37,16 @@
 \maketitle
 
 \begin{abstract}
-Collective communication traces can replace expensive distributed workloads in
-controlled experiments, but replaying the right calls does not guarantee the
-same configuration choice. CommCanary provides a fail-closed workflow for
-freezing, selecting, archiving, and independently checking collective-trace
+Collective communication traces let researchers study distributed workloads
+without rerunning the full application, but replaying the recorded calls does
+not guarantee the same configuration choice. CommCanary provides a fail-closed
+workflow for freezing, selecting, archiving, and independently checking collective-trace
 replay evidence. Its publication path binds a campaign to immutable attempts,
 an explicit selection, a completeness verdict, a hash-identified archive, and
-deterministic analysis. Missing or unstable evidence withholds the claim.
+deterministic analysis. The workflow withholds claims when required evidence
+is missing or fails the declared stability policy.
 
-We compare four replay representations with a full workload on one node with
+We compare four proxy representations with a full workload on one node with
 four NVIDIA A100 GPUs and eight NCCL configurations. The trusted join contains
 all 280 selected cells. Communication-only replay does not preserve the
 measured configuration ranking: \wname{canary} agrees on 16 of 28 pairs, with
@@ -52,9 +54,14 @@ a 95\% repetition-bootstrap interval of 12 to 17. It ranks the full
 workload's slowest configuration second. Replay that keeps compute concurrent
 with communication places both low-latency-protocol configurations where the
 full workload does, and \wname{shared-overlap} agrees on 20 pairs, more
-than \wname{canary} in 99.9\% of bootstrap draws. The differences between proxies come
-almost entirely from one configuration, \texttt{nccl-2.20.5-tree-ll}; with it
-excluded, no proxy is distinguishable from another.
+than \wname{canary} in 99.9\% of bootstrap draws. These differences depend on
+one configuration, \texttt{nccl-2.20.5-tree-ll}. After excluding it, the
+reported pair-agreement difference intervals all include zero.
+
+A retrospective decision-regret analysis measures the cost of each proxy's
+first choice on the full workload. Communication-only replay and the
+microbenchmark both incur 3.16\% point regret; configuration-specific overlap
+replay chooses the measured optimum despite having the lowest pair agreement.
 
 A separate exact-work gate reports 26 of 28 agreeing pairs, or 92.86\%, with
 $\tau_b=0.857$, one false negative, one false positive, 1.55\% median absolute
@@ -82,9 +89,9 @@ the execution conditions that determine the application choice.
 Execution traces provide another way to study a workload. A trace can record
 operations and dependencies; a simulator or replay engine can then execute the
 recorded structure without rerunning the original application
-\cite{chakra,mystique,astrasim,astrasim2,scalatrace,loggopsim}. The relevant
-fidelity target still has to be stated. A tuning workflow usually asks which
-configuration should be selected. Small timing error is not enough if replay
+\cite{chakra,mystique,astrasim,astrasim2,scalatrace,loggopsim}. The tuning
+question is whether replay selects the same configuration as the full
+workload. Small timing error is not enough if replay
 reverses two close configurations. High point agreement is also insufficient
 when the measurements are unstable or uncertainty spans the decision boundary.
 
@@ -93,16 +100,16 @@ configuration decisions of a full workload, and whether the evidence path
 refuses a positive claim when completeness, uncertainty, or stability is
 inadequate.
 
-CommCanary handles the evidence question first. A campaign is frozen before
-execution. Each expected cell writes immutable attempts. A separate selection
-identifies one terminal attempt for each cell. A completeness verdict checks
-that the selected matrix is present, unambiguous, and successful. Raw evidence
-is archived and hashed. Publication files are generated deterministically from
-that selection. A failed boundary stops the claim path.
+CommCanary freezes each campaign before execution and retains every attempt
+as an immutable record. An explicit selection identifies one terminal attempt
+for each expected cell; a completeness verdict checks that the selected matrix
+is present, unambiguous, and successful. The workflow then archives and hashes
+the raw evidence and generates publication files deterministically from the
+selection. Analysis stops if a required check fails.
 
 We use this workflow in two experiments. The first joins three complete
 campaigns into 280 selected cells covering eight NCCL configurations and seven
-workload profiles. It compares four replay representations with the full
+workload profiles. It compares four proxy representations with the full
 workload. Communication-only \wname{canary} agrees on 16 of 28 configuration
 pairs, or 57.1\%. Isolated \wname{micro} agrees on 18, or 64.3\%. A shared trace
 replay with concurrent compute reaches 20, or 71.4\%. No proxy preserves all
@@ -115,8 +122,8 @@ evaluates it with a policy frozen before analysis. Exact work reaches 26 of 28
 pair agreement with low relative timing error. Every point criterion passes.
 The gate still returns inconclusive because pair intervals cross tie boundaries
 and the \texttt{nccl-2.20.5-tree-ll} configuration is unstable in three
-representations. A favorable estimate is recorded without being promoted to a
-supported qualification claim.
+representations. The reported point estimates therefore do not qualify exact
+work under the frozen policy.
 
 The paper contributes four items:
 
@@ -124,14 +131,15 @@ The paper contributes four items:
   \item a fail-closed evidence model for physical collective-replay experiments,
     with immutable attempts, explicit selection, completeness, archive binding,
     and deterministic publication;
-  \item a complete 280-cell comparison, with uncertainty and sensitivity
-    analysis, showing that faithful communication-only replay is insufficient
-    for the measured ranking and that the configurations it misplaces are the
-    ones whose cost depends on concurrent compute;
-  \item a predeclared exact-work gate that reports strong point estimates and the
-    final inconclusive verdict; and
-  \item an explicit separation between publication evidence, diagnostic
-    evidence, incomplete integration records, and work that has not run.
+  \item a complete 280-cell comparison showing that communication-only replay
+    does not preserve the measured ranking. Uncertainty and sensitivity
+    analyses bound this result, and retrospective decision regret measures
+    the cost of the selected configuration separately from pair agreement;
+  \item a predeclared exact-work gate whose point criteria pass but whose
+    final verdict remains inconclusive; and
+  \item an implementation of trace-bound candidate construction and physical
+    gating, with its software contracts separated from the physical evidence
+    needed to qualify a reduced canary.
 \end{enumerate}
 
 All physical observations come from a single node with four A100 GPUs. The
@@ -139,7 +147,7 @@ results do not establish multi-node behavior, expert-parallel replay,
 congestion fidelity, CUDA-graph fidelity, vendor qualification, production-CI
 readiness, or runtime savings from a reduced canary.
 
-\section{Background and problem definition}
+\section{Problem definition}
 
 \subsection{Configuration depends on context}
 
@@ -156,8 +164,8 @@ regression isolation. It intentionally removes application context. Concurrent
 compute and communication can contend for endpoint resources and change the
 critical path~\cite{overlap}. Arrival skew, explicit waits, dependencies, and
 buffer lifetimes can also change which configuration is preferred. The
-microbenchmark ranking is therefore an experimental result, not a default
-model of the full-workload ranking.
+microbenchmark ranking must therefore be checked against the full workload
+before it is used for configuration selection.
 
 \subsection{Trace replay and surrogates}
 
@@ -170,11 +178,11 @@ while Mystique derives portable AI benchmarks from execution traces
 \cite{chakra,mystique}. PARAM supplies communication benchmark and replay
 tooling used by the experiment path~\cite{param}.
 
-Trace portability does not decide the claim target. CommCanary tests decision
+CommCanary uses existing trace formats and replay machinery to test decision
 fidelity: whether a replay supports the same configuration choice as the source
-workload under a frozen policy. The contribution is not a new trace format or
-simulator. It is a decision-level evaluation coupled to a physical evidence
-boundary that can withhold the claim.
+workload under a frozen policy. The evaluation requires complete physical
+evidence and can withhold a qualification claim even when a replay executes
+successfully.
 
 \subsection{Decision fidelity}
 \label{sec:fidelity}
@@ -223,8 +231,8 @@ region. The policy then returns insufficient evidence instead of pass.
 
 \subsection{Fail-closed publication path}
 
-Figure~\ref{fig:path} shows the publication path. The boundaries remain
-separate because each answers a different question.
+Figure~\ref{fig:path} shows how the publication path checks campaign identity,
+measurement completeness, and the provenance of the reported results.
 
 \begin{enumerate}
   \item The campaign manifest freezes the matrix, environment identities,
@@ -240,10 +248,10 @@ separate because each answers a different question.
     verdicts from the selected evidence.
 \end{enumerate}
 
-The absence of a completeness verdict is not an empty valid sample. A parser's
-ability to compute a number does not authorize publication. Synthetic fixtures
-test software behavior but do not enter physical claims. Operational notes may
-explain an attempt, but cannot replace an aggregate or persisted verdict.
+Aggregation requires a persisted completeness verdict, even when a parser can
+compute a number from the available samples. Synthetic fixtures test software
+behavior and are excluded from physical results. Operational notes may explain
+an attempt, but cannot replace an aggregate or persisted verdict.
 
 \begin{figure*}[t]
   \centering
@@ -293,6 +301,98 @@ have identical Git blob identities. This confirms that the checked-in
 deterministic publication path produced the same bytes for the retained
 inputs. It does not show that physical measurements reproduce on another
 machine, and it does not turn a focused analyzer check into release readiness.
+
+\section{Implementation and claim boundaries}
+\label{sec:implementation}
+
+The implementation described here is inspected at repository commit
+\texttt{cefad5a}; the physical campaigns retain their original identities.
+CommCanary 0.3.0 remains an unreleased research alpha. The services described
+below support physical studies of applications and reduced canaries. Those
+studies have not been completed in the retained publication evidence.
+
+\subsection{Capture, graph selection, and reduction}
+
+The \texttt{capture}, \texttt{build}, and \texttt{gate} commands expose the
+physical workflow. Capture can produce a Chakra execution trace and a semantic
+projection that binds the trace's exact bytes to executable work. The reader
+checks node uniqueness, dependency existence, and acyclicity, retaining
+complete protobuf messages for selected nodes. A candidate must be
+dependency-closed and execute fewer nodes than its source. Application ground
+truth, trace-derived reference execution, exact materialization, and a reduced
+candidate have separate roles in the evidence bundle.
+
+Selection uses training perturbations to expand candidates that miss severe
+regressions and prune passing candidates. The selection is written before the
+holdout callback may load held-out application evidence. Missing measurements,
+synthetic evidence, or failed held-out checks prevent qualification. Exact
+materialization supplies a conformance and measurement-floor control; it does
+not satisfy the reduction requirement.
+
+The separate experimental phase-reduction service works on declared iteration
+boundaries, an explicit period, or an opt-in compute-gap heuristic. It groups
+iterations by communication structure and execution features, including
+overlap and arrival skew. Retention is proportional to phase frequency with a
+minimum allocation for tail-carrying clusters; retained iterations carry
+weights and are rebased using each cluster's cadence. The campaigns in this
+paper have not established the physical decision fidelity or savings of
+candidates constructed by this method.
+
+\subsection{Execution semantics and resource ownership}
+
+Capture keeps unknown overlap distinct from measured zero overlap. Kineto
+import derives overlap only when external identifiers uniquely link a
+collective to complete NCCL kernel intervals and concurrent compute on other
+streams of the same device. Cross-rank arrival skew requires an explicit
+shared-clock assertion or a complete offset map. Dtype, reduction operator,
+broadcast root, and message-shape evidence are preserved where available;
+qualification refuses missing or unsupported execution semantics.
+
+The physical runner uses a bounded pool of collective buffers and settles a
+slot's prior asynchronous operation before reuse. This prevents concurrent
+collectives from aliasing a live buffer. Injected rank skew uses a host
+monotonic spin with an explicit resolution floor; it is recorded as host issue
+timing, not as a guarantee about GPU arrival. These execution controls are
+implementation properties and do not retroactively alter frozen campaigns.
+
+\subsection{Four-state physical gating}
+
+The product gate now distinguishes \emph{pass}, \emph{fail},
+\emph{inconclusive}, and \emph{incomparable}. It first verifies the bundle,
+executable, baseline identity, and environment commitments. A non-qualified
+bundle or mismatched environment is incomparable. For comparable observations,
+each metric must meet the policy's replicate floor and relative-IQR stability
+bound before a seeded percentile bootstrap decides its regression-oriented
+median difference.
+
+An interval wholly beyond a mandatory acceptance threshold produces fail; an
+interval wholly within it supports pass for that metric. Insufficient samples,
+instability, or an interval crossing the threshold makes a mandatory metric
+inconclusive. A mandatory failure takes precedence over inconclusive metrics;
+advisory regressions remain warnings. The result validator independently
+checks the reported decision. This product gate is separate from the frozen
+exact-work experiment evaluated below.
+
+\subsection{Serving measurements, cost, and exchange}
+
+A sustained-serving runner and vLLM adapter execute a frozen traffic trace on
+its declared arrival schedule. First-token and completion latency are measured
+from scheduled arrival, so late submission contributes to latency; submission
+lag is also reported separately. The measurement counts completed output
+tokens from requests arriving in a declared steady-state window and divides
+by that window's duration. It retains failures and latency distributions,
+including per-request mean inter-token latency. The intended comparison is
+throughput at a fixed p99 time-to-first-token budget. No completed application
+campaign in this paper validates that objective.
+
+Physical execution records now separate setup, measurement, instrumentation,
+and total time, with consistent cost totals and a steady-state per-iteration
+cost. These fields record the costs needed to evaluate savings; no such result
+is reported here. Full-audit bundles retain raw application and candidate
+evidence. Private exchange omits those records and signs their content
+commitments with Ed25519.
+Verification requires an independently trusted public key. The signature
+authenticates the signed bytes; it does not prove decision fidelity or privacy.
 
 \section{Experimental methodology}
 
@@ -348,11 +448,10 @@ with the full workload.
 
 \paragraph{\wname{micro}.} An isolated collective microbenchmark: back-to-back
 blocking all-reduce calls cycling through the full workload's message sizes,
-with all computation removed. It is the \texttt{nccl-tests} analogue. It is
-not the exact-work gate's ``isolated'' control
-(Section~\ref{sec:gate-method}), which replays that gate's own source message
-sequence in a different campaign; the two share an idea, communication without
-compute, but are separate measurements.
+with all computation removed. It is the \texttt{nccl-tests} analogue. The
+exact-work gate's ``isolated'' control (Section~\ref{sec:gate-method}) also
+omits compute, but replays that gate's own source message sequence in a
+separate campaign. The two controls therefore provide distinct measurements.
 
 \paragraph{\wname{canary}.} A faithful communication-only replay of recorded
 collective requests and explicit waits. It preserves communication structure
@@ -381,16 +480,43 @@ Section~\ref{sec:fidelity}. We report the 28 exact pair labels and $\tau_b$. Qua
 tables from the historical paper draft are excluded because their original
 complete evidence was not retained.
 
-The trusted join's analyzer reports point counts only. For uncertainty we
-recompute every label from the committed per-repetition values and resample
-each cell's five selected repetitions with replacement, independently per
-cell, 4,000 times with a fixed seed, recomputing the full-workload and proxy
-labels in every draw. We report 95\% percentile intervals on agreement counts
-and on differences between proxies. Five repetitions make this bootstrap
-optimistic, so the intervals are lower bounds on the uncertainty. The script
+The trusted join's analyzer reports point counts only. To estimate uncertainty,
+we recompute every label from the committed per-repetition values. We then
+resample each cell's five selected repetitions with replacement, independently
+per cell, 4,000 times with a fixed seed. Each draw recomputes both full-workload
+and proxy labels. We report 95\% percentile intervals on agreement counts
+and on differences between proxies. Only five repetitions are available per
+cell; the intervals may underrepresent variability and are not guaranteed
+coverage bounds. The script
 and its output are part of the source package
 (\texttt{scripts/trusted\_join\_uncertainty.py}); it refuses to run if its point
 counts differ from the published aggregate.
+
+\subsection{Retrospective decision regret}
+\label{sec:regret-method}
+
+Pair agreement weights every pair equally. To measure the consequence of a
+proxy's recommendation, let $m_F(c)$ and $m_R(c)$ be medians of the five retained
+repetitions for configuration $c$. For lower-is-better latency, let
+$c^*=\arg\min_c m_F(c)$ and $\hat c_R=\arg\min_c m_R(c)$. First-choice regret is
+\begin{equation}
+  r_1(R)=100\frac{m_F(\hat c_R)-m_F(c^*)}{m_F(c^*)}.
+\end{equation}
+For a shortlist of size $k$, $r_k$ uses the configuration with the lowest
+reference median among the proxy's first $k$ choices. It assumes that the
+shortlist is subsequently measured on the reference workload; it is not the
+regret of a uniformly chosen shortlist member. Equal medians are resolved by
+configuration identifier. These choices use medians directly, while pair
+agreement retains the IQR tie rule.
+
+The analysis uses the current \texttt{fidelity} scorer and the same retained
+trusted-join repetitions. It is retrospective and sets no new pass threshold.
+We independently resample each reference and proxy cell's five repetitions
+4,000 times and recompute both the recommendation and reference optimum in
+each draw. The 95\% percentile interval uses seed 20261004 with deterministic
+per-proxy seed derivation. The script verifies input hashes and reproduces all
+published point agreement counts before emitting the report and LaTeX table.
+The small sample and single-system limitations apply here as well.
 
 \subsection{Exact-work decision gate}
 \label{sec:gate-method}
@@ -418,7 +544,7 @@ regions or when the stability condition fails.
 
 \section{Results}
 
-\subsection{Communication-only replay loses the ranking}
+\subsection{Communication-only replay changes the ranking}
 
 Table~\ref{tab:agreement} and Figure~\ref{fig:agreement} report the trusted
 join. \wname{canary} agrees with
@@ -428,18 +554,18 @@ $\tau_b=0.490$. Replaying the request and wait structure without computation is
 therefore insufficient for this measured ranking. \wname{canary} reverses nine
 pairs outright.
 
-The disagreement concerns configuration selection, not only absolute latency.
 \wname{canary} ranks \texttt{nccl-2.20.5-tree-ll}, the full workload's slowest
 configuration at 38\% above the fastest, second. A replay can match call count
 and byte count while changing the interference and synchronization that
 produce the ordering.
 
-\wname{canary} also trails \wname{micro} by two pairs, in 98\% of bootstrap
-draws. That gap is not robust to the configuration set: with
-\texttt{nccl-2.20.5-tree-ll} excluded it becomes two pairs in \wname{canary}'s
-favor, with an interval spanning zero (Table~\ref{tab:sensitivity}). We
-therefore do not claim that communication-only replay is generally worse than
-a microbenchmark, only that it does not preserve the ranking.
+\wname{canary} also trails \wname{micro} by two pairs at the point estimate
+and has lower agreement in 98\% of bootstrap draws. The comparison depends on
+the configuration set: excluding \texttt{nccl-2.20.5-tree-ll} gives
+\wname{canary} a two-pair lead, with an interval spanning zero
+(Table~\ref{tab:sensitivity}). These results establish that communication-only
+replay changes the measured ranking, but do not establish that it is generally
+worse than a microbenchmark.
 
 \begin{table}[t]
 \caption{Agreement with \wname{full} over eight configurations. Intervals are
@@ -495,16 +621,18 @@ Adding overlap changes both pair agreement and tie structure.
 $\tau_b$ is 0.677. It never reverses a pair: all 13 of its disagreements are
 pairs it labels a tie where \wname{full} does not. Its medians span only
 144--178\,$\mu$s while cell IQRs reach 18\,$\mu$s, so the IQR tie rule
-resolves few pairs. Its one-pair deficit against \wname{canary} is within
-noise (interval $-7$ to $+6$); it reflects resolution, not a wrong ordering.
+resolves few pairs. Its one-pair deficit against \wname{canary} is not resolved
+by the bootstrap (interval $-7$ to $+6$). The disagreements concern ties rather
+than reversed pairs.
 
-\wname{shared-overlap} is the strongest measured proxy at 20 of 28 agreement,
+\wname{shared-overlap} has the highest point agreement at 20 of 28 pairs,
 or 71.4\%, with $\tau_b=0.708$. It agrees on more pairs than \wname{canary} in
 99.9\% of bootstrap draws. Its two-pair lead over \wname{micro} is not resolved
 (interval $-1$ to $+5$). Both overlap replays place the two low-latency (LL)
 protocol configurations exactly where \wname{full} does, fifth and eighth,
 while \wname{canary} places them first and second. Eight pair decisions still
-disagree with \wname{full}, so the experiment does not qualify overlap replay.
+disagree with \wname{full}; this comparison supplies no qualification verdict
+for overlap replay.
 
 \paragraph{Stability.} The trusted join applies no stability rule. Measured
 against the exact-work gate's 20\% relative-IQR limit, every one of its 40
@@ -520,6 +648,35 @@ We do not apply a new decision threshold after observing the result; the
 intervals and exclusion analysis above qualify the reported counts rather than
 turning them into a gate.
 
+\subsection{The cost of the recommended configuration}
+
+Table~\ref{tab:regret} reports the retrospective analysis. The reference's
+lowest median is $8{,}203.264\us$ for \texttt{nccl-2.20.5-ring-ll128}.
+Both \wname{micro} and \wname{canary} choose ring-LL and incur 3.16\% point
+regret, although their agreement counts differ. The shared-overlap proxy has
+the highest pair agreement, but chooses \texttt{nccl-2.19.3-default}, with
+0.45\% point regret. Configuration-specific overlap has the lowest agreement
+count yet chooses the reference optimum. Its first-choice interval extends
+to 3.27\%, so zero point regret does not establish reliable optimal selection.
+
+The shortlist results distinguish the proxies further. A
+two-choice microbenchmark shortlist contains the reference optimum; the
+communication-only shortlist still has 3.16\% regret and places the reference's
+worst configuration second. Both overlap proxies place that configuration
+last. Agreement, recommendation cost, and avoidance of the worst configuration
+answer different questions. These results describe this finite decision set;
+they neither rank proxies universally nor change the exact-work verdict.
+
+\begin{table*}[t]
+\caption{Retrospective decision regret on the retained trusted join. Lower
+regret is better. $r_2$ and $r_3$ use the best reference result in each proxy's
+shortlist. Intervals describe $r_1$ only. Worst rank is the proxy's position
+for the full workload's slowest configuration (8 is last).}
+\label{tab:regret}
+\centering\small
+\input{tables/decision-regret.tex}
+\end{table*}
+
 \subsection{Exact-work point estimates}
 
 Exact work agrees on 26 of 28 pairs, or 92.86\%, with $\tau_b=0.857$. It
@@ -528,12 +685,12 @@ error is 1.55\%, and p95 error is 4.05\%. It gains seven agreeing pairs over
 the isolated control and sixteen over the stratified control. Every point
 criterion passes, as Table~\ref{tab:criteria} records.
 
-The gate also ran two causal ablations of exact work. Executing the same
+The gate also ran two ablations of exact work. Executing the same
 compute and communication serialized, with no overlap, agrees on 18 of 28
-pairs; removing rank arrival skew agrees on 24. Losing overlap costs eight
-agreeing pairs and losing skew costs two, which is within-campaign evidence
-that concurrency carries the ranking. These are point counts; the gate did not
-compute intervals on them.
+pairs; removing rank arrival skew agrees on 24. Agreement therefore drops by
+eight pairs when overlap is removed and by two when skew is removed. These
+within-campaign comparisons support a role for concurrency in the measured
+ranking. They are point counts; the gate did not compute intervals on them.
 
 These estimates show that exact-work reconstruction is substantially closer to
 the source ordering than the controls in this campaign. They do not determine
@@ -575,22 +732,20 @@ those regions leaves the label unsupported.
 
 Second, \texttt{nccl-2.20.5-tree-ll} exceeds the 20\% relative-IQR limit in
 source at 47.5\%, exact work at 32.3\%, and the stratified control at 50.4\%.
-The instability appears in more than the candidate representation. The
-campaign cannot support a clean qualification involving that configuration
-under the frozen policy.
+The source measurement itself therefore violates the stability requirement,
+preventing qualification involving that configuration under the frozen policy.
 
-The supported reading is asymmetric. Exact work is promising and closer to the
-source decisions than the controls in this campaign. The evidence does not
-show that the gate passed, that decision preservation is proven, or that exact
-work is a qualified production oracle.
+Exact work agrees with more source decisions than the controls at the point
+estimate. Its inconclusive verdict leaves decision preservation unqualified
+under the frozen policy.
 
 \begin{figure*}[t]
   \centering
   \input{figures/figure3-inconclusive.tex}
   \caption{Why the exact-work verdict is inconclusive. (a) Representative
   pair differences with 95\% bootstrap intervals, in units of each pair's tie
-  threshold; an interval that leaves the shaded tie band or crosses zero does
-  not support one label. (b) \texttt{nccl-2.20.5-tree-ll} exceeds the frozen
+  threshold; an interval spanning a boundary of the shaded tie band does not
+  support a unique label. (b) \texttt{nccl-2.20.5-tree-ll} exceeds the frozen
   20\% stability limit in three representations.}
   \label{fig:inconclusive}
 \end{figure*}
@@ -600,7 +755,7 @@ work is a qualified production oracle.
 A separate one-cell diagnostic compares retained source and replay timing for
 one exact-work capsule. The source median is $1{,}434.1\us$ and the replay
 median is $1{,}541.0\us$, a signed difference of $+106.9\us$, or $+7.45\%$. All 32 deterministic checks pass across four ranks.
-Table~\ref{tab:diagnostic} states the complete narrow claim.
+Table~\ref{tab:diagnostic} summarizes the diagnostic.
 
 The diagnostic confirms deterministic reconstruction checks and a same-node
 timing comparison. It has no multi-configuration full-workload matrix. It
@@ -636,24 +791,22 @@ join rejects that assumption for the measured case. The operation stream can
 be faithful at the communication interface while omitting concurrent work that
 changes endpoint contention and critical-path timing.
 
-The overlap results narrow the diagnosis. Adding concurrency does not improve
-every metric. The configuration-specific overlap replay has fewer exact matches
-than the microbenchmark because its tie structure changes, not because it
-orders pairs wrongly. The shared-trace variant performs best when concurrent
-work is held constant across configurations. The overlap schedule, its
-dependence on configuration, and the tie policy all affect the claim.
-Including overlap is necessary for this case but is not a complete fidelity
-recipe.
+The overlap results help explain the disagreements. The configuration-specific
+overlap replay has fewer exact pair matches than the microbenchmark, but all
+of its mismatches are ties rather than reversed pairs. The shared-trace variant,
+which holds replayed work constant across configurations, has the highest
+point agreement. Together with the exact-work ablation, these observations
+indicate that concurrency affects the measured ranking. They do not establish
+that adding overlap alone is sufficient to preserve it.
 
 \subsection{A hypothesis for the mechanism}
 
-The misplaced configurations are specific. NCCL's LL protocol trades bandwidth
-for latency: it moves data in small flag-tagged stores that the receiving
-kernel polls for, so it finishes a small collective sooner on an otherwise
-idle GPU but occupies streaming multiprocessors and memory bandwidth for
-longer per byte. We hypothesize that when a GEMM runs concurrently, that
-occupancy slows both the collective and the GEMM, and the latency advantage
-turns into a cost. The data fit this reading. With compute removed,
+Both misplaced configurations use NCCL's LL protocol, which transfers data
+with flags that the receiving kernel polls~\cite{nccl}. We hypothesize that
+these transfers contend with concurrent GEMM work for streaming multiprocessor
+and memory resources, reducing the advantage seen without compute. The
+observed rankings are consistent with this explanation but do not identify
+the contended resource. With compute removed,
 \wname{micro} and \wname{canary} rank ring-LL first; in \wname{full} it is
 fifth. \wname{canary} ranks tree-LL second; in \wname{full} it is last, 38\%
 behind the fastest configuration, with the widest spread of the eight. Both
@@ -661,12 +814,12 @@ overlap replays, which restore concurrent compute, put the two LL
 configurations exactly where \wname{full} does. The gate's overlap ablation
 points the same way within one campaign.
 
-Why \wname{canary} misplaces tree-LL more than \wname{micro} does is less
-clear. Both omit compute; \wname{canary} replays the recorded asynchronous
-requests and explicit waits, while \wname{micro} issues blocking calls back to
+The larger tree-LL displacement in \wname{canary} than in \wname{micro} is
+also unexplained. Both omit compute; \wname{canary} replays the recorded
+asynchronous requests and explicit waits, while \wname{micro} issues blocking calls back to
 back. A replay that keeps several requests in flight may reward a
-latency-optimized protocol further. We have not tested this. Measuring GEMM
-slowdown and collective time per configuration under controlled concurrency,
+latency-optimized protocol further, but this hypothesis has not been tested.
+Measuring GEMM slowdown and collective time per configuration under controlled concurrency,
 and repeating the comparison with NCCL channel counts fixed, would test both
 hypotheses.
 
@@ -678,10 +831,11 @@ and reverse them, or a common timing bias and preserve their order. We report
 pair labels, rank correlation, false-negative and false-positive counts, and
 timing errors separately.
 
-This distinction explains the exact-work outcome. Low median and p95 errors are
-favorable, but the gate asks whether each operational decision is supported
-under uncertainty. A 92.86\% point agreement is not a 92.86\% probability that
-the replay is correct. An interval can invalidate the point label.
+In the exact-work experiment, low median and p95 errors satisfy the timing
+criteria, but each operational decision must also be supported under
+uncertainty. A 92.86\% point agreement is not a 92.86\% probability that
+the replay is correct. An interval that crosses a decision boundary leaves
+the point label unsupported.
 
 \subsection{Fail-closed evidence as the default}
 
@@ -696,7 +850,7 @@ The exact-work verdict is the direct example. A threshold-only summary would
 report that every numeric row passed. Because uncertainty and stability are
 policy conditions, the retained conclusion is inconclusive.
 
-\subsection{Unsupported conclusions}
+\subsection{Scope of the evidence}
 
 The evidence does not show that communication-only replay is generally worse
 than a microbenchmark; that ordering depends on one configuration. It does not
@@ -705,14 +859,14 @@ held-out physical regression study is present. The checked-in publication
 package has no real vLLM or SGLang application campaign. Exact work is a
 positive reconstruction control, not evidence that minimization succeeded.
 
-Communication-only replay is not universally useless. The result shows
-insufficiency for one measured single-node, four-A100 decision matrix. Such
-replay can still help with debugging, transport isolation, or reproduction of a
-call sequence when the claim remains at that level.
+The negative result is limited to configuration decisions in the measured
+single-node, four-A100 matrix. Communication-only replay can still support
+debugging, transport isolation, or reproduction of a call sequence without
+preserving a workload's configuration ranking.
 
 \section{Threats to validity}
 
-\paragraph{Single system and workload.} All physical data comes from one
+\paragraph{Single system and workload.} All physical data come from one
 four-A100 PCIe node and one source-derived workload family. GPU topology, CPU
 placement, software versions, thermal state, and site configuration may affect
 the ranking. The result does not generalize to multi-node systems, NVSwitch,
@@ -730,11 +884,13 @@ operational tie definition could change labels. Exact counts and $\tau_b$ are
 reported so the effect remains visible.
 
 \paragraph{Uncertainty in the trusted join.} Each trusted-join cell has five
-selected repetitions. The repetition bootstrap therefore understates
-uncertainty, and the full-workload labels themselves move: six of the 28
+selected repetitions. The repetition bootstrap may understate uncertainty,
+and the full-workload labels themselves move: six of the 28
 reference pair labels keep their point value in fewer than 95\% of draws. The
-comparative claims we retain are the ones that survive both the bootstrap and
-the tree-LL exclusion.
+proxy comparisons are reported with both their intervals and tree-LL
+sensitivity. The regret analysis reuses these observations and is not an
+independent replication. Its intervals do not establish a general ordering
+between proxies.
 
 \paragraph{Measurement dependence.} Repeated timings within one process may be
 dependent. The independent percentile bootstrap is a predeclared approximation,
@@ -767,7 +923,10 @@ paper comes from evidence already present at commit
 \begin{center}
 \texttt{c133ad3fb5883100cb8622b597d5b6233b5efca1}.
 \end{center}
-An earlier version of this work is archived under the concept DOI
+Implementation descriptions and the decision-regret scorer are bound to
+\href{https://github.com/iemAnshuman/CommCanary/tree/cefad5a086b4723755bbe33b33e96f9f3a2c8e36}{commit \texttt{cefad5a086b47}}.
+The revision adds analysis of retained observations, not new hardware
+measurements. An earlier version of this work is archived under the concept DOI
 \href{https://doi.org/10.5281/zenodo.21939040}{10.5281/zenodo.21939040}.
 
 Campaigns retain their own manifest, selection, completeness, archive, and
@@ -799,7 +958,12 @@ The supplied scripts regenerate every vector figure from
 value from \texttt{evidence/trusted\_join\_uncertainty.json}, which
 \texttt{scripts/trusted\_join\_uncertainty.py} rebuilds from the committed
 aggregate. That compact snapshot records verified
-values and their paper binding. It does not replace immutable result
+values and their paper binding.
+\texttt{scripts/decision\_regret.py} verifies the retained aggregate hashes
+and emits \texttt{evidence/decision\_regret.json} and the corresponding
+LaTeX table; its \texttt{--check} mode requires exact regeneration of both.
+The JSON includes the five measurement sets and all bootstrap settings.
+These files do not replace immutable result
 directories. Reproducing physical timings still requires recorded hardware and
 software; deterministic analysis does not imply hardware-independent
 measurements.
@@ -833,10 +997,12 @@ another overlap engine. The experiments show that removing or changing overlap
 alters which NCCL configuration appears preferable in the measured case.
 
 \paragraph{Reduction and workload minimization.} Delta debugging removes input
-while preserving a predicate~\cite{ddmin}. A future reduced canary can use a
-similar objective: remove trace regions while preserving a decision-fidelity
-predicate. The publication evidence contains no completed reduced physical
-canary or cost result, so minimization remains a design direction.
+while preserving a predicate~\cite{ddmin}. CommCanary implements experimental
+predicate-based and phase-representative reduction, and dependency-closed
+physical candidate selection (Section~\ref{sec:implementation}). The
+publication evidence contains no completed reduced physical canary or cost
+result. Implemented selection methods therefore remain unqualified for
+physical decision preservation.
 
 \paragraph{Statistical comparison.} Benchmarking guidance warns against
 selective statistics and incomplete variability reports~\cite{benchmarking}.
@@ -846,17 +1012,20 @@ verdict conditions instead of annotations added after a point estimate.
 
 \section{Conclusion}
 
-The 280-cell comparison gives a clear negative result for communication-only
-replay on the measured single-node, four-A100 system. \wname{canary} reaches
+The 280-cell comparison shows that communication-only replay changes the
+configuration ranking on the measured single-node, four-A100 system.
+\wname{canary} reaches
 57.1\% pair agreement and ranks the full workload's slowest configuration
 second. Replay that keeps compute concurrent with communication places the
 low-latency-protocol configurations where the full workload does; the
-strongest such replay reaches 71.4\% but disagrees on eight pairs. The
-differences between proxies rest on one configuration, and we report them with
-that dependence stated.
+highest pair agreement among these replays is 71.4\%, leaving eight
+disagreements. The reported difference intervals all include zero when tree-LL
+is excluded. Retrospective regret measures a different consequence:
+the proxy with the fewest agreeing pairs chooses the measured optimum, while
+communication-only replay and the microbenchmark incur 3.16\% point regret.
 
-Exact work is much closer to the source ordering. Its 92.86\% agreement,
-$\tau_b=0.857$, and low relative errors pass every point threshold. The final
+Exact work agrees with more source decisions than either control. Its 92.86\%
+agreement, $\tau_b=0.857$, and low relative errors pass every point threshold. The final
 outcome remains inconclusive because pair uncertainty crosses decision
 boundaries and one configuration violates the stability limit.
 
@@ -869,6 +1038,8 @@ remain open.
 \bibliographystyle{unsrt}
 \bibliography{references}
 
+\clearpage
+\onecolumn
 \appendix
 \section{Campaign identities}
 
@@ -876,7 +1047,7 @@ Table~\ref{tab:identities} lists abbreviated campaign identities. Full SHA-256
 values remain in \texttt{evidence/verified\_metrics.json} and authoritative
 repository artifacts.
 
-\begin{table*}[t]
+\begin{table}[htbp]
 \caption{Abbreviated manifest-bound campaign identities (first 12 hex digits).}
 \label{tab:identities}
 \centering\small
@@ -891,7 +1062,7 @@ Run & Manifest & Selection & Completeness & Repository \\
 \texttt{qualification-exact-20260730-r3} & \texttt{c0bc2e6a9ecb} & \texttt{bf23480f39dd} & \texttt{593772c09020} & \texttt{9b1e58aef91e} \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{table}
 
 \section{Trusted-join regeneration}
 

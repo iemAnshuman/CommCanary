@@ -231,7 +231,7 @@
     }
   },
   "method": {
-    "caveat": "five repetitions per cell make this bootstrap optimistic; read intervals as lower bounds on uncertainty",
+    "caveat": "only five repetitions per cell; percentile intervals may underrepresent variability and do not guarantee coverage",
     "draws": 4000,
     "interval": "percentile, 95%",
     "resampling": "each cell's selected repetitions resampled with replacement, independently per cell",

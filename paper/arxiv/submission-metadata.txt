@@ -1,0 +1,11 @@
+Title: Fail-Closed Evidence for Decision-Fidelity Evaluation of Collective Trace Replay
+Authors: Anshuman Agrawal
+Primary category: cs.DC
+Comments: 14 pages, 3 figures
+
+Abstract:
+CommCanary evaluates whether collective-trace replay preserves a full workload's configuration decisions. Its fail-closed workflow binds frozen campaigns, immutable attempts, explicit selections, completeness verdicts, raw archives, and deterministic analysis.
+
+We compare four proxies with a full workload on one node with four NVIDIA A100 GPUs and eight NCCL configurations. All 280 selected cells are complete. Communication-only replay agrees on 16 of 28 configuration pairs, with a 95% repetition-bootstrap interval of 12 to 17, and ranks the full workload's slowest configuration second. Shared-trace replay with concurrent compute agrees on 20 pairs, exceeding communication-only replay in 99.9% of bootstrap draws. These differences depend on one tree-LL configuration. After excluding it, the reported pair-agreement difference intervals all include zero. Retrospective decision regret measures a different consequence: communication-only replay and the microbenchmark both select a configuration 3.16% slower than the reference optimum, while configuration-specific overlap replay selects the optimum despite its lower pair agreement.
+
+A separate exact-work gate reaches 26 of 28 agreeing pairs, Kendall tau-b 0.857, and 1.55% median absolute relative error. Its persisted verdict remains inconclusive because bootstrap intervals cross decision boundaries and one configuration exceeds the stability limit. We describe newer candidate-reduction, serving-measurement, and four-state gating implementations separately from these physical results. The evidence supports a negative result about communication-only replay in this measured setting and an independently verifiable evidence workflow; it does not establish production qualification, held-out application safety, or reduced-canary savings.

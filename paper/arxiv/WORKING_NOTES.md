@@ -27,6 +27,21 @@
 - The gate's no-overlap ablation agrees on 18 of 28 pairs and its
   no-rank-skew ablation on 24, against 26 for exact work.
 
+## October 2026 revision
+
+- Current implementation descriptions are pinned to `cefad5a086b47` and remain
+  separate from physical results pinned to the original evidence commit.
+- Retrospective first-choice regret is 3.16% for W-micro and W-canary, 0.00%
+  for W-canary-overlap, and 0.45% for W-shared-overlap. The corresponding 95%
+  intervals are 2.06--4.48%, 2.06--4.48%, 0.00--3.27%, and 0.07--0.72%.
+- W-canary-overlap's zero point regret does not establish reliable optimal
+  selection. Neither these intervals nor the existing sensitivity analysis
+  supports a universal proxy ordering.
+- Regret uses reference medians of the configurations selected by proxy
+  medians; shortlist regret assumes measuring the shortlist on the reference.
+- No new physical campaign, held-out application result, or savings claim is
+  added. Source packaging and local compilation do not constitute submission.
+
 ## Unsupported statements
 
 Do not claim that communication-only replay is generally worse than a
